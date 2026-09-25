@@ -122,6 +122,33 @@ CREATE TABLE IF NOT EXISTS request_items (
     FOREIGN KEY(model_id) REFERENCES models(id)
 );
 
+-- Фактические отправки склада. Одна заявка может быть закрыта несколькими отправками.
+CREATE TABLE IF NOT EXISTS shipments (
+    id                INTEGER PRIMARY KEY,
+    request_id        INTEGER REFERENCES requests(id) ON DELETE SET NULL,
+    request_number    INTEGER,
+    legacy_request_id INTEGER UNIQUE,
+    client_token      TEXT UNIQUE,
+    created_at        TEXT NOT NULL,
+    note              TEXT,
+    CHECK(request_id IS NULL OR request_number IS NOT NULL)
+);
+
+CREATE TABLE IF NOT EXISTS shipment_items (
+    id              INTEGER PRIMARY KEY,
+    shipment_id     INTEGER NOT NULL REFERENCES shipments(id) ON DELETE CASCADE,
+    request_item_id INTEGER REFERENCES request_items(id) ON DELETE SET NULL,
+    request_number  INTEGER,
+    line_kind       TEXT NOT NULL CHECK(line_kind IN ('need','pair','material')),
+    item            TEXT NOT NULL DEFAULT '',
+    qty             INTEGER NOT NULL CHECK(qty > 0),
+    unit            TEXT,
+    item_type       TEXT,
+    customer_id     INTEGER REFERENCES customers(id),
+    model_id        INTEGER REFERENCES models(id),
+    operation       TEXT
+);
+
 -- Этап 2: внесение бумаг для сдельной зарплаты. Структура заложена заранее.
 CREATE TABLE IF NOT EXISTS work_records (
     id           INTEGER PRIMARY KEY,
@@ -150,6 +177,9 @@ CREATE TABLE IF NOT EXISTS audit_events (
 
 CREATE INDEX IF NOT EXISTS idx_lines_document ON lines(document_id);
 CREATE INDEX IF NOT EXISTS idx_request_items_request ON request_items(request_id);
+CREATE INDEX IF NOT EXISTS idx_shipments_request ON shipments(request_id);
+CREATE INDEX IF NOT EXISTS idx_shipment_items_shipment ON shipment_items(shipment_id);
+CREATE INDEX IF NOT EXISTS idx_shipment_items_request_item ON shipment_items(request_item_id);
 CREATE INDEX IF NOT EXISTS idx_audit_events_at ON audit_events(at);
 """
 
@@ -295,12 +325,48 @@ def _migrate_payroll(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_work_records_date ON work_records(work_date)")
 
 
+def _migrate_shipments(conn):
+    """Перенести старые уже отправленные заявки в журнал отправок один раз."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(shipments)")}
+    if "client_token" not in cols:
+        conn.execute("ALTER TABLE shipments ADD COLUMN client_token TEXT")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_shipments_token ON shipments(client_token)")
+    item_cols = {r["name"] for r in conn.execute("PRAGMA table_info(shipment_items)")}
+    if "request_number" not in item_cols:
+        conn.execute("ALTER TABLE shipment_items ADD COLUMN request_number INTEGER")
+    old = conn.execute(
+        "SELECT * FROM requests WHERE status='shipped' AND NOT EXISTS "
+        "(SELECT 1 FROM shipments WHERE legacy_request_id=requests.id)"
+    ).fetchall()
+    for r in old:
+        linked = r["created_role"] == "proizv"
+        cur = conn.execute(
+            "INSERT INTO shipments (request_id, request_number, legacy_request_id, created_at, note) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (r["id"] if linked else None, r["id"] if linked else None, r["id"],
+             r["done_at"] or r["created_at"], r["ship_note"]))
+        items = conn.execute(
+            "SELECT * FROM request_items WHERE request_id=? AND placed=1 "
+            "AND COALESCE(collected, 0)>0", (r["id"],)).fetchall()
+        for i in items:
+            kind = i["line_kind"] if i["line_kind"] in ("pair", "material") else "need"
+            conn.execute(
+                "INSERT INTO shipment_items "
+                "(shipment_id, request_item_id, request_number, line_kind, item, qty, unit, item_type, "
+                "customer_id, model_id, operation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (cur.lastrowid, i["id"] if kind == "need" else None,
+                 r["id"] if kind == "need" else None, kind,
+                 i["item"], i["collected"], i["unit"], i["item_type"],
+                 i["customer_id"], i["model_id"], i["operation"]))
+
+
 def init_db():
     conn = get_db()
     conn.executescript(SCHEMA)
     _migrate(conn)
     _migrate_constraints(conn)
     _migrate_payroll(conn)
+    _migrate_shipments(conn)
 
     # 6 операций (названия временные, правятся позже)
     cur = conn.execute("SELECT COUNT(*) AS c FROM operations")

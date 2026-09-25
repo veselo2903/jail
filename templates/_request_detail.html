@@ -1,29 +1,6 @@
-{# Раскрывающаяся строка заявки: одинаковая для производства, склада и директора. x — строка списка. #}
+{# Только сведения по заявке; отправка оформляется на отдельной странице поставки. #}
 {% set d = x.detail %}
 <div class="dq-items">
-  {% if d.can_collect and d.need %}
-  {# ---- склад: сборка по позициям заявки ---- #}
-  <form class="dq-collect-form" method="post" action="{{ url_for('request_collect', req_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="dq-collect-title small">Отметьте, что положили, впишите количество и тип</div>
-    {% for i in d.need %}
-    <div class="dq-collect-item">
-      <input class="chkbox dq-collect-check" type="checkbox" name="placed_{{ i.id }}" value="1" data-qty="{{ i.qty if i.qty is not none else '' }}" data-col="col_{{ i.id }}" {{ 'checked' if i.placed }}>
-      <div class="dq-item-main">
-        <span class="dq-item-name">{{ i.item }}</span>
-        {% if i.urgent %}<span class="tag urgent">Срочно</span>{% endif %}
-        {% if i.note %}<div class="small dq-item-note">{{ i.note }}</div>{% endif %}
-        <div class="small dq-collect-need">нужно: {{ i.qty if i.qty is not none else '—' }}{% if i.qty is not none and i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</div>
-      </div>
-      <input class="dq-collect-qty" name="col_{{ i.id }}" type="number" min="0" inputmode="numeric" value="{{ i.collected if i.collected is not none else '' }}" placeholder="{{ i.qty if i.qty is not none else '' }}">
-      <select class="dq-collect-type" name="type_{{ i.id }}">
-        <option value="">— тип —</option>
-        {% for k, v in ITEM_TYPES.items() %}<option value="{{ k }}" {{ 'selected' if i.item_type == k }}>{{ v }}</option>{% endfor %}
-      </select>
-    </div>
-    {% endfor %}
-    <button class="btn sm dq-collect-save" type="submit">Сохранить сборку</button>
-  </form>
-  {% else %}
   {% for i in d.need %}
   <div class="dq-item">
     <div class="dq-item-main">
@@ -34,79 +11,50 @@
       {% if i.qty is not none %}{{ i.qty }}{% if i.unit %} <span class="small">{{ UNITS.get(i.unit, i.unit) }}</span>{% endif %}{% else %}—{% endif %}
     </div>
     {% if d.show_result %}
-    <div class="dq-item-got">
-      {% if i.collected is not none %}
-        <span class="{{ 'diff-neg' if i.qty is not none and i.collected < i.qty else 'diff-zero' }}">положено {{ i.collected }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span>
-      {% elif d.shipped %}<span class="small">не положено</span>{% endif %}
-    </div>
+    {% set sent = d.sent_totals.get(i.id, 0) %}
+    {% if sent %}<div class="dq-item-got"><span class="{{ 'diff-neg' if i.qty is not none and sent < i.qty else 'diff-zero' }}">отправлено {{ sent }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span></div>{% endif %}
     {% endif %}
   </div>
   {% endfor %}
-  {% endif %}
-
   {% if d.added %}
-  <div class="dq-added-title small">{{ 'Что положили' if role == 'sklad' else 'Дополнительно положил склад' }}</div>
+  <div class="dq-added-title small">Дополнительно положил склад</div>
   {% for i in d.added %}
   <div class="dq-item dq-item-added">
     <div class="dq-item-main">
       {% if i.line_kind == 'pair' %}
       <span class="dq-item-name">{{ i.customer }} — {{ i.model }}</span>
       {% set names = operation_names(i.operation) %}
-      <div class="small dq-item-note">{{ names|join(', ') if names else LINE_STATUSES.get(i.status, 'Пары') }}</div>
+      {% if names %}<div class="small dq-item-note">{{ names|join(', ') }}</div>{% endif %}
       {% else %}<span class="dq-item-name">{{ i.item }}</span>{% endif %}
     </div>
     <div class="dq-item-qty">{{ i.collected if i.collected is not none else '—' }} <span class="small">{{ 'пар' if i.line_kind == 'pair' else UNITS.get(i.unit, i.unit or '') }}</span></div>
-    {% if d.can_collect %}
-    <form class="dq-placed-del-form" method="post" action="{{ url_for('request_placed_del', req_id=x.id, item_id=i.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="btn grey sm dq-placed-del-btn" type="submit" title="Убрать">×</button>
-    </form>
-    {% endif %}
   </div>
   {% endfor %}
   {% endif %}
 </div>
-
-{% if d.can_collect %}
-{# ---- склад: добавить пары и материалы ---- #}
-<details class="dq-add dq-add-pair">
-  <summary>+ Добавить пары</summary>
-  <form class="dq-pair-form grid" method="post" action="{{ url_for('request_pair_add', req_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="dq-pair-row">
-      <div><label>Заказчик</label><select class="dq-pair-customer" name="customer_id">{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
-      <div><label>Модель</label><select class="dq-pair-model" name="model_id">{% for m in models %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
-      <div><label>Пары</label><input class="dq-pair-count" name="pairs" type="number" min="1" inputmode="numeric" required></div>
+{% if d.shipments %}
+<div class="dq-added-title small">Отправки по заявке</div>
+{% for entry in d.shipments %}
+<div class="dq-item">
+  <div class="dq-item-main">
+    <b>Поставка №{{ entry.s.id }}</b> · {{ entry.s.created_at }}
+    <div class="small">
+      {% for i in entry['items'] %}
+        {% if not loop.first %}; {% endif %}
+        {% if i.line_kind == 'pair' %}
+          {{ i.customer }} — {{ i.model }}: {{ i.qty }} пар
+          {% set names = operation_names(i.operation) %}
+          {% if names %} ({{ names|join(', ') }}){% endif %}
+        {% else %}
+          {{ i.item }}: {{ i.qty }} {{ UNITS.get(i.unit, i.unit or '') }}
+        {% endif %}
+      {% endfor %}
     </div>
-    {% include '_operation_choices.html' %}
-    <button class="btn sm" type="submit">+ Добавить пары</button>
-  </form>
-</details>
-<details class="dq-add dq-add-material">
-  <summary>+ Добавить материал</summary>
-  <form class="dq-material-form grid" method="post" action="{{ url_for('request_material_add', req_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="dq-material-row">
-      <div class="dq-material-name"><label>Материал</label><input name="item" placeholder="кожа, подошва, нитки…" required></div>
-      <div><label>Кол-во</label><input name="qty" type="number" min="1" inputmode="numeric" placeholder="—"></div>
-      <div><label>Ед.</label><select name="unit" required>{% for k, v in UNITS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
-    </div>
-    <button class="btn grey sm" type="submit">+ Добавить материал</button>
-  </form>
-</details>
+    {% if entry.s.note %}<div class="small">{{ entry.s.note }}</div>{% endif %}
+  </div>
+</div>
+{% endfor %}
 {% endif %}
-
 {% if d.note %}<div class="dq-note small">Примечание к заявке: {{ d.note }}</div>{% endif %}
 {% if d.shipped and d.ship_note %}<div class="dq-ship-note small">Сообщение склада: {{ d.ship_note }}</div>{% endif %}
 {% if d.visible_at %}<div class="dq-visible-hint small">Склад увидит заявку в {{ d.visible_at }}. До этого её можно изменить.</div>{% endif %}
-
-{% if d.can_take %}
-<form class="dq-take-form" method="post" action="{{ url_for('request_take', req_id=x.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <button class="btn green sm dq-take-btn" type="submit">Начали собирать</button>
-</form>
-{% endif %}
-
-{% if d.can_ship %}
-<form class="dq-ship-form" method="post" action="{{ url_for('request_ship', req_id=x.id) }}"
-      onsubmit="return confirm('Отправить заявку на производство?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <input class="dq-ship-note-input" name="ship_note" value="{{ d.ship_note or '' }}" placeholder="Примечание склада (необязательно)">
-  <button class="btn green sm dq-ship-btn" type="submit">Отправить на производство</button>
-</form>
-{% endif %}

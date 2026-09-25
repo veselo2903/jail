@@ -1,0 +1,17 @@
+{% set s = x.detail.s %}
+{% if x.detail.linked %}<div class="small">По заявкам №{{ x.detail.linked|join(', №') }}</div>{% endif %}
+{% for i in x.detail['items'] %}
+<div class="dq-item">
+  <div class="dq-item-main">
+    {% if i.line_kind == 'pair' %}
+      <span class="dq-item-name">{{ i.customer }} — {{ i.model }}</span>
+      {% set names = operation_names(i.operation) %}
+      {% if names %}<div class="small">{{ names|join(', ') }}</div>{% endif %}
+    {% else %}
+      <span class="dq-item-name">{{ i.item }}</span>
+    {% endif %}
+  </div>
+  <div class="dq-item-qty">{{ i.qty }} {{ 'пар' if i.line_kind == 'pair' else UNITS.get(i.unit, i.unit or '') }}</div>
+</div>
+{% endfor %}
+{% if s.note %}<div class="small">{{ s.note }}</div>{% endif %}

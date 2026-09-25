@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Новая поставка — jail{% endblock %}
+{% block content %}
+<a class="small" href="{{ url_for('documents') }}">← К заявкам</a>
+<h2>Новая поставка</h2>
+<p class="small">Отметьте, что отправляете по заявкам производства. Ниже можно добавить материалы и модели от склада. Всё отправится одной поставкой.</p>
+<form id="supply-form" method="post" action="{{ url_for('supply_new') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="send_token" value="{{ new_send_token() }}">
+  {% if incoming %}
+  <h3>По заявкам производства</h3>
+  {% for entry in incoming %}
+  {% set r = entry.r %}
+  <section class="card supply-request">
+    <div class="supply-request-head"><b>Заявка №{{ r.id }}</b>{% if r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}<span class="small">{{ r.created_at }}</span></div>
+    {% if r.note %}<p class="small">{{ r.note }}</p>{% endif %}
+    {% for e in entry.need %}
+    {% set i = e.row %}
+    <div class="supply-item {{ 'supply-done' if e.remaining == 0 }}">
+      {% if e.remaining != 0 %}<label class="supply-choice"><input type="checkbox" name="ship_{{ i.id }}" value="1" {{ 'checked' if i.placed }}><span><b>{{ i.item }}</b>{% if i.urgent %} <span class="tag urgent">Срочно</span>{% endif %}{% if i.note %}<small>{{ i.note }}</small>{% endif %}</span></label>{% else %}<span><b>{{ i.item }}</b> <small>уже отправлено</small></span>{% endif %}
+      <div class="supply-amount"><small>{% if i.qty is not none %}Запрошено {{ i.qty }} {{ UNITS.get(i.unit, i.unit or '') }}{% endif %}{% if e.sent %} · отправлено {{ e.sent }}{% endif %}{% if e.remaining is not none and e.remaining > 0 %} · осталось {{ e.remaining }}{% endif %}</small>{% if e.remaining != 0 %}<input name="qty_{{ i.id }}" type="number" min="1" max="1000000" inputmode="numeric" value="{{ i.collected if i.placed and i.collected is not none else '' }}" placeholder="Сколько кладёте"></div>{% else %}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endfor %}
+  {% endif %}
+  <h3>Добавить от склада</h3>
+  <p class="small">Материалы и модели, которых не было в заявках. Для каждой модели выберите свои операции.</p>
+  {% include '_shipment_extra_fields.html' %}
+  <label for="ship-note">Примечание к поставке</label>
+  <input id="ship-note" name="ship_note" placeholder="Необязательно">
+  <button class="btn green block" type="submit" style="margin-top:16px">Отправить поставку</button>
+</form>
+<template id="shipment-material-template">
+  <div class="shipment-extra-row">
+    <div><label>Материал</label><input name="material_name" placeholder="Название"></div>
+    <div><label>Количество</label><input name="material_qty" type="number" min="1" max="1000000" inputmode="numeric"></div>
+    <div><label>Ед.</label><select name="material_unit">{% for key, title in UNITS.items() %}<option value="{{ key }}">{{ title }}</option>{% endfor %}</select></div>
+    <button class="btn grey sm shipment-remove" type="button" title="Убрать строку">×</button>
+  </div>
+</template>
+<template id="shipment-pair-template">
+  <div class="shipment-extra-pair">
+    <div class="shipment-extra-row">
+      <div><label>Заказчик</label><select name="pair_customer_id">{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+      <div><label>Модель</label><select name="pair_model_id">{% for m in models %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
+      <div><label>Пары</label><input name="pair_qty" type="number" min="1" max="1000000" inputmode="numeric"></div>
+      <button class="btn grey sm shipment-remove" type="button" title="Убрать строку">×</button>
+    </div>
+    <fieldset class="operations"><legend>Операции для этой модели</legend><div class="operation-grid">
+      {% for key, title in OPERATIONS.items() %}<label class="operation-choice"><input type="checkbox" name="pair_operations_INDEX" value="{{ key }}"><span>{{ title }}</span></label>{% endfor %}
+    </div></fieldset>
+  </div>
+</template>
+<style>
+.supply-request{padding:14px;margin:12px 0}.supply-request-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.supply-request-head .small{margin-left:auto}.supply-item{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 0;border-top:1px solid var(--line)}.supply-choice{display:flex;align-items:center;gap:9px;cursor:pointer;margin:0;color:var(--ink);flex:1}.supply-choice input{width:21px;height:21px;accent-color:var(--green);flex:none}.supply-choice small,.supply-item small{display:block;color:var(--muted);font-weight:400}.supply-amount{text-align:right}.supply-amount input{width:150px;margin-top:4px;padding:8px}.supply-done{opacity:.65}.shipment-add-actions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.shipment-extra-row{display:grid;grid-template-columns:2fr 1fr 90px 40px;gap:8px;align-items:end;margin:10px 0}.shipment-extra-row label{margin-bottom:4px}.shipment-extra-row .shipment-remove{padding:9px 0}.shipment-extra-pair{padding:12px;border:1px solid var(--line);border-radius:10px;margin:10px 0}.shipment-extra-pair .shipment-extra-row{grid-template-columns:repeat(3,minmax(0,1fr)) 40px;margin:0 0 12px}.operations{border:0;padding:0;margin:0}.operations legend{font-size:13px;color:var(--muted);font-weight:650;margin-bottom:7px}.operation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.operation-choice{display:flex;align-items:center;gap:8px;margin:0;padding:8px;border:1px solid var(--line2);border-radius:8px;color:var(--ink);cursor:pointer}.operation-choice input{width:19px;height:19px;flex:none;accent-color:var(--blue)}.operation-choice:has(input:checked){border-color:var(--blue);background:var(--blue-bg)}
+@media(max-width:620px){.supply-item{align-items:flex-start;flex-wrap:wrap}.supply-amount{margin-left:30px;text-align:left;width:100%}.shipment-extra-row,.shipment-extra-pair .shipment-extra-row{grid-template-columns:1fr 1fr}.shipment-extra-row>div:first-child{grid-column:1 / -1}.shipment-extra-row .shipment-remove{grid-column:2;justify-self:end;width:40px}.operation-grid{grid-template-columns:1fr}}
+</style>
+<script>
+(function(){
+ const form=document.getElementById('supply-form');
+ const material=document.getElementById('shipment-material-template'),pair=document.getElementById('shipment-pair-template');
+ form.querySelector('[data-add-material]').addEventListener('click',function(){form.querySelector('.shipment-material-rows').appendChild(material.content.cloneNode(true))});
+ form.querySelector('[data-add-pair]').addEventListener('click',function(){form.querySelector('.shipment-pair-rows').appendChild(pair.content.cloneNode(true))});
+ form.addEventListener('click',function(e){if(e.target.classList.contains('shipment-remove'))(e.target.closest('.shipment-extra-pair')||e.target.closest('.shipment-extra-row')).remove()});
+ form.addEventListener('submit',function(e){
+   form.querySelectorAll('.shipment-extra-pair').forEach(function(row,n){row.querySelectorAll('.operation-choice input').forEach(function(input){input.name='pair_operations_'+n})});
+   const selected=form.querySelector('.supply-choice input:checked');
+   const material=Array.from(form.querySelectorAll('[name="material_name"]')).some(function(x){return x.value.trim()});
+   const pair=Array.from(form.querySelectorAll('[name="pair_qty"]')).some(function(x){return x.value.trim()});
+   if(!selected&&!material&&!pair){e.preventDefault();alert('Отметьте позицию заявки или добавьте материал либо модель.');return}
+   if(Array.from(form.querySelectorAll('.shipment-extra-pair')).some(function(row){return row.querySelector('[name="pair_qty"]').value.trim()&&!row.querySelector('.operation-choice input:checked')})){e.preventDefault();alert('Выберите операции для каждой модели.');return}
+   form.querySelector('button[type="submit"]').disabled=true;
+ });
+})();
+</script>
+{% endblock %}

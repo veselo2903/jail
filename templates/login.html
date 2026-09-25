@@ -48,10 +48,9 @@ a.role:active{transform:translateY(0)}
     <span class="go">→</span>
   </a>
 
-  <div class="foot">
-    <span>тестовый режим · пароли добавим позже</span>
-    {% if enable_web_updates %}<a href="{{ url_for('update') }}">Обновление системы</a>{% endif %}
-  </div>
+  {% if enable_web_updates %}
+  <div class="foot"><a href="{{ url_for('update') }}">Обновление системы</a></div>
+  {% endif %}
 </div>
 </body>
 </html>

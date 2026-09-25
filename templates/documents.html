@@ -2,7 +2,7 @@
 {% block title %}Заявки — jail{% endblock %}
 {% block content %}
 
-{% if to_action %}<div class="card hero warn">
+{% if to_action and role != 'sklad' %}<div class="card hero warn">
   <div class="big">{{ to_action }}</div>
   <div class="lbl">{{ 'Новая заявка' if to_action==1 else 'Новые заявки' }}</div>
 </div>
@@ -14,7 +14,7 @@
   <a class="btn green block" href="{{ url_for('request_new') }}" style="flex:1">+ Заявка «чего не хватает»</a>
   {% endif %}
   {% if role=='sklad' %}
-  <a class="btn block" href="{{ url_for('docs_collect') }}" style="flex:1">+ Передача на производство</a>
+  <a class="btn block" href="{{ url_for('supply_new') }}" style="flex:1">+ Создать поставку</a>
   {% elif role=='proizv' %}
   <a class="btn block" href="{{ url_for('doc_new') }}" style="flex:1">+ Возврат на склад</a>
   {% endif %}
@@ -25,7 +25,7 @@
 <table class="dq-table">
   <tr><th>№</th><th>Тип</th><th class="num">Кол-во</th><th>Статус</th><th>Дата</th><th></th></tr>
   {% for x in rows %}
-  <tr class="linkrow {{ 'dq-row' if x.detail }}" {% if x.detail %}data-dq-toggle="dq-{{ x.id }}"{% else %}onclick="location='{{ x.url }}'"{% endif %}>
+  <tr class="linkrow {{ 'dq-row' if x.detail }}" {% if x.detail %}data-dq-toggle="{{ x.detail_id }}"{% else %}onclick="location='{{ x.url }}'"{% endif %}>
     <td>{{ x.id }}</td>
     <td>
       <b>{{ x.title }}</b>
@@ -55,9 +55,13 @@
     </td>
   </tr>
   {% if x.detail %}
-  <tr class="dq-detail" id="dq-{{ x.id }}" hidden>
+  <tr class="dq-detail" id="{{ x.detail_id }}" hidden>
     <td class="dq-detail-cell" colspan="6">
-      {% include '_request_detail.html' %}
+      {% if x.group == 'shipment' %}
+        {% include '_shipment_history_detail.html' %}
+      {% else %}
+        {% include '_request_detail.html' %}
+      {% endif %}
     </td>
   </tr>
   {% endif %}
@@ -118,7 +122,7 @@ document.querySelectorAll('[data-dq-toggle]').forEach(function(row){
   });
 });
 // после действия склада страница открывается уже с раскрытой заявкой (#dq-<номер>)
-if(/^#dq-\d+$/.test(location.hash)){
+if(/^#(?:dq|sh)-\d+$/.test(location.hash)){
   var opened=document.getElementById(location.hash.slice(1));
   if(opened){opened.hidden=false;opened.scrollIntoView({block:'start'});}
 }

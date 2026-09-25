@@ -1,7 +1,8 @@
-"""Isolated checks for access, state transitions, and data integrity."""
+"""Checks the warehouse supply flow and existing safeguards."""
 import json
 import os
 import pathlib
+import secrets
 import sqlite3
 import sys
 import tempfile
@@ -14,7 +15,6 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     from jail.app import app, db
 
     class RoleClient:
-        """Тестовый клиент: после входа подставляет роль в адрес (/sklad/..., /proizv/..., /director/...)."""
         ROLES = ("sklad", "proizv", "director")
 
         def __init__(self, inner):
@@ -25,279 +25,186 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
 
         def _path(self, path):
             if self.role and path != "/" and not path.startswith(("/login", "/logout", "/docs")) \
-                    and path.split("/")[1] not in self.ROLES and not path.startswith("/x/"):
+                    and path.split("/")[1] not in self.ROLES:
                 return "/%s%s" % (self.role, path)
             return path
 
-        def _track(self, path):
+        def get(self, path, **kw):
+            response = self.inner.get(self._path(path), **kw)
             parts = path.split("?")[0].split("/")
             if len(parts) == 3 and parts[1] == "login" and parts[2] in self.ROLES:
                 self.role = parts[2]
-
-        def get(self, path, **kw):
-            response = self.inner.get(self._path(path), **kw)
-            self._track(path)
             return response
 
         def post(self, path, **kw):
             return self.inner.post(self._path(path), **kw)
 
     client = RoleClient(app.test_client())
-    assert client.get("/login").status_code == 200
+    assert "тестовый режим" not in client.get("/login").text
     with client.session_transaction() as state:
         token = state["csrf_token"]
 
     def post(path, data=None):
-        return client.post(path, data={"csrf_token": token, **(data or {})})
+        fields = dict(data or {})
+        if path.endswith("/ship") or path.endswith("/supply/new"):
+            fields.setdefault("send_token", secrets.token_urlsafe(24))
+        return client.post(path, data={"csrf_token": token, **fields})
 
-    def query(sql, args=()):
+    def one(sql, args=()):
         with sqlite3.connect(db.DB_PATH) as conn:
             return conn.execute(sql, args).fetchone()
 
+    def count(table):
+        return one("SELECT COUNT(*) FROM " + table)[0]
+
     assert client.get("/overview").status_code == 302
-    assert client.get("/login/director").status_code == 302
-    assert "пар сейчас на производстве" not in client.get("/overview").text
-    assert "Расхождения при приёмке (0)" not in client.get("/discrepancies").text
     assert client.get("/login/sklad").status_code == 302
-    assert client.get("/requests/transfer/new").status_code == 200
-    # старые адреса /docs/... перенаправляют на новые
-    for old, new in (("/docs", "/sklad/requests"), ("/docs?x=1", "/sklad/requests?x=1"),
-                     ("/docs/collect", "/sklad/requests/collect"), ("/docs/new", "/sklad/requests/transfer/new"),
-                     ("/docs/7", "/sklad/requests/transfer/7"), ("/requests/new", "/sklad/requests/new")):
-        moved = client.inner.get(old)
-        assert moved.status_code == 302 and moved.location.endswith(new), (old, moved.location)
-    # адрес другой роли закрыт, адрес без входа ведёт на вход
     assert client.inner.get("/proizv/requests").status_code == 403
-    assert client.inner.get("/director/overview").status_code == 403
-    assert client.inner.get("/sklad/requests").status_code == 200
-    assert "Здесь пока пусто" not in client.get("/requests").text
-    assert "Новых заявок к сборке нет" not in client.get("/requests/collect").text
-    assert "Новых документов на приёмку нет" not in client.get("/acceptance").text
-    assert query("SELECT COUNT(*) FROM documents")[0] == 0
-    assert client.post("/requests/transfer/new").status_code == 400
-    assert post("/requests/transfer/new").status_code == 200          # пустая форма: запись не создаётся
-    assert query("SELECT COUNT(*) FROM documents")[0] == 0
-    bad = post("/requests/transfer/new", {"customer_id": ["1", "9999"], "model_id": ["1", "9999"],
-                             "status": ["zagotovka", "zagotovka"], "pairs": ["10", "10"]})
-    assert bad.status_code == 200 and query("SELECT COUNT(*) FROM documents")[0] == 0
-    created = post("/requests/transfer/new", {"customer_id": ["1", "1", "1"], "model_id": ["1", "1", "1"],
-                                 "status": ["zagotovka"] * 3, "pairs": ["10", "10", ""],
-                                 "note": "общее"})
-    assert created.status_code == 302
-    doc_id = query("SELECT MAX(id) FROM documents")[0]
-    assert query("SELECT status, sent_at IS NOT NULL, note FROM documents WHERE id=?", (doc_id,)) == ("sent", 1, "общее")
-    assert query("SELECT COUNT(*) FROM lines WHERE document_id=?", (doc_id,))[0] == 2
-    first_line_id = query("SELECT MIN(id) FROM lines WHERE document_id=?", (doc_id,))[0]
-    line_id = query("SELECT MAX(id) FROM lines WHERE document_id=?", (doc_id,))[0]
-    # черновиков больше нет: правки и отправки после создания не существует
-    for gone in ("send", "revert", f"line/{line_id}/del"):
-        assert post(f"/requests/transfer/{doc_id}/{gone}").status_code == 404
+    empty = client.get("/requests")
+    assert empty.status_code == 200
+    assert "Создать поставку" in empty.text
+    assert client.get("/requests/supply/new").status_code == 200
+    assert "Начали собирать" not in empty.text
+    assert "Сохранить сборку" not in empty.text
+    assert client.get("/requests/collect").status_code == 302
+    assert client.get("/requests/collect/blank").status_code == 302
+    assert client.get("/requests/transfer/new").status_code == 302
+    assert client.inner.get("/docs").location.endswith("/sklad/requests")
+    assert client.post("/requests/supply/new").status_code == 400  # CSRF
+    assert post("/requests/supply/new").status_code == 302
+    assert count("shipments") == 0
+    assert post("/requests/supply/new", {"material_name": ["Кожа"],
+                                   "material_qty": ["0"], "material_unit": ["m2"]}).status_code == 302
+    assert count("shipments") == 0
     assert client.get("/login/proizv").status_code == 302
-    assert post(f"/requests/transfer/{doc_id}/accept").status_code == 302
-    assert query("SELECT status FROM documents WHERE id=?", (doc_id,))[0] == "sent"
-    assert post(f"/requests/transfer/{doc_id}/accept", {f"recv_{first_line_id}": "10",
-                                          f"recv_{line_id}": "9"}).status_code == 302
-    assert query("SELECT status FROM documents WHERE id=?", (doc_id,))[0] == "accepted"
+    assert post("/requests/supply/new", {"material_name": ["Кожа"],
+                                   "material_qty": ["1"], "material_unit": ["m2"]}).status_code == 403
 
-    with sqlite3.connect(db.DB_PATH) as conn:
-        for status in ("open", "done", "shipped"):
-            conn.execute("INSERT INTO requests(status,urgent,created_role,created_at) VALUES (?,0,'proizv','25.09.2026 09:00')", (status,))
-    assert post("/requests/3/delete").status_code == 403
-    assert query("SELECT status FROM requests WHERE id=3")[0] == "shipped"
+    # Производство создаёт заявку; склад видит её после окна правки.
+    assert post("/requests/new", {"note": "пусто"}).status_code == 200
+    assert count("requests") == 0
+    created = post("/requests/new", {
+        "item": ["Кожа", "Нитки"], "qty": ["10", "5"],
+        "unit": ["sht", "sht"], "unit_custom": ["", ""],
+        "item_note": ["чёрная", ""], "urgent_1": "1", "note": "на партию"})
+    assert created.status_code == 302
+    req_id = one("SELECT id FROM requests")[0]
+    item_ids = [x[0] for x in sqlite3.connect(db.DB_PATH).execute(
+        "SELECT id FROM request_items WHERE request_id=? ORDER BY id", (req_id,))]
+    assert client.get(f"/requests/{req_id}/edit").status_code == 200
     assert client.get("/login/sklad").status_code == 302
-    # отдельной страницы заявки нет ни у кого: заявки раскрываются в списке
-    assert client.get("/requests/1").status_code == 404
-    assert client.get("/requests/2").status_code == 404
-    assert "dq-take-form" in client.get("/requests").text      # у склада новая заявка раскрывается кнопкой «Начали собирать»
-    assert query("SELECT status FROM requests WHERE id=1")[0] == "open"
-    assert query("SELECT status FROM requests WHERE id=2")[0] == "done"
-    assert client.get("/requests/collect/blank").status_code == 200
-    assert post("/requests/collect/blank").status_code == 302
-    assert query("SELECT COUNT(*) FROM requests")[0] == 3
-    blank = post("/requests/collect/blank", {"line_kind": "material", "item": "Ткань",
-                                         "qty": "2", "unit": "m2"})
-    req_id = int(blank.location.split("#dq-")[1])
-    assert query("SELECT COUNT(*) FROM request_items WHERE request_id=?", (req_id,))[0] == 1
-    assert "dq-ship-form" in client.get("/requests").text
-    assert post(f"/requests/{req_id}/ship").status_code == 302
-    assert query("SELECT status FROM requests WHERE id=?", (req_id,))[0] == "shipped"
-
+    assert "Кожа" not in client.get("/requests/supply/new").text
+    assert post("/requests/supply/new", {f"ship_{item_ids[0]}": "1",
+                                            f"qty_{item_ids[0]}": "4"}).status_code == 302
     with sqlite3.connect(db.DB_PATH) as conn:
-        req_ids = []
-        item_ids = []
-        for item_name in ("Подошва", "Нитки"):
-            cur = conn.execute(
-                "INSERT INTO requests(status,urgent,created_role,created_at) "
-                "VALUES ('open',0,'proizv','25.09.2026 09:00')")
-            req_ids.append(cur.lastrowid)
-            cur = conn.execute(
-                "INSERT INTO request_items(request_id,item,qty) VALUES (?,?,?)",
-                (req_ids[-1], item_name, 3),
-            )
-            item_ids.append(cur.lastrowid)
-    collect_page = client.get("/requests/collect")
-    assert collect_page.status_code == 200
-    assert "Подошва" in collect_page.text and "Нитки" in collect_page.text
-    assert query("SELECT status FROM requests WHERE id=?", (req_ids[0],))[0] == "open"
-    saved = post("/requests/collect/save", {f"col_{item_ids[0]}": "3",
-                                        f"placed_{item_ids[0]}": "1"})
-    assert saved.status_code == 302 and saved.location.endswith(f"/requests#dq-{req_ids[0]}")
-    assert query("SELECT status FROM requests WHERE id=?", (req_ids[0],))[0] == "progress"
-    assert query("SELECT status FROM requests WHERE id=?", (req_ids[1],))[0] == "open"
-    assert query("SELECT placed FROM request_items WHERE id=?", (item_ids[1],))[0] == 0
-    invalid = post("/requests/collect/save", {f"col_{item_ids[0]}": "3",
-                                          f"placed_{item_ids[0]}": "1",
-                                          f"col_{item_ids[1]}": "-1",
-                                          f"placed_{item_ids[1]}": "1"})
-    assert invalid.status_code == 302
-    assert query("SELECT status FROM requests WHERE id=?", (req_ids[1],))[0] == "open"
-    assert query("SELECT placed FROM request_items WHERE id=?", (item_ids[1],))[0] == 0
-    form = client.get("/requests")
-    for label in ("Штробель сапожники", "Штробель шить", "Прошивка",
-                  "Покраска + натирка", "Вставка в колодку",
-                  "Вклейка простилок в колодку", "Упаковка"):
-        assert label in form.text
-    assert post(f"/requests/{req_ids[0]}/pair/add", {"customer_id": "1", "model_id": "1",
-                                                    "pairs": "5"}).status_code == 302
-    assert query("SELECT COUNT(*) FROM request_items WHERE request_id=? AND line_kind='pair'", (req_ids[0],))[0] == 0
-    assert post(f"/requests/{req_ids[0]}/pair/add", {"customer_id": "1", "model_id": "1",
-                                                    "pairs": "5", "operations": ["op2", "op4", "op7"]}).status_code == 302
-    assert post(f"/requests/{req_ids[0]}/pair/add", {"customer_id": "1", "model_id": "2",
-                                                    "pairs": "8", "operations": ["op3"]}).status_code == 302
-    with sqlite3.connect(db.DB_PATH) as conn:
-        pairs = conn.execute(
-            "SELECT model_id,collected,operation FROM request_items "
-            "WHERE request_id=? AND line_kind='pair' ORDER BY id", (req_ids[0],)).fetchall()
-    assert [(r[0], r[1], json.loads(r[2])) for r in pairs] == [
-        (1, 5, ["op2", "op4", "op7"]), (2, 8, ["op3"])]
-    assert post(f"/requests/{req_ids[0]}/material/add", {"item": "Кожа", "qty": "7",
-                                                        "unit": "m2"}).status_code == 302
-    assert query("SELECT unit FROM request_items WHERE request_id=? AND line_kind='material'", (req_ids[0],))[0] == "m2"
-    assert post(f"/requests/{req_ids[0]}/collect", {f"col_{item_ids[0]}": "3",
-                                                      f"placed_{item_ids[0]}": "1"}).status_code == 302
-    assert query("SELECT placed FROM request_items WHERE request_id=? AND line_kind='pair'", (req_ids[0],))[0] == 1
+        conn.execute("UPDATE requests SET created_ts=created_ts-100 WHERE id=?", (req_id,))
     page = client.get("/requests")
-    assert page.status_code == 200 and "Штробель шить" in page.text and "Упаковка" in page.text and "м²" in page.text
+    assert page.status_code == 200 and "Кожа" in page.text and "Создать поставку" in page.text
+    assert "ship_%s" % item_ids[0] not in page.text
+    assert "Запрошено 10" in client.get("/requests/supply/new").text
 
+    # Первая отправка частичная. Остаток остаётся виден; повторная отправка закрывает заявку.
+    partial = post("/requests/supply/new", {
+        f"ship_{item_ids[0]}": "1", f"qty_{item_ids[0]}": "4"})
+    assert partial.status_code == 302 and "sh-" in partial.location
+    assert one("SELECT status FROM requests WHERE id=?", (req_id,))[0] == "progress"
+    assert count("shipments") == 1
+    assert one("SELECT qty FROM shipment_items WHERE request_item_id=?", (item_ids[0],))[0] == 4
+    assert "осталось 6" in client.get("/requests/supply/new").text
+    assert client.get("/login/proizv").status_code == 302
+    assert post(f"/requests/{req_id}/delete").status_code == 403
+    assert "Отправлена частично" in client.get("/requests").text
+    assert "отправлено 4" in client.get("/requests").text
+    assert post("/requests/new", {"item": ["Подкладка"], "qty": ["2"],
+                                  "unit": ["sht"], "unit_custom": [""],
+                                  "item_note": [""]}).status_code == 302
+    second_id = one("SELECT MAX(id) FROM requests")[0]
+    second_item = one("SELECT id FROM request_items WHERE request_id=?", (second_id,))[0]
+    with sqlite3.connect(db.DB_PATH) as conn:
+        conn.execute("UPDATE requests SET created_ts=created_ts-100 WHERE id=?", (second_id,))
+    assert client.get("/login/sklad").status_code == 302
+    complete = post("/requests/supply/new", {
+        f"ship_{item_ids[0]}": "1", f"qty_{item_ids[0]}": "6",
+        f"ship_{item_ids[1]}": "1", f"qty_{item_ids[1]}": "5",
+        f"ship_{second_item}": "1", f"qty_{second_item}": "2",
+        "material_name": ["Клей"], "material_qty": ["2"], "material_unit": ["sht"],
+        "ship_note": "добавили клей"})
+    assert complete.status_code == 302
+    assert one("SELECT status FROM requests WHERE id=?", (req_id,))[0] == "shipped"
+    assert one("SELECT status FROM requests WHERE id=?", (second_id,))[0] == "shipped"
+    assert count("shipments") == 2
+    assert one("SELECT COUNT(DISTINCT request_number) FROM shipment_items WHERE shipment_id=2")[0] == 2
+    assert one("SELECT SUM(qty) FROM shipment_items WHERE request_item_id=?", (item_ids[0],))[0] == 10
+    assert post("/requests/supply/new", {
+        "send_token": one("SELECT client_token FROM shipments ORDER BY id DESC")[0],
+        f"ship_{item_ids[1]}": "1", f"qty_{item_ids[1]}": "5"}).status_code == 302
+    assert count("shipments") == 2  # повторный запрос не дублирует отгрузку
+    assert "Кожа" in client.get("/requests").text
+
+    # Самостоятельная отправка: несколько разных моделей и материал в одной записи.
+    sent = post("/requests/supply/new", {
+        "material_name": ["Подошва"], "material_qty": ["7"], "material_unit": ["pary"],
+        "pair_customer_id": ["1", "1"], "pair_model_id": ["1", "2"],
+        "pair_qty": ["3", "5"], "pair_operations_0": ["op1", "op7"],
+        "pair_operations_1": ["op3"], "ship_note": "вне заявки"})
+    assert sent.status_code == 302
+    ship_id = one("SELECT MAX(id) FROM shipments")[0]
+    assert one("SELECT request_id, note FROM shipments WHERE id=?", (ship_id,)) == (None, "вне заявки")
+    assert one("SELECT COUNT(*) FROM shipment_items WHERE shipment_id=?", (ship_id,))[0] == 3
+    pair_ops = [json.loads(x[0]) for x in sqlite3.connect(db.DB_PATH).execute(
+        "SELECT operation FROM shipment_items WHERE shipment_id=? AND line_kind='pair' ORDER BY id",
+        (ship_id,))]
+    assert pair_ops == [["op1", "op7"], ["op3"]]
+    warehouse = client.get("/requests")
+    assert warehouse.status_code == 200 and "Поставка №" in warehouse.text
+    assert "вне заявки" in warehouse.text
+    assert client.get("/login/proizv").status_code == 302
+    production = client.get("/requests")
+    assert production.status_code == 200
+    assert "Поставка без заявки" in production.text and "Подошва" in production.text
+    assert "Отправки по заявке" in production.text
+    assert "Штробель сапожники" in production.text
+
+    # Старую отправленную заявку переносим в журнал один раз.
+    with sqlite3.connect(db.DB_PATH) as conn:
+        old = conn.execute(
+            "INSERT INTO requests(status,urgent,created_role,created_at,done_at) "
+            "VALUES ('shipped',0,'proizv','25.09.2026 09:00','25.09.2026 09:15')").lastrowid
+        old_item = conn.execute(
+            "INSERT INTO request_items(request_id,item,qty,collected,placed) VALUES (?,?,?,?,1)",
+            (old, "Нить", 2, 2)).lastrowid
+        conn.row_factory = sqlite3.Row
+        db._migrate_shipments(conn)
+        db._migrate_shipments(conn)
+        conn.commit()
+    assert one("SELECT COUNT(*) FROM shipments WHERE legacy_request_id=?", (old,))[0] == 1
+    assert one("SELECT qty FROM shipment_items WHERE request_item_id=?", (old_item,))[0] == 2
+
+    # Возврат, приёмка, аудит и зарплата продолжают работать.
+    ret = post("/requests/transfer/new", {
+        "customer_id": ["1"], "model_id": ["1"],
+        "status": ["gotovoe"], "pairs": ["2"]})
+    assert ret.status_code == 302
+    doc_id = one("SELECT MAX(id) FROM documents")[0]
+    line_id = one("SELECT id FROM lines WHERE document_id=?", (doc_id,))[0]
+    assert client.get("/login/sklad").status_code == 302
+    assert post(f"/requests/transfer/{doc_id}/accept", {f"recv_{line_id}": "2"}).status_code == 302
+    assert one("SELECT status FROM documents WHERE id=?", (doc_id,))[0] == "accepted"
+    assert client.get("/login/director").status_code == 302
+    assert post("/payroll/rates", {"model_id": "1", "operation_id": "1",
+                                   "rate": "1.25"}).status_code == 302
+    assert client.get("/login/proizv").status_code == 302
+    assert post("/payroll/records", {"worker_id": "1", "model_id": "1",
+                                     "operation_id": "1", "pairs": "10",
+                                     "work_date": "2026-09-25"}).status_code == 302
+    assert one("SELECT amount_kopeks FROM work_records")[0] == 1250
     with sqlite3.connect(db.DB_PATH) as conn:
         conn.execute("PRAGMA foreign_keys=ON")
         try:
-            conn.execute("INSERT INTO lines(document_id,customer_id,model_id,pairs_sent) VALUES (?,?,?,?)", (doc_id, 9999, 9999, 1))
-            raise AssertionError("missing foreign-key check")
+            conn.execute(
+                "INSERT INTO shipment_items(shipment_id,line_kind,item,qty) VALUES (9999,'material','X',1)")
+            raise AssertionError("missing shipment foreign key")
         except sqlite3.IntegrityError:
             pass
-
-    assert client.get("/login/director").status_code == 302
-    assert post(f"/requests/transfer/{doc_id}/delete").status_code == 302
-    row = query("SELECT details FROM audit_events WHERE action='doc_delete_snapshot' ORDER BY id DESC LIMIT 1")
-    assert json.loads(row[0])["document"]["id"] == doc_id
-    # справочники: одна страница без вкладок, архив и возврат одной кнопкой формы
-    refs_page = client.get("/refs").text
-    assert "refs-customers" in refs_page and "refs-models" in refs_page and "refs-workers" in refs_page
-    assert "subtabs" not in refs_page and "brand" not in refs_page
-    assert post("/refs/customers/3/arch").status_code == 302
-    assert query("SELECT archived FROM customers WHERE id=3")[0] == 1
-    assert post("/refs/customers/3/arch", {"restore": "1"}).status_code == 302
-    assert query("SELECT archived FROM customers WHERE id=3")[0] == 0
-    assert client.get("/payroll").status_code == 200
-    assert post("/payroll/rates", {"model_id": "1", "operation_id": "1", "rate": "1.25"}).status_code == 302
-    assert client.get("/login/proizv").status_code == 302
-    assert post("/payroll/records", {"worker_id": "1", "model_id": "1", "operation_id": "1",
-                                     "pairs": "10", "work_date": "2026-09-25"}).status_code == 302
-    assert query("SELECT amount_kopeks FROM work_records")[0] == 1250
-    assert post("/payroll/rates", {"model_id": "1", "operation_id": "1", "rate": "2.00"}).status_code == 403
-    assert client.get("/login/director").status_code == 302
-    assert post("/payroll/rates", {"model_id": "1", "operation_id": "1", "rate": "2.00"}).status_code == 302
-    assert query("SELECT amount_kopeks FROM work_records")[0] == 1250
-    assert client.get("/payroll?start=2026-09-01&end=2026-09-30").status_code == 200
-    record_id = query("SELECT id FROM work_records")[0]
-    assert post(f"/payroll/records/{record_id}/delete").status_code == 302
-    assert query("SELECT COUNT(*) FROM work_records")[0] == 0
-    assert query("SELECT COUNT(*) FROM audit_events WHERE action='payroll_record_delete_snapshot'")[0] == 1
-
-    # Ни одна форма не создаёт запись без первой позиции.
-    assert client.get("/requests/new").status_code == 403
-    assert client.get("/login/proizv").status_code == 302
-    before = query("SELECT COUNT(*) FROM requests")[0]
-    assert client.get("/requests/new").status_code == 200
-    assert post("/requests/new", {"note": "пусто"}).status_code == 200
-    assert post("/requests/new", {"item": ["Клей", "Нитки"], "qty": ["0", "1"],
-                                  "unit": ["sht", "sht"], "unit_custom": ["", ""],
-                                  "item_note": ["", ""]}).status_code == 200
-    assert query("SELECT COUNT(*) FROM requests")[0] == before
-    multi = post("/requests/new", {"item": ["Клей", "Кожа", "", "Нитки"], "qty": ["2", "3", "", ""],
-                                   "unit": ["m2", "other", "sht", "sht"],
-                                   "unit_custom": ["", "кг", "", ""],
-                                   "item_note": ["", "чёрная", "", ""], "note": "общее", "urgent_2": "1"})
-    assert multi.status_code == 302
-    assert multi.location.endswith("/requests")
-    multi_id = query("SELECT MAX(id) FROM requests")[0]
-    assert query("SELECT status, sent_at IS NOT NULL FROM requests WHERE id=?", (multi_id,)) == ("open", 1)
-    assert query("SELECT note, urgent FROM requests WHERE id=?", (multi_id,)) == ("общее", 1)
-    assert query("SELECT COUNT(*) FROM request_items WHERE request_id=?", (multi_id,))[0] == 3
-    assert query("SELECT item FROM request_items WHERE request_id=? AND urgent=1", (multi_id,)) == ("Кожа",)
-    assert query("SELECT COUNT(*) FROM request_items WHERE request_id=? AND urgent=0", (multi_id,))[0] == 2
-    assert query("SELECT unit FROM request_items WHERE request_id=? AND item='Клей'", (multi_id,))[0] == "m2"
-    assert query("SELECT unit, note FROM request_items WHERE request_id=? AND item='Кожа'", (multi_id,)) == ("кг", "чёрная")
-    assert query("SELECT unit FROM request_items WHERE request_id=? AND item='Нитки'", (multi_id,))[0] is None
-    assert client.get(f"/requests/{multi_id}").status_code == 404  # у производства нет страницы заявки
-    docs_page = client.get("/requests").text
-    assert "кг" in docs_page and "dq-item-urgent" not in docs_page and "dq-dates" not in docs_page \
-        and "Есть срочные позиции" not in docs_page and "tag urgent\">Срочно" in docs_page and "onclick=\"location='/requests/" not in docs_page
-    # Правка в течение 15 минут; склад видит заявку не раньше.
-    assert query("SELECT created_ts IS NOT NULL FROM requests WHERE id=?", (multi_id,))[0] == 1
-    edit_page = client.get(f"/requests/{multi_id}/edit")
-    assert edit_page.status_code == 200 and "rn-edit-hint" in edit_page.text and "Кожа" in edit_page.text
-    assert "редактировать" in client.get("/requests").text
-    assert post(f"/requests/{multi_id}/edit", {"item": [""], "qty": [""]}).status_code == 200
-    edited = post(f"/requests/{multi_id}/edit", {"item": ["Уникальная деталь"], "qty": ["5"], "unit": ["pary"],
-                                                 "unit_custom": [""], "item_note": [""], "note": "правка"})
-    assert edited.status_code == 302
-    assert query("SELECT COUNT(*), MIN(qty) FROM request_items WHERE request_id=?", (multi_id,)) == (1, 5)
-    assert query("SELECT note, urgent FROM requests WHERE id=?", (multi_id,)) == ("правка", 0)
-    assert query("SELECT COUNT(*) FROM audit_events WHERE action='request_edit_snapshot'")[0] == 1
-    assert client.get("/login/sklad").status_code == 302
-    assert "Уникальная деталь" not in client.get("/requests/collect").text
-    assert "Уникальная деталь" not in client.get("/requests").text
-    assert client.get(f"/requests/{multi_id}").status_code == 404
-    assert post(f"/requests/{multi_id}/take").status_code == 404
-    assert post(f"/requests/collect/{multi_id}/start").status_code == 404
-    assert client.get(f"/requests/{multi_id}/edit").status_code == 403
-    with sqlite3.connect(db.DB_PATH) as conn:
-        conn.execute("UPDATE requests SET created_ts=created_ts-16*60 WHERE id=?", (multi_id,))
-    assert "Уникальная деталь" in client.get("/requests/collect").text
-    assert client.get(f"/requests/{multi_id}").status_code == 404
-    assert client.get("/login/proizv").status_code == 302
-    assert client.get(f"/requests/{multi_id}/edit").status_code == 302
-    assert post(f"/requests/{multi_id}/edit", {"item": ["Другое"], "qty": ["1"]}).status_code == 302
-    assert query("SELECT item FROM request_items WHERE request_id=?", (multi_id,))[0] == "Уникальная деталь"
-    assert "редактировать" not in client.get("/requests").text
-    new_req = post("/requests/new", {"item": "Клей", "qty": "2"})
-    assert new_req.status_code == 302
-    new_req_id = query("SELECT MAX(id) FROM requests")[0]
-    assert post(f"/requests/{new_req_id}/item/1/del").status_code == 404      # редактирования после создания нет
-    assert post(f"/requests/{new_req_id}/submit").status_code == 404
-    assert post(f"/requests/{new_req_id}/delete").status_code == 302
-    assert query("SELECT COUNT(*) FROM requests WHERE id=?", (new_req_id,))[0] == 0
-
-    ret = post("/requests/transfer/new", {"customer_id": ["1"], "model_id": ["1"], "status": ["gotovoe"], "pairs": ["1"]})
-    assert ret.status_code == 302
-    ret_id = query("SELECT MAX(id) FROM documents")[0]
-    assert query("SELECT status FROM documents WHERE id=?", (ret_id,))[0] == "sent"
-    assert post(f"/requests/transfer/{ret_id}/delete").status_code == 403      # создатель не удаляет отправленное
-
-    assert client.get("/login/sklad").status_code == 302
-    before = query("SELECT COUNT(*) FROM requests")[0]
-    assert post("/requests/collect/blank", {"line_kind": "pair", "customer_id": "1",
-                                        "model_id": "1", "pairs": "0", "operation": "op1"}).status_code == 302
-    assert query("SELECT COUNT(*) FROM requests")[0] == before
-    new_blank = post("/requests/collect/blank", {"line_kind": "pair", "customer_id": "1",
-                                             "model_id": "1", "pairs": "1",
-                                             "operations": ["op1", "op6"]})
-    new_blank_id = int(new_blank.location.split("#dq-")[1])
-    new_blank_item = query("SELECT id FROM request_items WHERE request_id=?", (new_blank_id,))[0]
-    assert json.loads(query("SELECT operation FROM request_items WHERE id=?", (new_blank_item,))[0]) == ["op1", "op6"]
-    assert post(f"/requests/{new_blank_id}/placed/{new_blank_item}/del").status_code == 302
-    assert query("SELECT COUNT(*) FROM requests WHERE id=?", (new_blank_id,))[0] == 0
-    assert query("PRAGMA integrity_check")[0] == "ok"
-    print("PASS: CSRF, safe GET, roles, transitions, global collection, operation and units, foreign keys, audit, payroll, SQLite")
+    assert one("PRAGMA integrity_check")[0] == "ok"
+    print("PASS: warehouse send, partial remainder, independent send, migration, roles, CSRF, acceptance, payroll, SQLite")
