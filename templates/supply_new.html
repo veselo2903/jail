@@ -34,7 +34,14 @@
   <details class="sklad-unassigned-materials">
     <summary>Дополнительные материалы вне партии</summary>
     <div class="sklad-unassigned-content">
-      <div class="shipment-material-rows sklad-unassigned-material-list"></div>
+      <div class="shipment-material-rows sklad-unassigned-material-list">
+        <div class="shipment-extra-row sklad-unassigned-material-row">
+          <div><label>Материал</label><input name="material_name" placeholder="Название"></div>
+          <div><label>Количество</label><input name="material_qty" type="number" min="1" max="1000000" inputmode="numeric"></div>
+          <div><label>Ед.</label><select name="material_unit">{% for key, title in UNITS.items() %}<option value="{{ key }}">{{ title }}</option>{% endfor %}</select></div>
+          <button class="btn grey sm shipment-remove" type="button" title="Очистить материал">×</button>
+        </div>
+      </div>
       <button class="btn grey sm sklad-add-material-btn" type="button" data-add-material>+ Материал</button>
     </div>
   </details>
@@ -182,7 +189,11 @@
    }
    if(e.target.classList.contains('shipment-remove')){
      const row=e.target.closest('.shipment-extra-row')||e.target.closest('.shipment-party');
-     if(row)row.remove();
+     if(row&&row.classList.contains('sklad-unassigned-material-row')&&
+        row.parentElement.querySelectorAll('.sklad-unassigned-material-row').length===1){
+       row.querySelectorAll('input').forEach(function(input){input.value=''});
+       row.querySelector('select').selectedIndex=0;
+     }else if(row)row.remove();
      form.querySelectorAll('.sklad-party-number').forEach(function(label,index){label.textContent=String(index+1)});
    }
  });
