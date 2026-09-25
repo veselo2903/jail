@@ -34,7 +34,7 @@ a{color:var(--blue);text-decoration:none}
 
 /* ---- Боковое меню ---- */
 .side{width:194px;flex:none;background:linear-gradient(180deg,var(--nav),var(--nav2));
-  color:#a9bbd4;padding:16px 10px;position:sticky;top:0;height:100vh;align-self:flex-start}
+  color:#a9bbd4;padding:16px 10px;position:sticky;top:0;height:100vh;align-self:flex-start;display:flex;flex-direction:column}
 .side a.nav{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:11px;
   color:#a9bbd4;font-weight:600;font-size:14.5px;margin-bottom:3px;
   transition:background .15s var(--ease-out),color .15s var(--ease-out)}
@@ -48,14 +48,10 @@ a{color:var(--blue);text-decoration:none}
 
 /* ---- Основная область ---- */
 .app{flex:1;min-width:0;display:flex;flex-direction:column}
-.who{display:flex;align-items:center;gap:12px;justify-content:flex-end;
-  padding:14px 20px;color:var(--muted);font-size:15px;border-bottom:1px solid var(--line);
-  background:rgba(255,255,255,.6)}
-.who b{color:var(--ink)}
-.who .rn-title{flex:1;min-width:0;margin:0;font-size:15px;font-weight:700;line-height:1.25;color:var(--ink)}
-.who .logout{display:inline-block;padding:8px 14px;border:1px solid var(--line2);
-  border-radius:9px;color:var(--muted);font-size:14px;font-weight:600}
-.who .logout:hover{background:var(--surface2);color:var(--ink)}
+.side-user{margin-top:auto;padding:14px 8px 4px;border-top:1px solid rgba(255,255,255,.12);color:#dce7f7}
+.side-user-role{display:block;padding:0 4px 8px;font-size:13px;font-weight:700;color:#fff}
+.side-user-logout{display:flex;align-items:center;justify-content:center;padding:8px 10px;border:1px solid rgba(255,255,255,.25);border-radius:9px;color:#c5d4e8;font-size:13px;font-weight:600}
+.side-user-logout:hover{background:rgba(255,255,255,.1);color:#fff}
 .wrap{max-width:900px;width:100%;margin:0 auto;padding:20px 18px 44px}
 
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
@@ -162,14 +158,16 @@ footer{color:var(--faint);font-size:12px;text-align:center;padding:18px}
   /* меню внизу экрана, а не сверху */
   .side{width:100%;height:auto;position:fixed;top:auto;bottom:0;left:0;right:0;z-index:10;
     padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));
-    display:flex;align-items:center;justify-content:space-around;gap:2px;box-shadow:0 -4px 16px rgba(10,20,40,.18)}
+    display:flex;flex-direction:row;align-items:center;justify-content:space-around;gap:2px;box-shadow:0 -4px 16px rgba(10,20,40,.18)}
   .app{padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
   /* все пункты меню делят ширину поровну и не выходят за экран */
   .side a.nav{flex:1 1 0;min-width:0;flex-direction:column;justify-content:center;gap:3px;padding:8px 2px;
     font-size:10.5px;margin:0;white-space:nowrap;text-align:center;overflow:hidden;text-overflow:ellipsis}
   .side a.nav .b{position:absolute;top:3px;left:50%;margin:0;transform:translateX(4px);min-width:17px;height:17px;font-size:11px}
   .side a.nav{position:relative}
-  .who{padding:10px 16px}
+  .side-user{margin:0 2px;padding:2px 3px 0;border-top:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:58px}
+  .side-user-role{padding:0;font-size:10px;line-height:1.1;max-width:62px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .side-user-logout{padding:3px 5px;border:0;font-size:10px;line-height:1.1}
   .hero .big{font-size:52px}
   th,td{padding:9px 8px;font-size:14px}
   th{font-size:11.5px;text-transform:none;letter-spacing:0}
@@ -211,10 +209,13 @@ footer{color:var(--faint);font-size:12px;text-align:center;padding:18px}
   <a class="nav {{ 'on' if ep=='update' }}" href="{{ url_for('update') }}">
     <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg>Обновление</a>
   {% endif %}
+  <div class="side-user sklad-side-user">
+    <span class="side-user-role">{{ role_name }}</span>
+    <a class="side-user-logout" href="{{ url_for('logout') }}">выйти</a>
+  </div>
 </nav>
 {% endif %}
 <div class="app">
-  {% if role %}<div class="who">{% block who_title %}{% endblock %}<b>{{ role_name }}</b><a href="{{ url_for('logout') }}" class="logout">выйти</a></div>{% endif %}
   <div class="wrap">
     {% with msgs = get_flashed_messages() %}
       {% for m in msgs %}<div class="flash">{{ m }}</div>{% endfor %}

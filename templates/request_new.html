@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Новая заявка — jail{% endblock %}
-{% block who_title %}<div class="rn-title">{% if edit_id %}Изменение заявки №{{ edit_id }}{% else %}Новая заявка «чего не хватает»{% endif %}</div>{% endblock %}
 {% block content %}
 {# Макрос одной карточки позиции: используется и для строк формы, и для шаблона клонирования #}
 {% macro item_card(n, row) %}

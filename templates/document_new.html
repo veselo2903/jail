@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block title %}Новая заявка — jail{% endblock %}
-{% block who_title %}<div class="rn-title">{{ 'Передача на производство' if kind=='OUT' else 'Возврат на склад' }}</div>{% endblock %}
 {% block content %}
 {# Одна карточка строки документа; используется и для формы, и для шаблона клонирования #}
 {% macro line_card(n, row) %}
