@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Новая заявка — jail{% endblock %}
+{% block who_title %}<div class="rn-title">Новая заявка «чего не хватает»</div>{% endblock %}
 {% block content %}
 {# Макрос одной карточки позиции: используется и для строк формы, и для шаблона клонирования #}
 {% macro item_card(n, row) %}
@@ -38,11 +39,6 @@
 
 <form method="post" action="{{ url_for('request_new') }}" class="rn-form" id="rn-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <div class="rn-title-card card">
-    <h3 class="rn-title">Новая заявка «чего не хватает»</h3>
-    <div class="small rn-hint">Одна заявка — несколько позиций. Нажмите «Добавить позицию», чтобы вписать следующую.</div>
-  </div>
-
   <div class="rn-items" id="rn-items">
     {% for row in rows %}{{ item_card(loop.index, row) }}{% endfor %}
   </div>
@@ -73,7 +69,6 @@
 .rn-items{display:grid;gap:12px}
 .rn-add-item{margin:12px 0}
 .rn-common{display:grid;gap:14px}
-.rn-hint{margin-top:-6px}
 /* Чекбокс «Срочно»: общий input{width:100%} растягивал его, поэтому размер задан явно */
 .rn-urgent{display:flex;align-items:center;gap:10px;margin:0;cursor:pointer;font-size:16px;font-weight:700;color:var(--ink)}
 .rn-urgent-checkbox{width:22px;height:22px;flex:0 0 22px;padding:0;margin:0;accent-color:#dc2626;cursor:pointer}

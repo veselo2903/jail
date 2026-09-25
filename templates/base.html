@@ -51,6 +51,7 @@ a{color:var(--blue);text-decoration:none}
   padding:14px 20px;color:var(--muted);font-size:15px;border-bottom:1px solid var(--line);
   background:rgba(255,255,255,.6)}
 .who b{color:var(--ink)}
+.who .rn-title{flex:1;min-width:0;margin:0;font-size:15px;font-weight:700;line-height:1.25;color:var(--ink)}
 .who .logout{display:inline-block;padding:8px 14px;border:1px solid var(--line2);
   border-radius:9px;color:var(--muted);font-size:14px;font-weight:600}
 .who .logout:hover{background:var(--surface2);color:var(--ink)}
@@ -167,8 +168,11 @@ footer{color:var(--faint);font-size:12px;text-align:center;padding:18px}
 
 @media(max-width:720px){
   body{flex-direction:column}
-  .side{width:100%;height:auto;position:sticky;top:0;z-index:10;padding:8px 8px;
-    display:flex;align-items:center;gap:4px;overflow-x:auto}
+  /* меню внизу экрана, а не сверху */
+  .side{width:100%;height:auto;position:fixed;top:auto;bottom:0;left:0;right:0;z-index:10;
+    padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));
+    display:flex;align-items:center;gap:4px;overflow-x:auto;box-shadow:0 -4px 16px rgba(10,20,40,.18)}
+  .app{padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
   .side .brand{padding:6px 8px 6px 6px;font-size:17px}
   .side a.nav{flex-direction:column;gap:3px;padding:8px 10px;font-size:11px;margin:0;
     white-space:nowrap;text-align:center}
@@ -217,7 +221,7 @@ footer{color:var(--faint);font-size:12px;text-align:center;padding:18px}
 </nav>
 {% endif %}
 <div class="app">
-  {% if role %}<div class="who"><b>{{ role_name }}</b><a href="{{ url_for('logout') }}" class="logout">выйти</a></div>{% endif %}
+  {% if role %}<div class="who">{% block who_title %}{% endblock %}<b>{{ role_name }}</b><a href="{{ url_for('logout') }}" class="logout">выйти</a></div>{% endif %}
   <div class="wrap">
     {% with msgs = get_flashed_messages() %}
       {% for m in msgs %}<div class="flash">{{ m }}</div>{% endfor %}
