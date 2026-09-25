@@ -194,6 +194,34 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert client.get(f"/requests/{multi_id}").status_code == 404  # у производства нет страницы заявки
     docs_page = client.get("/docs?tab=requests").text
     assert "кг" in docs_page and "dq-item-urgent" in docs_page and "onclick=\"location='/requests/" not in docs_page
+    # Правка в течение 15 минут; склад видит заявку не раньше.
+    assert query("SELECT created_ts IS NOT NULL FROM requests WHERE id=?", (multi_id,))[0] == 1
+    edit_page = client.get(f"/requests/{multi_id}/edit")
+    assert edit_page.status_code == 200 and "rn-edit-hint" in edit_page.text and "Кожа" in edit_page.text
+    assert "редактировать" in client.get("/docs?tab=requests").text
+    assert post(f"/requests/{multi_id}/edit", {"item": [""], "qty": [""]}).status_code == 200
+    edited = post(f"/requests/{multi_id}/edit", {"item": ["Уникальная деталь"], "qty": ["5"], "unit": ["pary"],
+                                                 "unit_custom": [""], "item_note": [""], "note": "правка"})
+    assert edited.status_code == 302
+    assert query("SELECT COUNT(*), MIN(qty) FROM request_items WHERE request_id=?", (multi_id,)) == (1, 5)
+    assert query("SELECT note, urgent FROM requests WHERE id=?", (multi_id,)) == ("правка", 0)
+    assert query("SELECT COUNT(*) FROM audit_events WHERE action='request_edit_snapshot'")[0] == 1
+    assert client.get("/login/sklad").status_code == 302
+    assert "Уникальная деталь" not in client.get("/docs/collect").text
+    assert "Уникальная деталь" not in client.get("/docs").text
+    assert client.get(f"/requests/{multi_id}").status_code == 404
+    assert post(f"/requests/{multi_id}/take").status_code == 404
+    assert post(f"/docs/collect/{multi_id}/start").status_code == 404
+    assert client.get(f"/requests/{multi_id}/edit").status_code == 403
+    with sqlite3.connect(db.DB_PATH) as conn:
+        conn.execute("UPDATE requests SET created_ts=created_ts-16*60 WHERE id=?", (multi_id,))
+    assert "Уникальная деталь" in client.get("/docs/collect").text
+    assert client.get(f"/requests/{multi_id}").status_code == 200
+    assert client.get("/login/proizv").status_code == 302
+    assert client.get(f"/requests/{multi_id}/edit").status_code == 302
+    assert post(f"/requests/{multi_id}/edit", {"item": ["Другое"], "qty": ["1"]}).status_code == 302
+    assert query("SELECT item FROM request_items WHERE request_id=?", (multi_id,))[0] == "Уникальная деталь"
+    assert "редактировать" not in client.get("/docs?tab=requests").text
     new_req = post("/requests/new", {"item": "Клей", "qty": "2"})
     assert new_req.status_code == 302
     new_req_id = query("SELECT MAX(id) FROM requests")[0]

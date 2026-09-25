@@ -2,7 +2,8 @@ import os
 import hmac
 import json
 import secrets
-from datetime import date
+import time
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 from flask import (
@@ -62,6 +63,9 @@ KIND_LINE_STATUSES = {
     "OUT":    ["zagotovka", "upakovka"],
     "RETURN": ["gotovoe"],
 }
+
+# Заявку производство может править, а склад её видит только после этого срока.
+EDIT_WINDOW = 15 * 60
 
 STATUS_LABEL = {"sent": "Отправлен", "accepted": "Принят"}
 
@@ -166,13 +170,34 @@ def _pending_accept_count(role):
     return g.db.execute(q, kinds).fetchone()["c"]
 
 
+def _sklad_visible_sql():
+    """Условие и параметры: склад видит новую заявку не раньше, чем через EDIT_WINDOW после создания."""
+    return ("(status IN ('progress','done') OR "
+            "(status='open' AND (created_ts IS NULL OR created_ts <= ?)))",
+            (int(time.time()) - EDIT_WINDOW,))
+
+
+def _hidden_from_sklad(r):
+    return (r["status"] == "open" and r["created_ts"] is not None
+            and r["created_ts"] > time.time() - EDIT_WINDOW)
+
+
+def _req_editable(r):
+    """Производство может править свою заявку в течение EDIT_WINDOW после создания."""
+    return (r["created_role"] == "proizv" and r["status"] == "open"
+            and r["created_ts"] is not None and time.time() < r["created_ts"] + EDIT_WINDOW)
+
+
+def _clock(ts):
+    return datetime.fromtimestamp(ts, db.TZ).strftime("%H:%M")
+
+
 def _open_requests_count():
     """Сколько заявок ждёт склад (новые + собираются)."""
     if getattr(g, "db", None) is None:
         return 0
-    return g.db.execute(
-        "SELECT COUNT(*) c FROM requests WHERE status IN ('open','progress','done')"
-    ).fetchone()["c"]
+    cond, args = _sklad_visible_sql()
+    return g.db.execute("SELECT COUNT(*) c FROM requests WHERE " + cond, args).fetchone()["c"]
 
 
 @app.context_processor
@@ -292,6 +317,7 @@ def _request_detail(r):
     shipped = r["status"] == "shipped"
     return dict(
         note=r["note"], ship_note=r["ship_note"] if shipped else None, shipped=shipped,
+        visible_at=_clock(r["created_ts"] + EDIT_WINDOW) if _req_editable(r) else None,
         sent_at=r["sent_at"], done_at=r["done_at"],
         need=[i for i in items if i["source"] == "req"],
         added=[i for i in items if i["source"] == "sklad"] if shipped else [],
@@ -330,6 +356,8 @@ def documents():
     # --- Заявки ---
     reqs = g.db.execute("SELECT * FROM requests ORDER BY id DESC").fetchall()
     for r in reqs:
+        if role == "sklad" and _hidden_from_sklad(r):
+            continue
         n = g.db.execute("SELECT COUNT(*) c FROM request_items WHERE request_id=?",
                          (r["id"],)).fetchone()["c"]
         if n == 0:
@@ -343,6 +371,8 @@ def documents():
             diff=0, has_recv=False, urgent=r["urgent"],
             need_action=need,
             can_del=(role == "proizv" and r["status"] in ("open", "progress")),
+            can_edit=(role == "proizv" and _req_editable(r)),
+            edit_url=url_for("request_edit", req_id=r["id"]),
             del_url=url_for("request_delete", req_id=r["id"]),
             url=None if role == "proizv" else url_for("request_view", req_id=r["id"]),
             detail=_request_detail(r) if role == "proizv" else None,
@@ -373,9 +403,9 @@ def docs_collect():
     """Склад: единый список позиций по открытым заявкам."""
     if session["role"] != "sklad":
         abort(403)
+    cond, args = _sklad_visible_sql()
     reqs = g.db.execute(
-        "SELECT * FROM requests WHERE status IN ('open','progress','done') "
-        "ORDER BY urgent DESC, id DESC").fetchall()
+        "SELECT * FROM requests WHERE " + cond + " ORDER BY urgent DESC, id DESC", args).fetchall()
     groups = []
     for r in reqs:
         items = g.db.execute(
@@ -391,9 +421,9 @@ def docs_collect_save():
     """Сохранить общий чек-лист без изменения не показанных заявок."""
     if session["role"] != "sklad":
         abort(403)
+    cond, args = _sklad_visible_sql()
     reqs = g.db.execute(
-        "SELECT * FROM requests WHERE status IN ('open','progress','done') "
-        "ORDER BY urgent DESC, id DESC").fetchall()
+        "SELECT * FROM requests WHERE " + cond + " ORDER BY urgent DESC, id DESC", args).fetchall()
     target = None
     changes = []
     starts = []
@@ -453,7 +483,7 @@ def docs_collect_start(req_id):
     if session["role"] != "sklad":
         abort(403)
     r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
-    if not r or r["status"] not in ("open", "progress", "done"):
+    if not r or r["status"] not in ("open", "progress", "done") or _hidden_from_sklad(r):
         abort(404)
     if r["status"] == "open":
         g.db.execute("UPDATE requests SET status='progress', taken_at=? WHERE id=?",
@@ -963,28 +993,27 @@ def _parse_request_rows():
     return rows
 
 
-@app.route("/requests/new", methods=["GET", "POST"])
-@login_required
-def request_new():
-    if session["role"] != "proizv":
-        abort(403)
-    blank = {"item": "", "qty": "", "unit": "sht", "unit_custom": "", "item_note": "", "urgent": False}
-    if request.method == "GET":
-        return render_template("request_new.html", rows=[blank], blank=blank, note="")
+REQUEST_BLANK_ROW = {"item": "", "qty": "", "unit": "sht", "unit_custom": "", "item_note": "", "urgent": False}
+
+
+def _request_page(rows, note, edit=None):
+    """Одна и та же страница для создания и для правки заявки."""
+    return render_template(
+        "request_new.html", rows=rows or [REQUEST_BLANK_ROW], blank=REQUEST_BLANK_ROW, note=note,
+        edit_id=edit["id"] if edit else None,
+        edit_until=_clock(edit["created_ts"] + EDIT_WINDOW) if edit else None)
+
+
+def _read_request_form():
+    """Разобрать и проверить форму заявки: (строки формы, примечание, позиции, ошибка)."""
     rows = _parse_request_rows()
     note = (request.form.get("note") or "").strip()
-
-    def fail(message):
-        flash(message)
-        return render_template("request_new.html", rows=rows or [blank], blank=blank,
-                               note=note)
-
     parsed = []
     for n, row in enumerate(rows, 1):
         if not (row["item"] or row["qty"] or row["item_note"]):
             continue  # полностью пустая карточка — пропускаем
         if not row["item"]:
-            return fail("Позиция %d: укажите, что нужно." % n)
+            return rows, note, None, "Позиция %d: укажите, что нужно." % n
         qty = None
         if row["qty"]:
             try:
@@ -992,7 +1021,7 @@ def request_new():
             except ValueError:
                 qty = 0
             if qty <= 0:
-                return fail("Позиция %d: количество должно быть больше нуля." % n)
+                return rows, note, None, "Позиция %d: количество должно быть больше нуля." % n
         unit = None
         if qty is not None:
             if row["unit"] == "other":
@@ -1000,21 +1029,76 @@ def request_new():
             elif row["unit"] in UNITS:
                 unit = row["unit"]
             else:
-                return fail("Позиция %d: неизвестная единица измерения." % n)
+                return rows, note, None, "Позиция %d: неизвестная единица измерения." % n
         parsed.append((row["item"], qty, unit, row["item_note"] or None, 1 if row["urgent"] else 0))
     if not parsed:
-        return fail("Добавьте хотя бы одну позицию заявки.")
-    now = db.now_str()
-    cur = g.db.execute(
-        "INSERT INTO requests (status, urgent, created_role, created_at, sent_at, note) "
-        "VALUES ('open', ?, ?, ?, ?, ?)",
-        (1 if any(p[4] for p in parsed) else 0, "proizv", now, now, note))  # срочность заявки = есть срочная позиция
+        return rows, note, None, "Добавьте хотя бы одну позицию заявки."
+    return rows, note, parsed, None
+
+
+def _insert_request_items(req_id, parsed):
     for item, qty, unit, item_note, item_urgent in parsed:
         g.db.execute(
             "INSERT INTO request_items (request_id, item, qty, note, unit, urgent) VALUES (?, ?, ?, ?, ?, ?)",
-            (cur.lastrowid, item, qty, item_note, unit, item_urgent))
+            (req_id, item, qty, item_note, unit, item_urgent))
+
+
+@app.route("/requests/new", methods=["GET", "POST"])
+@login_required
+def request_new():
+    if session["role"] != "proizv":
+        abort(403)
+    if request.method == "GET":
+        return _request_page([REQUEST_BLANK_ROW], "")
+    rows, note, parsed, error = _read_request_form()
+    if error:
+        flash(error)
+        return _request_page(rows, note)
+    now = db.now_str()
+    cur = g.db.execute(
+        "INSERT INTO requests (status, urgent, created_role, created_at, created_ts, sent_at, note) "
+        "VALUES ('open', ?, ?, ?, ?, ?, ?)",
+        (1 if any(p[4] for p in parsed) else 0, "proizv", now, int(time.time()), now, note))  # срочность заявки = есть срочная позиция
+    _insert_request_items(cur.lastrowid, parsed)
     g.db.commit()
-    flash("Заявка №%d отправлена на склад." % cur.lastrowid)
+    flash("Заявка №%d создана. Склад увидит её через %d мин, до этого её можно изменить."
+          % (cur.lastrowid, EDIT_WINDOW // 60))
+    return redirect(url_for("documents", tab="requests"))
+
+
+@app.route("/requests/<int:req_id>/edit", methods=["GET", "POST"])
+@login_required
+def request_edit(req_id):
+    """Правка заявки производством: та же страница, что и при создании, но только первые 15 минут."""
+    if session["role"] != "proizv":
+        abort(403)
+    r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
+    if not r:
+        abort(404)
+    if not _req_editable(r):
+        flash("Заявку №%d уже нельзя изменить: прошло %d минут." % (req_id, EDIT_WINDOW // 60))
+        return redirect(url_for("documents", tab="requests"))
+    if request.method == "GET":
+        rows = []
+        for i in _load_req_items(req_id):
+            unit = i["unit"] or "sht"
+            known = unit in UNITS
+            rows.append({"item": i["item"], "qty": i["qty"] if i["qty"] is not None else "",
+                         "unit": unit if known else "other", "unit_custom": "" if known else unit,
+                         "item_note": i["note"] or "", "urgent": bool(i["urgent"])})
+        return _request_page(rows, r["note"] or "", edit=r)
+    rows, note, parsed, error = _read_request_form()
+    if error:
+        flash(error)
+        return _request_page(rows, note, edit=r)
+    _audit_snapshot("request_edit_snapshot", str(req_id),
+                    {"request": dict(r), "items": [dict(x) for x in _load_req_items(req_id)]})
+    g.db.execute("DELETE FROM request_items WHERE request_id=?", (req_id,))
+    _insert_request_items(req_id, parsed)
+    g.db.execute("UPDATE requests SET urgent=?, note=? WHERE id=?",
+                 (1 if any(p[4] for p in parsed) else 0, note, req_id))
+    g.db.commit()
+    flash("Заявка №%d изменена." % req_id)
     return redirect(url_for("documents", tab="requests"))
 
 
@@ -1023,7 +1107,7 @@ def request_new():
 def request_view(req_id):
     role = session["role"]
     r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
-    if not r or role == "proizv":
+    if not r or role == "proizv" or (role == "sklad" and _hidden_from_sklad(r)):
         abort(404)  # производство работает только со списком в /docs и формой /requests/new
     items = _load_req_items(req_id)
     can_take = (r["status"] == "open" and role == "sklad")
@@ -1172,7 +1256,7 @@ def request_take(req_id):
     if session["role"] != "sklad":
         abort(403)
     r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
-    if not r or r["status"] != "open":
+    if not r or r["status"] != "open" or _hidden_from_sklad(r):
         abort(404)
     g.db.execute("UPDATE requests SET status='progress', taken_at=? WHERE id=?",
                  (db.now_str(), req_id))

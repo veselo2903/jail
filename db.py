@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS requests (
     urgent       INTEGER NOT NULL DEFAULT 0,
     created_role TEXT NOT NULL,
     created_at   TEXT NOT NULL,
+    created_ts   INTEGER,     -- момент создания (unix, сек): окно редактирования и показ складу
     sent_at      TEXT,
     taken_at     TEXT,        -- склад начал собирать
     done_at      TEXT,        -- склад собрал / отправил
@@ -186,6 +187,8 @@ def _migrate(conn):
     rcols = [r["name"] for r in conn.execute("PRAGMA table_info(requests)")]
     if rcols and "ship_note" not in rcols:
         conn.execute("ALTER TABLE requests ADD COLUMN ship_note TEXT")
+    if rcols and "created_ts" not in rcols:
+        conn.execute("ALTER TABLE requests ADD COLUMN created_ts INTEGER")
     # старые типы документов A/B -> OUT, строкам проставляем статус
     conn.execute("""UPDATE lines SET status='zagotovka'
                     WHERE (status IS NULL OR status='') AND document_id IN

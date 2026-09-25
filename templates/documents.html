@@ -52,12 +52,17 @@
     </td>
     <td class="small">{{ x.created_at }}</td>
     <td class="num">
+      <div class="dq-actions">
+      {% if x.can_edit %}
+      <a class="btn grey sm dq-edit-btn" href="{{ x.edit_url }}" onclick="event.stopPropagation()">редактировать</a>
+      {% endif %}
       {% if x.can_del %}
-      <form method="post" action="{{ x.del_url }}" onclick="event.stopPropagation()"
+      <form class="dq-delete-form" method="post" action="{{ x.del_url }}" onclick="event.stopPropagation()"
             onsubmit="return confirm('Удалить {{ 'заявку' if x.group=='req' else 'документ' }} №{{ x.id }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn danger sm" type="submit">удалить</button>
       </form>
       {% endif %}
+      </div>
     </td>
   </tr>
   {% if x.detail %}
@@ -101,6 +106,7 @@
       </div>
       {% if x.detail.note %}<div class="dq-note small">Примечание к заявке: {{ x.detail.note }}</div>{% endif %}
       {% if x.detail.ship_note %}<div class="dq-ship-note small">Сообщение склада: {{ x.detail.ship_note }}</div>{% endif %}
+      {% if x.detail.visible_at %}<div class="dq-visible-hint small">Склад увидит заявку в {{ x.detail.visible_at }}. До этого её можно изменить.</div>{% endif %}
       <div class="dq-dates small">Создана {{ x.created_at }}{% if x.detail.done_at %} · отправлена складом {{ x.detail.done_at }}{% endif %}</div>
     </td>
   </tr>
@@ -122,10 +128,14 @@
 .dq-item-name{font-weight:650}
 .dq-item-qty,.dq-item-got{white-space:nowrap;font-variant-numeric:tabular-nums}
 .dq-added-title{margin-top:6px;font-weight:700}
-.dq-note,.dq-ship-note,.dq-dates{margin-top:8px}
+.dq-note,.dq-ship-note,.dq-dates,.dq-visible-hint{margin-top:8px}
+.dq-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.dq-actions form{margin:0}
 @media(max-width:720px){
   .dq-item{flex-wrap:wrap}.dq-item-main{flex-basis:100%}
-  .dq-table tr > :nth-child(5){display:none}   /* дата: она есть в раскрытой строке */
+  .dq-table tr > :nth-child(5),.dq-table tr > :nth-child(3){display:none}   /* дата и число позиций: есть в раскрытой строке */
+  .dq-actions{flex-direction:column;align-items:stretch}
+  .dq-actions .btn.sm{padding:7px 10px;font-size:13px}
   .dq-table td,.dq-table th{padding:9px 6px}
 }
 </style>
