@@ -177,7 +177,9 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
                                    "unit_custom": ["", "кг", "", ""],
                                    "item_note": ["", "чёрная", "", ""], "note": "общее", "urgent_2": "1"})
     assert multi.status_code == 302
-    multi_id = int(multi.location.rsplit("/", 1)[-1])
+    assert "/docs" in multi.location and "requests" in multi.location
+    multi_id = query("SELECT MAX(id) FROM requests")[0]
+    assert query("SELECT status, sent_at IS NOT NULL FROM requests WHERE id=?", (multi_id,)) == ("open", 1)
     assert query("SELECT note, urgent FROM requests WHERE id=?", (multi_id,)) == ("общее", 1)
     assert query("SELECT COUNT(*) FROM request_items WHERE request_id=?", (multi_id,))[0] == 3
     assert query("SELECT item FROM request_items WHERE request_id=? AND urgent=1", (multi_id,)) == ("Кожа",)
@@ -185,12 +187,15 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert query("SELECT unit FROM request_items WHERE request_id=? AND item='Клей'", (multi_id,))[0] == "m2"
     assert query("SELECT unit, note FROM request_items WHERE request_id=? AND item='Кожа'", (multi_id,)) == ("кг", "чёрная")
     assert query("SELECT unit FROM request_items WHERE request_id=? AND item='Нитки'", (multi_id,))[0] is None
-    assert "кг" in client.get(f"/requests/{multi_id}").text
+    assert client.get(f"/requests/{multi_id}").status_code == 404  # у производства нет страницы заявки
+    docs_page = client.get("/docs?tab=requests").text
+    assert "кг" in docs_page and "dq-item-urgent" in docs_page and "onclick=\"location='/requests/" not in docs_page
     new_req = post("/requests/new", {"item": "Клей", "qty": "2"})
-    new_req_id = int(new_req.location.rsplit("/", 1)[-1])
-    assert query("SELECT COUNT(*) FROM request_items WHERE request_id=?", (new_req_id,))[0] == 1
-    new_item_id = query("SELECT id FROM request_items WHERE request_id=?", (new_req_id,))[0]
-    assert post(f"/requests/{new_req_id}/item/{new_item_id}/del").status_code == 302
+    assert new_req.status_code == 302
+    new_req_id = query("SELECT MAX(id) FROM requests")[0]
+    assert post(f"/requests/{new_req_id}/item/1/del").status_code == 404      # редактирования черновика больше нет
+    assert post(f"/requests/{new_req_id}/submit").status_code == 404
+    assert post(f"/requests/{new_req_id}/delete").status_code == 302
     assert query("SELECT COUNT(*) FROM requests WHERE id=?", (new_req_id,))[0] == 0
 
     new_doc = post("/docs/new", {"customer_id": "1", "model_id": "1", "pairs": "1"})

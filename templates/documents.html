@@ -33,11 +33,11 @@
 {% endif %}
 
 {% if rows %}
-<div class="card flush">
-<table>
+<div class="card flush dq-list">
+<table class="dq-table">
   <tr><th>№</th><th>Документ</th><th class="num">Кол-во</th><th>Статус</th><th>Дата</th><th></th></tr>
   {% for x in rows %}
-  <tr class="linkrow" onclick="location='{{ x.url }}'">
+  <tr class="linkrow {{ 'dq-row' if x.detail }}" {% if x.detail %}data-dq-toggle="dq-{{ x.id }}"{% else %}onclick="location='{{ x.url }}'"{% endif %}>
     <td>{{ x.id }}</td>
     <td>
       <b>{{ x.title }}</b>
@@ -54,15 +54,88 @@
     <td class="num">
       {% if x.can_del %}
       <form method="post" action="{{ x.del_url }}" onclick="event.stopPropagation()"
-            onsubmit="return confirm('Удалить черновик №{{ x.id }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            onsubmit="return confirm('Удалить {{ 'заявку' if x.group=='req' else 'черновик' }} №{{ x.id }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn danger sm" type="submit">удалить</button>
       </form>
       {% endif %}
     </td>
   </tr>
+  {% if x.detail %}
+  <tr class="dq-detail" id="dq-{{ x.id }}" hidden>
+    <td class="dq-detail-cell" colspan="6">
+      <div class="dq-items">
+        {% for i in x.detail.need %}
+        <div class="dq-item">
+          <div class="dq-item-main">
+            <span class="dq-item-name">{{ i.item }}</span>
+            {% if i.urgent %}<span class="tag urgent dq-item-urgent">Срочно</span>{% endif %}
+            {% if i.note %}<div class="small dq-item-note">{{ i.note }}</div>{% endif %}
+          </div>
+          <div class="dq-item-qty">
+            {% if i.qty is not none %}{{ i.qty }}{% if i.unit %} <span class="small">{{ UNITS.get(i.unit, i.unit) }}</span>{% endif %}{% else %}—{% endif %}
+          </div>
+          {% if x.detail.shipped %}
+          <div class="dq-item-got">
+            {% if i.collected is not none %}
+              <span class="{{ 'diff-neg' if i.qty is not none and i.collected < i.qty else 'diff-zero' }}">положено {{ i.collected }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span>
+            {% else %}<span class="small">не положено</span>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+        {% if x.detail.added %}
+        <div class="dq-added-title small">Дополнительно положил склад</div>
+        {% for i in x.detail.added %}
+        <div class="dq-item dq-item-added">
+          <div class="dq-item-main">
+            {% if i.line_kind == 'pair' %}
+            <span class="dq-item-name">{{ i.customer }} — {{ i.model }}</span>
+            {% set names = operation_names(i.operation) %}
+            <div class="small dq-item-note">{{ names|join(', ') if names else LINE_STATUSES.get(i.status, 'Пары') }}</div>
+            {% else %}<span class="dq-item-name">{{ i.item }}</span>{% endif %}
+          </div>
+          <div class="dq-item-qty">{{ i.collected if i.collected is not none else '—' }} <span class="small">{{ 'пар' if i.line_kind == 'pair' else UNITS.get(i.unit, i.unit or '') }}</span></div>
+        </div>
+        {% endfor %}
+        {% endif %}
+      </div>
+      {% if x.detail.note %}<div class="dq-note small">Примечание к заявке: {{ x.detail.note }}</div>{% endif %}
+      {% if x.detail.ship_note %}<div class="dq-ship-note small">Сообщение склада: {{ x.detail.ship_note }}</div>{% endif %}
+      <div class="dq-dates small">Создана {{ x.created_at }}{% if x.detail.done_at %} · отправлена складом {{ x.detail.done_at }}{% endif %}</div>
+    </td>
+  </tr>
+  {% endif %}
   {% endfor %}
 </table>
 </div>
 {% endif %}
+
+<style>
+.dq-row{cursor:pointer}
+.dq-detail[hidden]{display:none}
+.dq-detail-cell{background:var(--surface2);padding:12px 16px}
+.dq-items{display:grid;gap:8px}
+.dq-item{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+  padding:8px 0;border-bottom:1px solid var(--line)}
+.dq-item:last-child{border-bottom:0}
+.dq-item-main{flex:1;min-width:0}
+.dq-item-name{font-weight:650}
+.dq-item-qty,.dq-item-got{white-space:nowrap;font-variant-numeric:tabular-nums}
+.dq-added-title{margin-top:6px;font-weight:700}
+.dq-note,.dq-ship-note,.dq-dates{margin-top:8px}
+@media(max-width:720px){
+  .dq-item{flex-wrap:wrap}.dq-item-main{flex-basis:100%}
+  .dq-table tr > :nth-child(5){display:none}   /* дата: она есть в раскрытой строке */
+  .dq-table td,.dq-table th{padding:9px 6px}
+}
+</style>
+<script>
+document.querySelectorAll('[data-dq-toggle]').forEach(function(row){
+  row.addEventListener('click',function(){
+    var d=document.getElementById(row.dataset.dqToggle);
+    if(d) d.hidden=!d.hidden;
+  });
+});
+</script>
 
 {% endblock %}

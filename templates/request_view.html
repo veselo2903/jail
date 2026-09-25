@@ -222,30 +222,6 @@
 {% endif %}
 
 {# ==================== ОТПРАВКА СКЛАДУ (производство, черновик) ==================== #}
-{% if r.status=='draft' and role=='proizv' %}
-  {% if items %}
-  <form method="post" action="{{ url_for('request_submit', req_id=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="btn green block" type="submit" style="font-size:17px;padding:15px">Отправить складу →</button>
-  </form>
-  <p class="small" style="margin:8px 4px 16px">Пока заявка в черновике, склад её не видит. Отправьте, когда список готов.</p>
-  {% endif %}
-{% endif %}
-
-{# Добавление строки (производство, черновик) #}
-{% if can_edit %}
-<div class="card">
-  <h3>Добавить позицию</h3>
-  <form method="post" action="{{ url_for('request_item_add', req_id=r.id) }}" class="grid"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div><label>Чего не хватает</label><input name="item" placeholder="модель, материал, размер…" required></div>
-    <div class="grid" style="grid-template-columns:140px 1fr">
-      <div><label>Кол-во (если есть)</label><input name="qty" type="number" min="1" inputmode="numeric" placeholder="—"></div>
-      <div><label>Единица / примечание</label><input name="note" placeholder="пар, метров, кв.м…"></div>
-    </div>
-    <button class="btn" type="submit">Добавить позицию</button>
-  </form>
-</div>
-{% endif %}
-
 {% if can_take %}
 <form method="post" action="{{ url_for('request_take', req_id=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <button class="btn green block" type="submit" style="font-size:17px;padding:15px">Начали собирать</button>
@@ -254,8 +230,6 @@
 
 {% if r.status=='open' and role=='sklad' %}
 <div class="card small">Новая заявка от производства. Нажмите «Начали собирать», когда возьмёте в работу.</div>
-{% elif r.status in ['progress','done'] and role=='proizv' %}
-<div class="card small">Склад собирает эту заявку.</div>
 {% elif r.status=='shipped' %}
 <div class="card small">Документ отправлен на производство{% if r.done_at %} · {{ r.done_at }}{% endif %}.</div>
 {% endif %}
@@ -263,7 +237,7 @@
 {% if can_delete %}
 <form method="post" action="{{ url_for('request_delete', req_id=r.id) }}"
       onsubmit="return confirm('Удалить заявку №{{ r.id }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <button class="btn danger" type="submit">{{ 'Удалить черновик' if r.status=='draft' else 'Удалить заявку' }}</button>
+  <button class="btn danger" type="submit">Удалить заявку</button>
 </form>
 {% endif %}
 

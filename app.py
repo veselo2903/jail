@@ -286,6 +286,18 @@ def _sort_key(created_at):
         return db.datetime.min
 
 
+def _request_detail(r):
+    """Содержимое заявки для раскрывающейся строки списка производства."""
+    items = _load_req_items(r["id"])
+    shipped = r["status"] == "shipped"
+    return dict(
+        note=r["note"], ship_note=r["ship_note"] if shipped else None, shipped=shipped,
+        sent_at=r["sent_at"], done_at=r["done_at"],
+        need=[i for i in items if i["source"] == "req"],
+        added=[i for i in items if i["source"] == "sklad"] if shipped else [],
+    )
+
+
 @app.route("/docs")
 @login_required
 def documents():
@@ -331,9 +343,11 @@ def documents():
             amount=str(n), unit="поз.",
             status=r["status"], status_label=REQ_STATUS[r["status"]], status_cls="rq-" + r["status"],
             diff=0, has_recv=False, urgent=r["urgent"],
-            need_action=need, can_del=(r["status"] == "draft" and role == "proizv"),
+            need_action=need,
+            can_del=(role == "proizv" and r["status"] in ("draft", "open", "progress")),
             del_url=url_for("request_delete", req_id=r["id"]),
-            url=url_for("request_view", req_id=r["id"]),
+            url=None if role == "proizv" else url_for("request_view", req_id=r["id"]),
+            detail=_request_detail(r) if role == "proizv" else None,
         ))
 
     n_doc = sum(1 for x in rows if x["group"] == "doc")
@@ -1065,16 +1079,18 @@ def request_new():
         parsed.append((row["item"], qty, unit, row["item_note"] or None, 1 if row["urgent"] else 0))
     if not parsed:
         return fail("Добавьте хотя бы одну позицию заявки.")
+    now = db.now_str()
     cur = g.db.execute(
-        "INSERT INTO requests (status, urgent, created_role, created_at, note) "
-        "VALUES ('draft', ?, ?, ?, ?)",
-        (1 if any(p[4] for p in parsed) else 0, "proizv", db.now_str(), note))  # срочность заявки = есть срочная позиция
+        "INSERT INTO requests (status, urgent, created_role, created_at, sent_at, note) "
+        "VALUES ('open', ?, ?, ?, ?, ?)",
+        (1 if any(p[4] for p in parsed) else 0, "proizv", now, now, note))  # срочность заявки = есть срочная позиция
     for item, qty, unit, item_note, item_urgent in parsed:
         g.db.execute(
             "INSERT INTO request_items (request_id, item, qty, note, unit, urgent) VALUES (?, ?, ?, ?, ?, ?)",
             (cur.lastrowid, item, qty, item_note, unit, item_urgent))
     g.db.commit()
-    return redirect(url_for("request_view", req_id=cur.lastrowid))
+    flash("Заявка №%d отправлена на склад." % cur.lastrowid)
+    return redirect(url_for("documents", tab="requests"))
 
 
 @app.route("/requests/<int:req_id>")
@@ -1082,18 +1098,16 @@ def request_new():
 def request_view(req_id):
     role = session["role"]
     r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
-    if not r:
-        abort(404)
-    if r["status"] == "draft" and role != "proizv":
+    if not r or role == "proizv":
+        abort(404)  # производство работает только со списком в /docs и формой /requests/new
+    if r["status"] == "draft":
         abort(404)
     items = _load_req_items(req_id)
-    can_edit = (r["status"] == "draft" and role == "proizv")
-    can_submit = (r["status"] == "draft" and role == "proizv" and len(items) > 0)
     can_take = (r["status"] == "open" and role == "sklad")
     can_collect = (r["status"] == "progress" and role == "sklad")
     # склад может отправить на производство, когда собирает или уже отметил «собрано»
     can_ship = (role == "sklad" and r["status"] in ("progress", "done"))
-    can_delete = (role == "director") or (role == "proizv" and r["status"] not in ("done", "shipped"))
+    can_delete = (role == "director")
     # показывать колонку «собрано», если склад собирает или уже что-то отмечено
     has_collected = any(i["collected"] is not None for i in items)
     customers = g.db.execute(
@@ -1109,42 +1123,10 @@ def request_view(req_id):
     if can_collect and not any(i["line_kind"] == "need" for i in items) and step == 1:
         step = 2
     return render_template("request_view.html", r=r, items=items,
-                           can_edit=can_edit, can_submit=can_submit,
                            can_take=can_take, can_collect=can_collect,
                            can_ship=can_ship, can_delete=can_delete,
                            has_collected=has_collected, step=step,
                            customers=customers, models=models)
-
-
-def _req_draft_owner(req_id):
-    r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
-    if not r:
-        abort(404)
-    if r["status"] != "draft" or session.get("role") != "proizv":
-        abort(403)
-    return r
-
-
-@app.route("/requests/<int:req_id>/item/add", methods=["POST"])
-@login_required
-def request_item_add(req_id):
-    _req_draft_owner(req_id)
-    item = (request.form.get("item") or "").strip()
-    if not item:
-        flash("Укажите, чего не хватает.")
-        return redirect(url_for("request_view", req_id=req_id))
-    try:
-        qty = int(request.form.get("qty"))
-        if qty <= 0:
-            qty = None
-    except (TypeError, ValueError):
-        qty = None
-    note = (request.form.get("note") or "").strip() or None
-    g.db.execute(
-        "INSERT INTO request_items (request_id, item, qty, note) VALUES (?, ?, ?, ?)",
-        (req_id, item, qty, note))
-    g.db.commit()
-    return redirect(url_for("request_view", req_id=req_id))
 
 
 def _req_progress_sklad(req_id):
@@ -1259,32 +1241,6 @@ def request_placed_del(req_id, item_id):
         return redirect(url_for("documents"))
     g.db.commit()
     return redirect(url_for("request_view", req_id=req_id, step=2))
-
-
-@app.route("/requests/<int:req_id>/item/<int:item_id>/del", methods=["POST"])
-@login_required
-def request_item_del(req_id, item_id):
-    _req_draft_owner(req_id)
-    g.db.execute("DELETE FROM request_items WHERE id=? AND request_id=?", (item_id, req_id))
-    if not g.db.execute("SELECT 1 FROM request_items WHERE request_id=?", (req_id,)).fetchone():
-        g.db.execute("DELETE FROM requests WHERE id=?", (req_id,))
-        g.db.commit()
-        return redirect(url_for("documents"))
-    g.db.commit()
-    return redirect(url_for("request_view", req_id=req_id))
-
-
-@app.route("/requests/<int:req_id>/submit", methods=["POST"])
-@login_required
-def request_submit(req_id):
-    _req_draft_owner(req_id)
-    if not _load_req_items(req_id):
-        flash("Нельзя отправить пустую заявку.")
-        return redirect(url_for("request_view", req_id=req_id))
-    g.db.execute("UPDATE requests SET status='open', sent_at=? WHERE id=?",
-                 (db.now_str(), req_id))
-    g.db.commit()
-    return redirect(url_for("request_view", req_id=req_id))
 
 
 @app.route("/requests/<int:req_id>/take", methods=["POST"])
