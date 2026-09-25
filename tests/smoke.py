@@ -105,8 +105,10 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert post("/requests/3/delete").status_code == 403
     assert query("SELECT status FROM requests WHERE id=3")[0] == "shipped"
     assert client.get("/login/sklad").status_code == 302
-    assert client.get("/requests/1").status_code == 200
-    assert client.get("/requests/2").status_code == 200
+    # отдельной страницы заявки нет ни у кого: заявки раскрываются в списке
+    assert client.get("/requests/1").status_code == 404
+    assert client.get("/requests/2").status_code == 404
+    assert "dq-take-form" in client.get("/requests").text      # у склада новая заявка раскрывается кнопкой «Начали собирать»
     assert query("SELECT status FROM requests WHERE id=1")[0] == "open"
     assert query("SELECT status FROM requests WHERE id=2")[0] == "done"
     assert client.get("/requests/collect/blank").status_code == 200
@@ -114,9 +116,9 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert query("SELECT COUNT(*) FROM requests")[0] == 3
     blank = post("/requests/collect/blank", {"line_kind": "material", "item": "Ткань",
                                          "qty": "2", "unit": "m2"})
-    req_id = int(blank.location.split("/requests/")[1].split("?")[0])
+    req_id = int(blank.location.split("#dq-")[1])
     assert query("SELECT COUNT(*) FROM request_items WHERE request_id=?", (req_id,))[0] == 1
-    assert "В заявке нет позиций." not in client.get(f"/requests/{req_id}").text
+    assert "dq-ship-form" in client.get("/requests").text
     assert post(f"/requests/{req_id}/ship").status_code == 302
     assert query("SELECT status FROM requests WHERE id=?", (req_id,))[0] == "shipped"
 
@@ -139,7 +141,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert query("SELECT status FROM requests WHERE id=?", (req_ids[0],))[0] == "open"
     saved = post("/requests/collect/save", {f"col_{item_ids[0]}": "3",
                                         f"placed_{item_ids[0]}": "1"})
-    assert saved.status_code == 302 and f"/requests/{req_ids[0]}?step=2" in saved.location
+    assert saved.status_code == 302 and saved.location.endswith(f"/requests#dq-{req_ids[0]}")
     assert query("SELECT status FROM requests WHERE id=?", (req_ids[0],))[0] == "progress"
     assert query("SELECT status FROM requests WHERE id=?", (req_ids[1],))[0] == "open"
     assert query("SELECT placed FROM request_items WHERE id=?", (item_ids[1],))[0] == 0
@@ -150,7 +152,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert invalid.status_code == 302
     assert query("SELECT status FROM requests WHERE id=?", (req_ids[1],))[0] == "open"
     assert query("SELECT placed FROM request_items WHERE id=?", (item_ids[1],))[0] == 0
-    form = client.get(f"/requests/{req_ids[0]}?step=2")
+    form = client.get("/requests")
     for label in ("Штробель сапожники", "Штробель шить", "Прошивка",
                   "Покраска + натирка", "Вставка в колодку",
                   "Вклейка простилок в колодку", "Упаковка"):
@@ -174,7 +176,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert post(f"/requests/{req_ids[0]}/collect", {f"col_{item_ids[0]}": "3",
                                                       f"placed_{item_ids[0]}": "1"}).status_code == 302
     assert query("SELECT placed FROM request_items WHERE request_id=? AND line_kind='pair'", (req_ids[0],))[0] == 1
-    page = client.get(f"/requests/{req_ids[0]}?step=2")
+    page = client.get("/requests")
     assert page.status_code == 200 and "Штробель шить" in page.text and "Упаковка" in page.text and "м²" in page.text
 
     with sqlite3.connect(db.DB_PATH) as conn:
@@ -264,7 +266,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     with sqlite3.connect(db.DB_PATH) as conn:
         conn.execute("UPDATE requests SET created_ts=created_ts-16*60 WHERE id=?", (multi_id,))
     assert "Уникальная деталь" in client.get("/requests/collect").text
-    assert client.get(f"/requests/{multi_id}").status_code == 200
+    assert client.get(f"/requests/{multi_id}").status_code == 404
     assert client.get("/login/proizv").status_code == 302
     assert client.get(f"/requests/{multi_id}/edit").status_code == 302
     assert post(f"/requests/{multi_id}/edit", {"item": ["Другое"], "qty": ["1"]}).status_code == 302
@@ -292,7 +294,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     new_blank = post("/requests/collect/blank", {"line_kind": "pair", "customer_id": "1",
                                              "model_id": "1", "pairs": "1",
                                              "operations": ["op1", "op6"]})
-    new_blank_id = int(new_blank.location.split("/requests/")[1].split("?")[0])
+    new_blank_id = int(new_blank.location.split("#dq-")[1])
     new_blank_item = query("SELECT id FROM request_items WHERE request_id=?", (new_blank_id,))[0]
     assert json.loads(query("SELECT operation FROM request_items WHERE id=?", (new_blank_item,))[0]) == ["op1", "op6"]
     assert post(f"/requests/{new_blank_id}/placed/{new_blank_item}/del").status_code == 302

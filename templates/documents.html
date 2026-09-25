@@ -57,44 +57,7 @@
   {% if x.detail %}
   <tr class="dq-detail" id="dq-{{ x.id }}" hidden>
     <td class="dq-detail-cell" colspan="6">
-      <div class="dq-items">
-        {% for i in x.detail.need %}
-        <div class="dq-item">
-          <div class="dq-item-main">
-            <span class="dq-item-name">{{ i.item }}</span>
-            {% if i.note %}<div class="small dq-item-note">{{ i.note }}</div>{% endif %}
-          </div>
-          <div class="dq-item-qty">
-            {% if i.qty is not none %}{{ i.qty }}{% if i.unit %} <span class="small">{{ UNITS.get(i.unit, i.unit) }}</span>{% endif %}{% else %}—{% endif %}
-          </div>
-          {% if x.detail.shipped %}
-          <div class="dq-item-got">
-            {% if i.collected is not none %}
-              <span class="{{ 'diff-neg' if i.qty is not none and i.collected < i.qty else 'diff-zero' }}">положено {{ i.collected }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span>
-            {% else %}<span class="small">не положено</span>{% endif %}
-          </div>
-          {% endif %}
-        </div>
-        {% endfor %}
-        {% if x.detail.added %}
-        <div class="dq-added-title small">Дополнительно положил склад</div>
-        {% for i in x.detail.added %}
-        <div class="dq-item dq-item-added">
-          <div class="dq-item-main">
-            {% if i.line_kind == 'pair' %}
-            <span class="dq-item-name">{{ i.customer }} — {{ i.model }}</span>
-            {% set names = operation_names(i.operation) %}
-            <div class="small dq-item-note">{{ names|join(', ') if names else LINE_STATUSES.get(i.status, 'Пары') }}</div>
-            {% else %}<span class="dq-item-name">{{ i.item }}</span>{% endif %}
-          </div>
-          <div class="dq-item-qty">{{ i.collected if i.collected is not none else '—' }} <span class="small">{{ 'пар' if i.line_kind == 'pair' else UNITS.get(i.unit, i.unit or '') }}</span></div>
-        </div>
-        {% endfor %}
-        {% endif %}
-      </div>
-      {% if x.detail.note %}<div class="dq-note small">Примечание к заявке: {{ x.detail.note }}</div>{% endif %}
-      {% if x.detail.ship_note %}<div class="dq-ship-note small">Сообщение склада: {{ x.detail.ship_note }}</div>{% endif %}
-      {% if x.detail.visible_at %}<div class="dq-visible-hint small">Склад увидит заявку в {{ x.detail.visible_at }}. До этого её можно изменить.</div>{% endif %}
+      {% include '_request_detail.html' %}
     </td>
   </tr>
   {% endif %}
@@ -117,10 +80,29 @@
 .dq-item-qty,.dq-item-got{white-space:nowrap;font-variant-numeric:tabular-nums}
 .dq-added-title{margin-top:6px;font-weight:700}
 .dq-note,.dq-ship-note,.dq-visible-hint{margin-top:8px}
+.chkbox{width:22px;height:22px;flex:none;accent-color:var(--green);cursor:pointer}
+.dq-collect-form{display:grid;gap:4px}
+.dq-collect-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.dq-collect-qty{flex:0 0 84px;width:84px;min-width:0}
+.dq-collect-type{flex:0 0 130px;width:130px;min-width:0}
+.dq-collect-save,.dq-take-form,.dq-ship-form{margin-top:10px}
+.dq-ship-form{display:flex;gap:8px;flex-wrap:wrap}
+.dq-ship-note-input{flex:1 1 220px;min-width:0}
+.dq-placed-del-form{margin:0}
+.dq-add{margin-top:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:8px 12px}
+.dq-add summary{cursor:pointer;font-weight:650;color:var(--blue-d)}
+.dq-add form{margin-top:10px}
+.dq-pair-row,.dq-material-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.dq-material-row{grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr)}
+.dq-collect-form,.dq-pair-form,.dq-material-form{min-width:0}
 .dq-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .dq-actions form{margin:0}
 @media(max-width:720px){
   .dq-item{flex-wrap:wrap}.dq-item-main{flex-basis:100%}
+  .dq-collect-item{flex-wrap:wrap}.dq-collect-item .dq-item-main{flex:1 1 calc(100% - 40px);min-width:0}
+  .dq-collect-qty,.dq-collect-type{margin-left:32px}.dq-collect-type{margin-left:0}
+  .dq-collect-qty{flex:1 1 84px;width:auto}.dq-collect-type{flex:1 1 130px;width:auto}
+  .dq-pair-row,.dq-material-row{grid-template-columns:minmax(0,1fr)}
   .dq-date-mobile{display:block}
   .dq-table tr > :nth-child(5),.dq-table tr > :nth-child(3){display:none}   /* дата и число позиций: есть в раскрытой строке */
   .dq-actions{flex-direction:column;align-items:stretch}
@@ -133,6 +115,18 @@ document.querySelectorAll('[data-dq-toggle]').forEach(function(row){
   row.addEventListener('click',function(){
     var d=document.getElementById(row.dataset.dqToggle);
     if(d) d.hidden=!d.hidden;
+  });
+});
+// после действия склада страница открывается уже с раскрытой заявкой (#dq-<номер>)
+if(/^#dq-\d+$/.test(location.hash)){
+  var opened=document.getElementById(location.hash.slice(1));
+  if(opened){opened.hidden=false;opened.scrollIntoView({block:'start'});}
+}
+// «положил» без количества подставляет заявленное
+document.querySelectorAll('.dq-collect-check').forEach(function(cb){
+  cb.addEventListener('change',function(){
+    var inp=document.querySelector('[name="'+cb.dataset.col+'"]');
+    if(cb.checked&&inp&&!inp.value&&cb.dataset.qty){inp.value=cb.dataset.qty;}
   });
 });
 </script>

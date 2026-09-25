@@ -336,16 +336,27 @@ def _sort_key(created_at):
         return db.datetime.min
 
 
-def _request_detail(r):
-    """Содержимое заявки для раскрывающейся строки списка производства."""
+def _req_row(req_id):
+    """Адрес списка заявок с раскрытой строкой этой заявки (отдельной страницы заявки нет)."""
+    return url_for("documents", _anchor="dq-%d" % req_id)
+
+
+def _request_detail(r, role):
+    """Содержимое раскрывающейся строки заявки; одно и то же для всех ролей."""
     items = _load_req_items(r["id"])
     shipped = r["status"] == "shipped"
+    # что склад положил и сколько — видно складу и директору сразу, производству после отправки
+    show_result = shipped or role in ("sklad", "director")
+    sklad_work = role == "sklad" and r["status"] in ("progress", "done")
     return dict(
-        note=r["note"], ship_note=r["ship_note"] if shipped else None, shipped=shipped,
-        visible_at=_clock(r["created_ts"] + EDIT_WINDOW) if _req_editable(r) else None,
-        sent_at=r["sent_at"], done_at=r["done_at"],
+        note=r["note"], ship_note=r["ship_note"] if (shipped or sklad_work) else None, shipped=shipped,
+        visible_at=_clock(r["created_ts"] + EDIT_WINDOW) if (role == "proizv" and _req_editable(r)) else None,
         need=[i for i in items if i["source"] == "req"],
-        added=[i for i in items if i["source"] == "sklad"] if shipped else [],
+        added=[i for i in items if i["source"] == "sklad"] if show_result else [],
+        show_result=show_result,
+        can_take=(role == "sklad" and r["status"] == "open"),
+        can_collect=(role == "sklad" and r["status"] == "progress"),
+        can_ship=(role == "sklad" and r["status"] in ("progress", "done")),
     )
 
 
@@ -394,12 +405,12 @@ def documents():
             status=r["status"], status_label=REQ_STATUS[r["status"]], status_cls="rq-" + r["status"],
             diff=0, has_recv=False, urgent=r["urgent"],
             need_action=need,
-            can_del=(role == "proizv" and r["status"] in ("open", "progress")),
+            can_del=((role == "proizv" and r["status"] in ("open", "progress")) or role == "director"),
             can_edit=(role == "proizv" and _req_editable(r)),
             edit_url=url_for("request_edit", req_id=r["id"]),
             del_url=url_for("request_delete", req_id=r["id"]),
-            url=None if role == "proizv" else url_for("request_view", req_id=r["id"]),
-            detail=_request_detail(r) if role == "proizv" else None,
+            url=None,
+            detail=_request_detail(r, role),
         ))
 
     rows.sort(key=lambda x: (x["need_action"], _sort_key(x["created_at"])), reverse=True)
@@ -409,7 +420,11 @@ def documents():
     can_transfer = any(v[1] == role for v in KINDS.values())   # склад: OUT, производство: RETURN
     can_request = (role == "proizv")
 
-    return render_template("documents.html", rows=rows, n_all=len(rows),
+    customers = models = []
+    if role == "sklad":
+        customers = g.db.execute("SELECT * FROM customers WHERE archived=0 ORDER BY name").fetchall()
+        models = g.db.execute("SELECT * FROM models WHERE archived=0 ORDER BY name").fetchall()
+    return render_template("documents.html", rows=rows, n_all=len(rows), customers=customers, models=models,
                            to_action=to_action,
                            can_transfer=can_transfer, can_request=can_request)
 
@@ -488,7 +503,7 @@ def docs_collect_save():
         )
     g.db.commit()
     if target is not None:
-        return redirect(url_for("request_view", req_id=target, step=2))
+        return redirect(_req_row(target))
     flash("Отметьте позицию с положительным количеством.")
     return redirect(url_for("docs_collect"))
 
@@ -506,7 +521,7 @@ def docs_collect_start(req_id):
         g.db.execute("UPDATE requests SET status='progress', taken_at=? WHERE id=?",
                      (db.now_str(), req_id))
         g.db.commit()
-    return redirect(url_for("request_view", req_id=req_id, step=1))
+    return redirect(_req_row(req_id))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/collect/blank", methods=["GET", "POST"])
@@ -558,7 +573,7 @@ def docs_collect_blank():
             "VALUES (?, ?, ?, ?, 1, 'material', 'sklad', 'material', ?)",
             (cur.lastrowid, item, qty, qty, unit))
     g.db.commit()
-    return redirect(url_for("request_view", req_id=cur.lastrowid, step=2))
+    return redirect(_req_row(cur.lastrowid))
 
 
 def _parse_doc_rows():
@@ -1130,40 +1145,6 @@ def request_edit(req_id):
     return redirect(url_for("documents"))
 
 
-@app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>")
-@login_required
-def request_view(req_id):
-    role = session["role"]
-    r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
-    if not r or role == "proizv" or (role == "sklad" and _hidden_from_sklad(r)):
-        abort(404)  # производство работает только со списком /requests и формой /requests/new
-    items = _load_req_items(req_id)
-    can_take = (r["status"] == "open" and role == "sklad")
-    can_collect = (r["status"] == "progress" and role == "sklad")
-    # склад может отправить на производство, когда собирает или уже отметил «собрано»
-    can_ship = (role == "sklad" and r["status"] in ("progress", "done"))
-    can_delete = (role == "director")
-    # показывать колонку «собрано», если склад собирает или уже что-то отмечено
-    has_collected = any(i["collected"] is not None for i in items)
-    customers = g.db.execute(
-        "SELECT * FROM customers WHERE archived=0 ORDER BY name").fetchall()
-    models = g.db.execute(
-        "SELECT * FROM models WHERE archived=0 ORDER BY name").fetchall()
-    # шаг мастера сборки (только пока склад собирает)
-    try:
-        step = int(request.args.get("step", 1))
-    except ValueError:
-        step = 1
-    step = min(3, max(1, step))
-    if can_collect and not any(i["line_kind"] == "need" for i in items) and step == 1:
-        step = 2
-    return render_template("request_view.html", r=r, items=items,
-                           can_take=can_take, can_collect=can_collect,
-                           can_ship=can_ship, can_delete=can_delete,
-                           has_collected=has_collected, step=step,
-                           customers=customers, models=models)
-
-
 def _req_progress_sklad(req_id):
     if session.get("role") != "sklad":
         abort(403)
@@ -1202,7 +1183,7 @@ def request_collect(req_id):
             (val, placed, itype, iid))
     g.db.commit()
     # шаг 1 → шаг 2 (что положил)
-    return redirect(url_for("request_view", req_id=req_id, step=2))
+    return redirect(_req_row(req_id))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/pair/add", methods=["POST"])
@@ -1216,24 +1197,24 @@ def request_pair_add(req_id):
         pairs = int(request.form["pairs"])
     except (KeyError, ValueError):
         flash("Заполните заказчика, модель и число пар.")
-        return redirect(url_for("request_view", req_id=req_id))
+        return redirect(_req_row(req_id))
     if pairs <= 0:
         flash("Число пар должно быть больше нуля.")
-        return redirect(url_for("request_view", req_id=req_id))
+        return redirect(_req_row(req_id))
     if not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone() or \
        not g.db.execute("SELECT 1 FROM models WHERE id=? AND archived=0", (mid,)).fetchone():
         flash("Выберите действующих заказчика и модель.")
-        return redirect(url_for("request_view", req_id=req_id, step=2))
+        return redirect(_req_row(req_id))
     operations = _selected_operations()
     if not operations:
         flash("Выберите хотя бы одну операцию.")
-        return redirect(url_for("request_view", req_id=req_id, step=2))
+        return redirect(_req_row(req_id))
     g.db.execute(
         "INSERT INTO request_items (request_id, item, collected, placed, source, line_kind, "
         "customer_id, model_id, operation) VALUES (?, '', ?, 1, 'sklad', 'pair', ?, ?, ?)",
         (req_id, pairs, cid, mid, json.dumps(operations)))
     g.db.commit()
-    return redirect(url_for("request_view", req_id=req_id, step=2))
+    return redirect(_req_row(req_id))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/material/add", methods=["POST"])
@@ -1244,7 +1225,7 @@ def request_material_add(req_id):
     item = (request.form.get("item") or "").strip()
     if not item:
         flash("Укажите материал.")
-        return redirect(url_for("request_view", req_id=req_id))
+        return redirect(_req_row(req_id))
     try:
         qty = int(request.form.get("qty"))
         if qty <= 0:
@@ -1254,13 +1235,13 @@ def request_material_add(req_id):
     unit = request.form.get("unit")
     if unit not in UNITS:
         flash("Выберите единицу измерения.")
-        return redirect(url_for("request_view", req_id=req_id, step=2))
+        return redirect(_req_row(req_id))
     g.db.execute(
         "INSERT INTO request_items (request_id, item, qty, collected, placed, item_type, source, line_kind, unit) "
         "VALUES (?, ?, ?, ?, 1, 'material', 'sklad', 'material', ?)",
         (req_id, item, qty, qty, unit))
     g.db.commit()
-    return redirect(url_for("request_view", req_id=req_id, step=2))
+    return redirect(_req_row(req_id))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/placed/<int:item_id>/del", methods=["POST"])
@@ -1275,7 +1256,7 @@ def request_placed_del(req_id, item_id):
         g.db.commit()
         return redirect(url_for("documents"))
     g.db.commit()
-    return redirect(url_for("request_view", req_id=req_id, step=2))
+    return redirect(_req_row(req_id))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/take", methods=["POST"])
@@ -1289,7 +1270,7 @@ def request_take(req_id):
     g.db.execute("UPDATE requests SET status='progress', taken_at=? WHERE id=?",
                  (db.now_str(), req_id))
     g.db.commit()
-    return redirect(url_for("request_view", req_id=req_id))
+    return redirect(_req_row(req_id))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/ship", methods=["POST"])
@@ -1308,13 +1289,13 @@ def request_ship(req_id):
     ).fetchone()[0]
     if not n:
         flash("Добавьте хотя бы одну позицию с положительным количеством.")
-        return redirect(url_for("request_view", req_id=req_id, step=2))
+        return redirect(_req_row(req_id))
     ship_note = (request.form.get("ship_note") or "").strip() or None
     g.db.execute("UPDATE requests SET status='shipped', done_at=?, ship_note=? WHERE id=?",
                  (db.now_str(), ship_note, req_id))
     g.db.commit()
     flash("Заявка отправлена на производство.")
-    return redirect(url_for("request_view", req_id=req_id))
+    return redirect(_req_row(req_id))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/delete", methods=["POST"])
