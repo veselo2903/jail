@@ -1,17 +1,119 @@
 {% extends "base.html" %}
 {% block title %}Новая заявка — jail{% endblock %}
 {% block content %}
-<div class="card">
-  <h3 style="margin-top:0">Новая заявка «чего не хватает»</h3>
-  <form method="post" action="{{ url_for('request_new') }}" class="grid">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div><label>Что нужно</label><input name="item" required></div>
-    <div><label>Количество (необязательно)</label><input name="qty" type="number" min="1" inputmode="numeric"></div>
-    <div><label>Примечание к позиции (необязательно)</label><input name="item_note"></div>
-    <div><label>Примечание к заявке (необязательно)</label><input name="note"></div>
-    <label class="chk"><input type="checkbox" name="urgent" value="1"> Срочно</label>
-    <button class="btn green block" type="submit">Создать заявку</button>
-  </form>
+{# Макрос одной карточки позиции: используется и для строк формы, и для шаблона клонирования #}
+{% macro item_card(n, row) %}
+<div class="rn-item card" data-item-card>
+  <div class="rn-item-head">
+    <h3 class="rn-item-title">Позиция <span class="rn-item-num" data-item-num>{{ n }}</span></h3>
+    <button type="button" class="rn-item-remove btn grey" data-item-remove title="Удалить позицию">Удалить</button>
+  </div>
+  <div class="rn-item-fields">
+    <div class="rn-field rn-field-name">
+      <label>Что нужно</label>
+      <input class="rn-input-name" name="item" value="{{ row.item }}">
+    </div>
+    <div class="rn-field rn-field-qty">
+      <label>Количество (необязательно)</label>
+      <div class="rn-qty-row">
+        <input class="rn-input-qty" name="qty" type="number" min="1" inputmode="numeric" value="{{ row.qty }}">
+        <select class="rn-select-unit" name="unit" data-unit-select>
+          {% for k, v in UNITS.items() %}<option value="{{ k }}" {{ 'selected' if row.unit == k }}>{{ v }}</option>{% endfor %}
+          <option value="other" {{ 'selected' if row.unit == 'other' }}>другое…</option>
+        </select>
+      </div>
+      <input class="rn-input-unit-custom" name="unit_custom" data-unit-custom maxlength="20" placeholder="Своя единица, например кг" value="{{ row.unit_custom }}" {{ 'hidden' if row.unit != 'other' }}>
+    </div>
+    <div class="rn-field rn-field-note">
+      <label>Примечание к позиции (необязательно)</label>
+      <input class="rn-input-item-note" name="item_note" value="{{ row.item_note }}">
+    </div>
+  </div>
 </div>
-<a class="btn grey" href="{{ url_for('documents') }}">Назад</a>
+{% endmacro %}
+
+<form method="post" action="{{ url_for('request_new') }}" class="rn-form" id="rn-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="rn-title-card card">
+    <h3 class="rn-title">Новая заявка «чего не хватает»</h3>
+    <div class="small rn-hint">Одна заявка — несколько позиций. Нажмите «Добавить позицию», чтобы вписать следующую.</div>
+  </div>
+
+  <div class="rn-items" id="rn-items">
+    {% for row in rows %}{{ item_card(loop.index, row) }}{% endfor %}
+  </div>
+
+  <button type="button" class="rn-add-item btn grey block" id="rn-add-item">+ Добавить позицию</button>
+
+  <div class="rn-common card">
+    <div class="rn-field rn-field-request-note">
+      <label>Примечание к заявке (необязательно)</label>
+      <input class="rn-input-request-note" name="note" value="{{ note }}">
+    </div>
+    <label class="rn-urgent">
+      <input class="rn-urgent-checkbox" type="checkbox" name="urgent" value="1" {{ 'checked' if urgent }}>
+      <span class="rn-urgent-text">Срочно</span>
+    </label>
+    <button class="rn-submit btn green block" type="submit">Создать заявку</button>
+  </div>
+</form>
+
+<template id="rn-item-template">{{ item_card(0, blank) }}</template>
+
+<a class="rn-back btn grey" href="{{ url_for('documents') }}">Назад</a>
+
+<style>
+.rn-form [hidden]{display:none!important}
+.rn-item-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.rn-item-title{margin:0}
+.rn-item-remove{padding:6px 12px;font-size:13px}
+.rn-item-fields{display:grid;gap:12px}
+.rn-qty-row{display:grid;grid-template-columns:1fr 130px;gap:8px}
+.rn-input-unit-custom{margin-top:8px}
+.rn-items{display:grid;gap:12px}
+.rn-add-item{margin:12px 0}
+.rn-common{display:grid;gap:14px}
+.rn-hint{margin-top:-6px}
+/* Чекбокс «Срочно»: общий input{width:100%} растягивал его, поэтому размер задан явно */
+.rn-urgent{display:flex;align-items:center;gap:10px;margin:0;cursor:pointer;font-size:16px;font-weight:700;color:var(--ink)}
+.rn-urgent-checkbox{width:22px;height:22px;flex:0 0 22px;padding:0;margin:0;accent-color:#dc2626;cursor:pointer}
+.rn-urgent-text{line-height:1}
+.rn-urgent:has(.rn-urgent-checkbox:checked) .rn-urgent-text{color:#dc2626}
+</style>
+
+<script>
+(function(){
+  var items = document.getElementById('rn-items');
+  var tpl = document.getElementById('rn-item-template');
+  function refresh(){
+    var cards = items.querySelectorAll('[data-item-card]');
+    cards.forEach(function(c, i){
+      c.querySelector('[data-item-num]').textContent = i + 1;
+      c.querySelector('[data-item-remove]').hidden = cards.length < 2;
+    });
+  }
+  function syncUnit(card){
+    var sel = card.querySelector('[data-unit-select]');
+    var custom = card.querySelector('[data-unit-custom]');
+    custom.hidden = sel.value !== 'other';
+    if(!custom.hidden){ custom.focus(); }
+  }
+  document.getElementById('rn-add-item').addEventListener('click', function(){
+    items.appendChild(tpl.content.cloneNode(true));
+    refresh();
+    var cards = items.querySelectorAll('[data-item-card]');
+    cards[cards.length - 1].querySelector('.rn-input-name').focus();
+  });
+  items.addEventListener('click', function(e){
+    var btn = e.target.closest('[data-item-remove]');
+    if(!btn) return;
+    btn.closest('[data-item-card]').remove();
+    refresh();
+  });
+  items.addEventListener('change', function(e){
+    if(e.target.matches('[data-unit-select]')) syncUnit(e.target.closest('[data-item-card]'));
+  });
+  refresh();
+})();
+</script>
 {% endblock %}

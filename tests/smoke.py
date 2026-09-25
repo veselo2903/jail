@@ -167,8 +167,23 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert client.get("/login/proizv").status_code == 302
     before = query("SELECT COUNT(*) FROM requests")[0]
     assert client.get("/requests/new").status_code == 200
-    assert post("/requests/new", {"note": "пусто"}).status_code == 302
+    assert post("/requests/new", {"note": "пусто"}).status_code == 200
+    assert post("/requests/new", {"item": ["Клей", "Нитки"], "qty": ["0", "1"],
+                                  "unit": ["sht", "sht"], "unit_custom": ["", ""],
+                                  "item_note": ["", ""]}).status_code == 200
     assert query("SELECT COUNT(*) FROM requests")[0] == before
+    multi = post("/requests/new", {"item": ["Клей", "Кожа", "", "Нитки"], "qty": ["2", "3", "", ""],
+                                   "unit": ["m2", "other", "sht", "sht"],
+                                   "unit_custom": ["", "кг", "", ""],
+                                   "item_note": ["", "чёрная", "", ""], "note": "общее", "urgent": "1"})
+    assert multi.status_code == 302
+    multi_id = int(multi.location.rsplit("/", 1)[-1])
+    assert query("SELECT note, urgent FROM requests WHERE id=?", (multi_id,)) == ("общее", 1)
+    assert query("SELECT COUNT(*) FROM request_items WHERE request_id=?", (multi_id,))[0] == 3
+    assert query("SELECT unit FROM request_items WHERE request_id=? AND item='Клей'", (multi_id,))[0] == "m2"
+    assert query("SELECT unit, note FROM request_items WHERE request_id=? AND item='Кожа'", (multi_id,)) == ("кг", "чёрная")
+    assert query("SELECT unit FROM request_items WHERE request_id=? AND item='Нитки'", (multi_id,))[0] is None
+    assert "кг" in client.get(f"/requests/{multi_id}").text
     new_req = post("/requests/new", {"item": "Клей", "qty": "2"})
     new_req_id = int(new_req.location.rsplit("/", 1)[-1])
     assert query("SELECT COUNT(*) FROM request_items WHERE request_id=?", (new_req_id,))[0] == 1

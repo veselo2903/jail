@@ -45,7 +45,7 @@
       <tr>
         <td><input class="chkbox" type="checkbox" name="placed_{{ i.id }}" value="1" data-qty="{{ i.qty if i.qty is not none else '' }}" data-col="col_{{ i.id }}" {{ 'checked' if i.placed }}></td>
         <td>{{ i.item }}{% if i.note %}<div class="small">{{ i.note }}</div>{% endif %}</td>
-        <td class="num">{{ i.qty if i.qty is not none else '—' }}</td>
+        <td class="num">{{ i.qty if i.qty is not none else '—' }}{% if i.qty is not none and i.unit %} <span class="small">{{ UNITS.get(i.unit, i.unit) }}</span>{% endif %}</td>
         <td class="num" style="width:96px"><input name="col_{{ i.id }}" type="number" min="0" inputmode="numeric" value="{{ i.collected if i.collected is not none else '' }}" placeholder="{{ i.qty if i.qty is not none else '' }}"></td>
         <td style="width:150px">
           <select name="type_{{ i.id }}">
@@ -192,9 +192,9 @@
     <tr>
       <td>{{ i.item }}{% if i.note %}<div class="small">{{ i.note }}</div>{% endif %}</td>
       <td>{% if i.item_type %}{{ ITEM_TYPES[i.item_type] }}{% else %}<span class="small">—</span>{% endif %}</td>
-      <td class="num">{{ i.qty if i.qty is not none else '—' }}</td>
+      <td class="num">{{ i.qty if i.qty is not none else '—' }}{% if i.qty is not none and i.unit %} <span class="small">{{ UNITS.get(i.unit, i.unit) }}</span>{% endif %}</td>
       <td class="num">
-        {% if i.collected is not none %}{% if i.qty is not none and i.collected < i.qty %}<span class="diff-neg">{{ i.collected }} из {{ i.qty }}</span>{% else %}<span class="diff-zero">{{ i.collected }}</span>{% endif %}{% elif i.placed %}✓{% else %}—{% endif %}
+        {% if i.collected is not none %}{% if i.qty is not none and i.collected < i.qty %}<span class="diff-neg">{{ i.collected }} из {{ i.qty }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span>{% else %}<span class="diff-zero">{{ i.collected }}</span>{% endif %}{% elif i.placed %}✓{% else %}—{% endif %}
       </td>
     </tr>
     {% endfor %}

@@ -1009,33 +1009,69 @@ def requests_list():
     return redirect(url_for("documents", tab="requests"))
 
 
+def _parse_request_rows():
+    """Собрать позиции новой заявки из параллельных полей формы."""
+    f = request.form
+    names, qtys, units = f.getlist("item"), f.getlist("qty"), f.getlist("unit")
+    customs, notes = f.getlist("unit_custom"), f.getlist("item_note")
+    rows = []
+    for n in range(len(names)):
+        def at(lst):
+            return (lst[n] if n < len(lst) else "").strip()
+        rows.append({"item": at(names), "qty": at(qtys), "unit": at(units) or "sht",
+                     "unit_custom": at(customs)[:20], "item_note": at(notes)})
+    return rows
+
+
 @app.route("/requests/new", methods=["GET", "POST"])
 @login_required
 def request_new():
     if session["role"] != "proizv":
         abort(403)
+    blank = {"item": "", "qty": "", "unit": "sht", "unit_custom": "", "item_note": ""}
     if request.method == "GET":
-        return render_template("request_new.html")
-    item = (request.form.get("item") or "").strip()
-    if not item:
-        flash("Укажите первую позицию заявки.")
-        return redirect(url_for("request_new"))
-    raw_qty = (request.form.get("qty") or "").strip()
-    try:
-        qty = int(raw_qty) if raw_qty else None
-    except ValueError:
-        qty = 0
-    if qty is not None and qty <= 0:
-        flash("Количество должно быть больше нуля.")
-        return redirect(url_for("request_new"))
-    urgent = 1 if request.form.get("urgent") else 0
+        return render_template("request_new.html", rows=[blank], blank=blank, note="", urgent=False)
+    rows = _parse_request_rows()
     note = (request.form.get("note") or "").strip()
+    urgent = 1 if request.form.get("urgent") else 0
+
+    def fail(message):
+        flash(message)
+        return render_template("request_new.html", rows=rows or [blank], blank=blank,
+                               note=note, urgent=bool(urgent))
+
+    parsed = []
+    for n, row in enumerate(rows, 1):
+        if not (row["item"] or row["qty"] or row["item_note"]):
+            continue  # полностью пустая карточка — пропускаем
+        if not row["item"]:
+            return fail("Позиция %d: укажите, что нужно." % n)
+        qty = None
+        if row["qty"]:
+            try:
+                qty = int(row["qty"])
+            except ValueError:
+                qty = 0
+            if qty <= 0:
+                return fail("Позиция %d: количество должно быть больше нуля." % n)
+        unit = None
+        if qty is not None:
+            if row["unit"] == "other":
+                unit = row["unit_custom"] or None
+            elif row["unit"] in UNITS:
+                unit = row["unit"]
+            else:
+                return fail("Позиция %d: неизвестная единица измерения." % n)
+        parsed.append((row["item"], qty, unit, row["item_note"] or None))
+    if not parsed:
+        return fail("Добавьте хотя бы одну позицию заявки.")
     cur = g.db.execute(
         "INSERT INTO requests (status, urgent, created_role, created_at, note) "
         "VALUES ('draft', ?, ?, ?, ?)", (urgent, "proizv", db.now_str(), note))
-    g.db.execute(
-        "INSERT INTO request_items (request_id, item, qty, note) VALUES (?, ?, ?, ?)",
-        (cur.lastrowid, item, qty, (request.form.get("item_note") or "").strip() or None))
+    for item, qty, unit, item_note in parsed:
+        g.db.execute(
+            "INSERT INTO request_items (request_id, item, qty, note, unit) VALUES (?, ?, ?, ?, ?)",
+            (cur.lastrowid, item, qty, item_note, unit))
     g.db.commit()
     return redirect(url_for("request_view", req_id=cur.lastrowid))
 
