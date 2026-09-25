@@ -13,7 +13,7 @@
       <span class="tag rq-{{ r.status }}">{{ REQ_STATUS[r.status] }}</span>
       {% if r.urgent %}<span class="tag urgent">Есть срочные позиции</span>{% endif %}
     </div>
-    <a class="small" href="{{ url_for('documents', tab='requests') }}">к списку</a>
+    <a class="small" href="{{ url_for('documents') }}">к списку</a>
   </div>
   <div class="small" style="margin-top:6px">{{ 'Склад → Производство' if r.created_role=='sklad' else 'Производство → Склад' }}</div>
   {% if r.note %}<div class="small">Примечание производства: {{ r.note }}</div>{% endif %}

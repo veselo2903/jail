@@ -25,13 +25,6 @@
   {% endif %}
 </div>
 
-{% if n_all %}<div class="subtabs">
-  <a href="{{ url_for('documents', tab='all') }}" class="{{ 'active' if tab=='all' }}">Все <span class="n">{{ n_all }}</span></a>
-  {% if n_doc %}<a href="{{ url_for('documents', tab='transfers') }}" class="{{ 'active' if tab=='transfers' }}">Передачи <span class="n">{{ n_doc }}</span></a>{% endif %}
-  {% if n_req %}<a href="{{ url_for('documents', tab='requests') }}" class="{{ 'active' if tab=='requests' }}">Заявки <span class="n">{{ n_req }}</span></a>{% endif %}
-</div>
-{% endif %}
-
 {% if rows %}
 <div class="card flush dq-list">
 <table class="dq-table">

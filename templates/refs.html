@@ -2,96 +2,95 @@
 {% block title %}Справочники — jail{% endblock %}
 {% block content %}
 
-<div class="subtabs">
-  <a href="{{ url_for('refs', tab='customers', arch=('1' if show_arch else None)) }}" class="{{ 'active' if tab=='customers' }}">Заказчики</a>
-  <a href="{{ url_for('refs', tab='models', arch=('1' if show_arch else None)) }}" class="{{ 'active' if tab=='models' }}">Модели</a>
-  <a href="{{ url_for('refs', tab='workers', arch=('1' if show_arch else None)) }}" class="{{ 'active' if tab=='workers' }}">Работники</a>
-</div>
-
 {% macro archbtn(table, r) %}
-  <form method="post" action="{{ url_for('ref_arch', table=table, rid=r.id, arch=('1' if show_arch else None)) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    {% if r.archived %}<input type="hidden" name="restore" value="1">
-      <button class="btn grey sm" type="submit">вернуть</button>
-    {% else %}
-      <button class="btn grey sm" type="submit">в архив</button>
-    {% endif %}
-  </form>
+  <button class="btn grey sm refs-arch-btn" type="submit"
+          formaction="{{ url_for('ref_arch', table=table, rid=r.id, arch=('1' if show_arch else None)) }}"
+          {% if r.archived %}name="restore" value="1"{% endif %}>{{ 'вернуть' if r.archived else 'в архив' }}</button>
 {% endmacro %}
 
-{# ---------- Заказчики / Модели ---------- #}
-{% if tab in ['customers','models'] %}
-  {% set items = customers if tab=='customers' else models %}
+{# Заказчики и модели: одинаковые блоки, отличаются названием справочника #}
+{% macro name_section(table, title, placeholder, items) %}
+<section class="refs-section refs-{{ table }}" id="refs-{{ table }}">
+  <h3 class="refs-title">{{ title }}</h3>
   {% if can_edit %}
-  <div class="card">
-    <form method="post" action="{{ url_for('ref_add', table=tab) }}" class="row"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input name="name" placeholder="{{ 'Новый заказчик' if tab=='customers' else 'Новая модель' }}" style="flex:1">
+  <div class="refs-add card">
+    <form class="refs-add-form row" method="post" action="{{ url_for('ref_add', table=table) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input class="refs-input-name" name="name" placeholder="{{ placeholder }}">
       <button class="btn" type="submit">Добавить</button>
     </form>
   </div>
   {% endif %}
+  {% if items %}<div class="refs-list card">
+    {% for r in items %}
+    <div class="refs-item {{ 'refs-item-archived' if r.archived }}">
+      {% if can_edit %}
+      <form class="refs-edit-form row" method="post" action="{{ url_for('ref_edit', table=table, rid=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input class="refs-input-name" name="name" value="{{ r.name }}">
+        <button class="btn grey sm refs-save-btn" type="submit">сохранить</button>
+        {{ archbtn(table, r) }}
+      </form>
+      {% else %}<span class="refs-name">{{ r.name }}</span>{% endif %}
+      {% if r.archived %}<span class="small refs-archived-mark">в архиве</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>{% endif %}
+</section>
+{% endmacro %}
 
-  {% if items %}<div class="card" style="padding:6px 12px">
-    <table>
-      {% for r in items %}
-      <tr>
-        <td>
-          {% if can_edit %}
-          <form method="post" action="{{ url_for('ref_edit', table=tab, rid=r.id) }}" class="row"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input name="name" value="{{ r.name }}" style="flex:1">
-            <button class="btn grey sm" type="submit">сохранить</button>
-          </form>
-          {% else %}{{ r.name }}{% endif %}
-        </td>
-        {% if can_edit %}<td class="num">{{ archbtn(tab, r) }}</td>{% endif %}
-        {% if r.archived %}<td class="small">в архиве</td>{% endif %}
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-  {% endif %}
+{{ name_section('customers', 'Заказчики', 'Новый заказчик', customers) }}
+{{ name_section('models', 'Модели', 'Новая модель', models) }}
 
-{# ---------- Работники ---------- #}
-{% else %}
+<section class="refs-section refs-workers" id="refs-workers">
+  <h3 class="refs-title">Работники</h3>
   {% if can_edit %}
-  <div class="card">
-    <form method="post" action="{{ url_for('ref_add', table='workers') }}" class="row"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input name="number" placeholder="Табельный №" style="width:130px">
-      <input name="name" placeholder="Имя" style="flex:1">
+  <div class="refs-add card">
+    <form class="refs-add-form row" method="post" action="{{ url_for('ref_add', table='workers') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input class="refs-input-number" name="number" placeholder="Табельный №">
+      <input class="refs-input-name" name="name" placeholder="Имя">
       <button class="btn" type="submit">Добавить</button>
     </form>
   </div>
   {% endif %}
+  {% if workers %}<div class="refs-list card">
+    {% for r in workers %}
+    <div class="refs-item {{ 'refs-item-archived' if r.archived }}">
+      {% if can_edit %}
+      <form class="refs-edit-form row" method="post" action="{{ url_for('ref_edit', table='workers', rid=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input class="refs-input-number" name="number" value="{{ r.number }}">
+        <input class="refs-input-name" name="name" value="{{ r.name }}">
+        <button class="btn grey sm refs-save-btn" type="submit">сохранить</button>
+        {{ archbtn('workers', r) }}
+      </form>
+      {% else %}<span class="refs-name"><b>{{ r.number }}</b> {{ r.name }}</span>{% endif %}
+      {% if r.archived %}<span class="small refs-archived-mark">в архиве</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>{% endif %}
+</section>
 
-  {% if workers %}<div class="card" style="padding:6px 12px">
-    <table>
-      <tr><th style="width:120px">Табельный</th><th>Имя</th>{% if can_edit %}<th></th>{% endif %}</tr>
-      {% for r in workers %}
-      <tr>
-        {% if can_edit %}
-        <td colspan="{{ 2 }}">
-          <form method="post" action="{{ url_for('ref_edit', table='workers', rid=r.id) }}" class="row"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <input name="number" value="{{ r.number }}" style="width:120px">
-            <input name="name" value="{{ r.name }}" style="flex:1">
-            <button class="btn grey sm" type="submit">сохранить</button>
-          </form>
-        </td>
-        <td class="num">{{ archbtn('workers', r) }}</td>
-        {% else %}
-        <td>{{ r.number }}</td><td>{{ r.name }}{% if r.archived %} <span class="small">(в архиве)</span>{% endif %}</td>
-        {% endif %}
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-  {% endif %}
-{% endif %}
-
-<div class="row">
+<div class="refs-archive-toggle row">
   {% if show_arch %}
-    <a class="btn grey sm" href="{{ url_for('refs', tab=tab) }}">Скрыть архив</a>
+    <a class="btn grey sm" href="{{ url_for('refs') }}">Скрыть архив</a>
   {% else %}
-    <a class="btn grey sm" href="{{ url_for('refs', tab=tab, arch='1') }}">Показать архив</a>
+    <a class="btn grey sm" href="{{ url_for('refs', arch='1') }}">Показать архив</a>
   {% endif %}
 </div>
+
+<style>
+.refs-title{margin:22px 0 10px}
+.refs-section:first-of-type .refs-title{margin-top:0}
+.refs-list{padding:4px 14px}
+.refs-item{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)}
+.refs-item:last-child{border-bottom:0}
+.refs-edit-form{flex:1 1 100%;flex-wrap:wrap;min-width:0}
+.refs-input-name{flex:1 1 140px;min-width:0}
+.refs-input-number{width:110px;flex:none}
+@media(max-width:720px){
+  .refs-add-form{flex-wrap:wrap}
+  .refs-input-number{width:96px}
+  .refs-add-form .btn{flex:1 1 100%}
+  .refs-edit-form .btn{flex:1 1 0}
+}
+</style>
 
 {% endblock %}

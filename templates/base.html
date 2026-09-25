@@ -30,10 +30,6 @@ a{color:var(--blue);text-decoration:none}
 /* ---- Боковое меню ---- */
 .side{width:194px;flex:none;background:linear-gradient(180deg,var(--nav),var(--nav2));
   color:#a9bbd4;padding:16px 10px;position:sticky;top:0;height:100vh;align-self:flex-start}
-.side .brand{display:flex;align-items:center;gap:9px;font-weight:800;color:#fff;
-  font-size:19px;padding:6px 10px 16px}
-.side .brand .mark{width:17px;height:17px;border-radius:6px;
-  background:linear-gradient(135deg,#4d95ff,var(--green))}
 .side a.nav{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:11px;
   color:#a9bbd4;font-weight:600;font-size:14.5px;margin-bottom:3px;
   transition:background .15s var(--ease-out),color .15s var(--ease-out)}
@@ -56,13 +52,6 @@ a{color:var(--blue);text-decoration:none}
   border-radius:9px;color:var(--muted);font-size:14px;font-weight:600}
 .who .logout:hover{background:var(--surface2);color:var(--ink)}
 .wrap{max-width:900px;width:100%;margin:0 auto;padding:20px 18px 44px}
-
-.subtabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px}
-.subtabs a{padding:7px 13px;border-radius:999px;background:var(--surface);
-  border:1px solid var(--line);color:var(--muted);font-size:14px;font-weight:600}
-.subtabs a:hover{border-color:var(--line2);color:var(--ink)}
-.subtabs a.active{background:var(--blue);border-color:var(--blue);color:#fff}
-.subtabs a .n{opacity:.75;margin-left:3px}
 
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
   padding:18px;margin-bottom:16px;box-shadow:var(--shadow)}
@@ -169,16 +158,19 @@ footer{color:var(--faint);font-size:12px;text-align:center;padding:18px}
   /* меню внизу экрана, а не сверху */
   .side{width:100%;height:auto;position:fixed;top:auto;bottom:0;left:0;right:0;z-index:10;
     padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));
-    display:flex;align-items:center;gap:4px;overflow-x:auto;box-shadow:0 -4px 16px rgba(10,20,40,.18)}
+    display:flex;align-items:center;justify-content:space-around;gap:2px;box-shadow:0 -4px 16px rgba(10,20,40,.18)}
   .app{padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
-  .side .brand{padding:6px 8px 6px 6px;font-size:17px}
-  .side a.nav{flex-direction:column;gap:3px;padding:8px 10px;font-size:11px;margin:0;
-    white-space:nowrap;text-align:center}
-  .side a.nav .b{position:absolute;margin:0;transform:translate(14px,-6px);min-width:17px;height:17px;font-size:11px}
+  /* все пункты меню делят ширину поровну и не выходят за экран */
+  .side a.nav{flex:1 1 0;min-width:0;flex-direction:column;justify-content:center;gap:3px;padding:8px 2px;
+    font-size:10.5px;margin:0;white-space:nowrap;text-align:center;overflow:hidden;text-overflow:ellipsis}
+  .side a.nav .b{position:absolute;top:3px;left:50%;margin:0;transform:translateX(4px);min-width:17px;height:17px;font-size:11px}
   .side a.nav{position:relative}
   .who{padding:10px 16px}
   .hero .big{font-size:52px}
   th,td{padding:9px 8px;font-size:14px}
+  th{font-size:11.5px;text-transform:none;letter-spacing:0}
+  td.num,th.num{white-space:normal}
+  .card.flush,details .body{overflow-x:auto}   /* запасной вариант: очень широкая таблица прокручивается внутри карточки */
   .card{padding:15px}
   .seg{width:100%}.seg-opt{flex:1}.seg-opt span{text-align:center}
 }
@@ -191,7 +183,6 @@ footer{color:var(--faint);font-size:12px;text-align:center;padding:18px}
 {% set ep = request.endpoint %}
 {% if role %}
 <nav class="side">
-  <div class="brand"><span class="mark"></span>jail</div>
   {% if role=='director' %}
   <a class="nav {{ 'on' if ep=='overview' }}" href="{{ url_for('overview') }}">
     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>Обзор</a>

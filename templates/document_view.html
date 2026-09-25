@@ -44,10 +44,10 @@
           {% if l.status %}<span class="st {{ l.status }}">{{ LINE_STATUSES[l.status] }}</span>{% endif %}
         </td>
         <td class="num">{{ l.pairs_sent }}</td>
-        <td class="num" style="width:110px">
+        <td class="num acc-recv-cell">
           <input name="recv_{{ l.id }}" type="number" min="0" inputmode="numeric" value="{{ l.pairs_sent }}">
         </td>
-        <td style="min-width:160px">
+        <td class="acc-note-cell">
           <input name="note_{{ l.id }}" placeholder="причина, если есть">
         </td>
       </tr>
@@ -88,6 +88,11 @@
 {% endif %}
 {% endif %}
 
+<style>
+.acc-note-cell{min-width:160px}
+.acc-recv-cell{width:110px}
+@media(max-width:720px){.acc-note-cell{min-width:0}.acc-recv-cell{width:84px}}
+</style>
 {% if can_delete %}
 <div class="card">
   <form method="post" action="{{ url_for('doc_delete', doc_id=d.id) }}"

@@ -61,7 +61,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert client.get("/login/sklad").status_code == 302
     assert client.get("/requests/transfer/new").status_code == 200
     # старые адреса /docs/... перенаправляют на новые
-    for old, new in (("/docs", "/sklad/requests"), ("/docs?tab=requests", "/sklad/requests?tab=requests"),
+    for old, new in (("/docs", "/sklad/requests"), ("/docs?x=1", "/sklad/requests?x=1"),
                      ("/docs/collect", "/sklad/requests/collect"), ("/docs/new", "/sklad/requests/transfer/new"),
                      ("/docs/7", "/sklad/requests/transfer/7"), ("/requests/new", "/sklad/requests/new")):
         moved = client.inner.get(old)
@@ -189,6 +189,14 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert post(f"/requests/transfer/{doc_id}/delete").status_code == 302
     row = query("SELECT details FROM audit_events WHERE action='doc_delete_snapshot' ORDER BY id DESC LIMIT 1")
     assert json.loads(row[0])["document"]["id"] == doc_id
+    # справочники: одна страница без вкладок, архив и возврат одной кнопкой формы
+    refs_page = client.get("/refs").text
+    assert "refs-customers" in refs_page and "refs-models" in refs_page and "refs-workers" in refs_page
+    assert "subtabs" not in refs_page and "brand" not in refs_page
+    assert post("/refs/customers/3/arch").status_code == 302
+    assert query("SELECT archived FROM customers WHERE id=3")[0] == 1
+    assert post("/refs/customers/3/arch", {"restore": "1"}).status_code == 302
+    assert query("SELECT archived FROM customers WHERE id=3")[0] == 0
     assert client.get("/payroll").status_code == 200
     assert post("/payroll/rates", {"model_id": "1", "operation_id": "1", "rate": "1.25"}).status_code == 302
     assert client.get("/login/proizv").status_code == 302
@@ -220,7 +228,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
                                    "unit_custom": ["", "кг", "", ""],
                                    "item_note": ["", "чёрная", "", ""], "note": "общее", "urgent_2": "1"})
     assert multi.status_code == 302
-    assert multi.location.endswith("/requests?tab=requests")
+    assert multi.location.endswith("/requests")
     multi_id = query("SELECT MAX(id) FROM requests")[0]
     assert query("SELECT status, sent_at IS NOT NULL FROM requests WHERE id=?", (multi_id,)) == ("open", 1)
     assert query("SELECT note, urgent FROM requests WHERE id=?", (multi_id,)) == ("общее", 1)
@@ -231,13 +239,13 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert query("SELECT unit, note FROM request_items WHERE request_id=? AND item='Кожа'", (multi_id,)) == ("кг", "чёрная")
     assert query("SELECT unit FROM request_items WHERE request_id=? AND item='Нитки'", (multi_id,))[0] is None
     assert client.get(f"/requests/{multi_id}").status_code == 404  # у производства нет страницы заявки
-    docs_page = client.get("/requests?tab=requests").text
+    docs_page = client.get("/requests").text
     assert "кг" in docs_page and "dq-item-urgent" in docs_page and "onclick=\"location='/requests/" not in docs_page
     # Правка в течение 15 минут; склад видит заявку не раньше.
     assert query("SELECT created_ts IS NOT NULL FROM requests WHERE id=?", (multi_id,))[0] == 1
     edit_page = client.get(f"/requests/{multi_id}/edit")
     assert edit_page.status_code == 200 and "rn-edit-hint" in edit_page.text and "Кожа" in edit_page.text
-    assert "редактировать" in client.get("/requests?tab=requests").text
+    assert "редактировать" in client.get("/requests").text
     assert post(f"/requests/{multi_id}/edit", {"item": [""], "qty": [""]}).status_code == 200
     edited = post(f"/requests/{multi_id}/edit", {"item": ["Уникальная деталь"], "qty": ["5"], "unit": ["pary"],
                                                  "unit_custom": [""], "item_note": [""], "note": "правка"})
@@ -260,7 +268,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert client.get(f"/requests/{multi_id}/edit").status_code == 302
     assert post(f"/requests/{multi_id}/edit", {"item": ["Другое"], "qty": ["1"]}).status_code == 302
     assert query("SELECT item FROM request_items WHERE request_id=?", (multi_id,))[0] == "Уникальная деталь"
-    assert "редактировать" not in client.get("/requests?tab=requests").text
+    assert "редактировать" not in client.get("/requests").text
     new_req = post("/requests/new", {"item": "Клей", "qty": "2"})
     assert new_req.status_code == 302
     new_req_id = query("SELECT MAX(id) FROM requests")[0]

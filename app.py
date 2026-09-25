@@ -353,7 +353,6 @@ def _request_detail(r):
 @login_required
 def documents():
     role = session["role"]
-    tab = request.args.get("tab", "all")   # all / transfers / requests
     rows = []
 
     # --- Передачи ---
@@ -403,12 +402,6 @@ def documents():
             detail=_request_detail(r) if role == "proizv" else None,
         ))
 
-    n_doc = sum(1 for x in rows if x["group"] == "doc")
-    n_req = sum(1 for x in rows if x["group"] == "req")
-    if tab == "transfers":
-        rows = [x for x in rows if x["group"] == "doc"]
-    elif tab == "requests":
-        rows = [x for x in rows if x["group"] == "req"]
     rows.sort(key=lambda x: (x["need_action"], _sort_key(x["created_at"])), reverse=True)
 
     to_action = sum(1 for x in rows if x["need_action"])
@@ -416,8 +409,7 @@ def documents():
     can_transfer = any(v[1] == role for v in KINDS.values())   # склад: OUT, производство: RETURN
     can_request = (role == "proizv")
 
-    return render_template("documents.html", rows=rows, tab=tab,
-                           n_all=n_doc + n_req, n_doc=n_doc, n_req=n_req,
+    return render_template("documents.html", rows=rows, n_all=len(rows),
                            to_action=to_action,
                            can_transfer=can_transfer, can_request=can_request)
 
@@ -739,9 +731,6 @@ def doc_delete(doc_id):
 @app.route("/<any(sklad,proizv,director):role_url>/refs")
 @login_required
 def refs():
-    tab = request.args.get("tab", "customers")
-    if tab not in ("customers", "models", "workers"):
-        tab = "customers"
     show_arch = request.args.get("arch") == "1"
 
     def load(table):
@@ -752,7 +741,7 @@ def refs():
         return g.db.execute(q).fetchall()
 
     return render_template(
-        "refs.html", tab=tab, show_arch=show_arch,
+        "refs.html", show_arch=show_arch,
         customers=load("customers"), models=load("models"),
         workers=load("workers"), can_edit=can_edit_refs(),
     )
@@ -780,7 +769,7 @@ def ref_add(table):
         if name:
             g.db.execute(f"INSERT INTO {table} (name) VALUES (?)", (name,))
     g.db.commit()
-    return redirect(url_for("refs", tab=table))
+    return redirect(url_for("refs", arch=request.args.get("arch"), _anchor="refs-" + table))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/refs/<table>/quick_add", methods=["POST"])
@@ -819,7 +808,7 @@ def ref_edit(table, rid):
         if name:
             g.db.execute(f"UPDATE {table} SET name=? WHERE id=?", (name, rid))
     g.db.commit()
-    return redirect(url_for("refs", tab=table))
+    return redirect(url_for("refs", arch=request.args.get("arch"), _anchor="refs-" + table))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/refs/<table>/<int:rid>/arch", methods=["POST"])
@@ -829,7 +818,7 @@ def ref_arch(table, rid):
     val = 0 if request.form.get("restore") else 1
     g.db.execute(f"UPDATE {table} SET archived=? WHERE id=?", (val, rid))
     g.db.commit()
-    return redirect(url_for("refs", tab=table, arch=request.args.get("arch")))
+    return redirect(url_for("refs", arch=request.args.get("arch"), _anchor="refs-" + table))
 
 
 # ---------- Расхождения ----------
@@ -1102,7 +1091,7 @@ def request_new():
     g.db.commit()
     flash("Заявка №%d создана. Склад увидит её через %s, до этого её можно изменить."
           % (cur.lastrowid, _window_label()))
-    return redirect(url_for("documents", tab="requests"))
+    return redirect(url_for("documents"))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/edit", methods=["GET", "POST"])
@@ -1116,7 +1105,7 @@ def request_edit(req_id):
         abort(404)
     if not _req_editable(r):
         flash("Заявку №%d уже нельзя изменить: прошло больше %s." % (req_id, _window_label()))
-        return redirect(url_for("documents", tab="requests"))
+        return redirect(url_for("documents"))
     if request.method == "GET":
         rows = []
         for i in _load_req_items(req_id):
@@ -1138,7 +1127,7 @@ def request_edit(req_id):
                  (1 if any(p[4] for p in parsed) else 0, note, req_id))
     g.db.commit()
     flash("Заявка №%d изменена." % req_id)
-    return redirect(url_for("documents", tab="requests"))
+    return redirect(url_for("documents"))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>")
@@ -1344,7 +1333,7 @@ def request_delete(req_id):
     g.db.execute("DELETE FROM requests WHERE id=?", (req_id,))
     g.db.commit()
     flash(f"Заявка №{req_id} удалена.")
-    return redirect(url_for("documents", tab="requests"))
+    return redirect(url_for("documents"))
 
 
 # ---------- Сдельная зарплата ----------

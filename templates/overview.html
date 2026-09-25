@@ -12,14 +12,14 @@
 {# ---- В пути: два направления ---- #}
 {% if to_prod or to_sklad %}<div class="two">
   {% if to_prod %}
-  <a class="card mini b" href="{{ url_for('documents', tab='transfers') }}">
+  <a class="card mini b" href="{{ url_for('documents') }}">
     <div class="mini-n">{{ to_prod }}</div>
     <div class="mini-l">едет на производство</div>
     <div class="mini-s">склад → производство</div>
   </a>
   {% endif %}
   {% if to_sklad %}
-  <a class="card mini g" href="{{ url_for('documents', tab='transfers') }}">
+  <a class="card mini g" href="{{ url_for('documents') }}">
     <div class="mini-n">{{ to_sklad }}</div>
     <div class="mini-l">едет на склад</div>
     <div class="mini-s">производство → склад</div>
@@ -29,7 +29,7 @@
 {% endif %}
 
 {% if req_open %}
-<a class="card reqline" href="{{ url_for('documents', tab='requests') }}">
+<a class="card reqline" href="{{ url_for('documents') }}">
   <span class="reqn">{{ req_open }}</span>
   <span>заявок «чего не хватает» в работе у склада</span>
   <span class="go">→</span>
