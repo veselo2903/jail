@@ -63,6 +63,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     empty = client.get("/requests")
     assert empty.status_code == 200
     assert "Создать поставку" in empty.text
+    assert 'class="tag sent"' not in empty.text
     assert client.get("/requests/supply/new").status_code == 200
     assert "Начали собирать" not in empty.text
     assert "Сохранить сборку" not in empty.text
@@ -101,7 +102,10 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     page = client.get("/requests")
     assert page.status_code == 200 and "Кожа" in page.text and "Создать поставку" in page.text
     assert "ship_%s" % item_ids[0] not in page.text
-    assert "Запрошено 10" in client.get("/requests/supply/new").text
+    supply_page = client.get("/requests/supply/new").text
+    assert "Запрошено 10" in supply_page
+    assert '<details class="sklad-incoming-spoiler">' in supply_page
+    assert 'class="btn grey sm sklad-back-to-requests"' in supply_page
 
     # Первая отправка частичная. Остаток остаётся виден; повторная отправка закрывает заявку.
     partial = post("/requests/supply/new", {

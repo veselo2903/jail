@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Заявки — jail{% endblock %}
 {% block content %}
+<div class="{{ 'sklad-requests-page' if role == 'sklad' else 'requests-page' }}">
 
 {% if to_action and role != 'sklad' %}<div class="card hero warn">
   <div class="big">{{ to_action }}</div>
@@ -14,23 +15,22 @@
   <a class="btn green block" href="{{ url_for('request_new') }}" style="flex:1">+ Заявка «чего не хватает»</a>
   {% endif %}
   {% if role=='sklad' %}
-  <a class="btn block" href="{{ url_for('supply_new') }}" style="flex:1">+ Создать поставку</a>
+  <a class="btn block sklad-create-supply-btn" href="{{ url_for('supply_new') }}" style="flex:1">+ Создать поставку</a>
   {% elif role=='proizv' %}
   <a class="btn block" href="{{ url_for('doc_new') }}" style="flex:1">+ Возврат на склад</a>
   {% endif %}
 </div>
 
 {% if rows %}
-<div class="card flush dq-list">
+<div class="card flush dq-list {{ 'sklad-requests-list' if role == 'sklad' }}">
 <table class="dq-table">
   <tr><th>№</th><th>Тип</th><th class="num">Кол-во</th><th>Статус</th><th>Дата</th><th></th></tr>
   {% for x in rows %}
-  <tr class="linkrow {{ 'dq-row' if x.detail }}" {% if x.detail %}data-dq-toggle="{{ x.detail_id }}"{% else %}onclick="location='{{ x.url }}'"{% endif %}>
+  <tr class="linkrow {{ 'dq-row' if x.detail }} {{ 'sklad-request-row' if role == 'sklad' and x.group == 'req' else 'sklad-supply-row' if role == 'sklad' and x.group == 'shipment' else '' }}" {% if x.detail %}data-dq-toggle="{{ x.detail_id }}"{% else %}onclick="location='{{ x.url }}'"{% endif %}>
     <td>{{ x.id }}</td>
     <td>
       <b>{{ x.title }}</b>
       {% if x.urgent %}<span class="tag urgent">Срочно</span>{% endif %}
-      {% if x.need_action %}<span class="tag sent">вам</span>{% endif %}
       <div class="small">{{ x.direction }}</div>
       <div class="small dq-date-mobile">{{ x.created_at }}</div>
     </td>
@@ -55,7 +55,7 @@
     </td>
   </tr>
   {% if x.detail %}
-  <tr class="dq-detail" id="{{ x.detail_id }}" hidden>
+  <tr class="dq-detail {{ 'sklad-request-detail' if role == 'sklad' and x.group == 'req' else 'sklad-supply-detail' if role == 'sklad' and x.group == 'shipment' else '' }}" id="{{ x.detail_id }}" hidden>
     <td class="dq-detail-cell" colspan="6">
       {% if x.group == 'shipment' %}
         {% include '_shipment_history_detail.html' %}
@@ -69,6 +69,7 @@
 </table>
 </div>
 {% endif %}
+</div>
 
 <style>
 .dq-row{cursor:pointer}

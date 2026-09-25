@@ -21,6 +21,11 @@
   --st-grey:#eef1f5; --st-grey-t:#5b6875;
 }
 *{box-sizing:border-box}
+/* Убираем системную синюю подсветку касания и случайное выделение текста в элементах управления. */
+a,button,summary,summary *,label,label *,tr.linkrow,tr.linkrow *,.btn,.nav{
+  -webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none
+}
+input,textarea,select{ -webkit-tap-highlight-color:transparent }
 html{-webkit-text-size-adjust:100%}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
   background:var(--bg);color:var(--ink);font-size:16px;line-height:1.5;
@@ -92,7 +97,6 @@ tr.linkrow:hover td{background:#f7fbff}
 
 .tag{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;
   font-weight:700;line-height:1.4}
-.tag.sent{background:var(--blue-bg);color:var(--blue-d)}
 .tag.accepted{background:var(--green-bg);color:var(--green)}
 .tag.d{background:var(--warn-bg);color:var(--warn)}
 .tag.rq-open{background:var(--blue-bg);color:var(--blue-d)}
@@ -187,7 +191,7 @@ footer{color:var(--faint);font-size:12px;text-align:center;padding:18px}
   <a class="nav {{ 'on' if ep=='overview' }}" href="{{ url_for('overview') }}">
     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>Обзор</a>
   {% endif %}
-  <a class="nav {{ 'on' if ep in ['documents','doc_view','doc_new','request_new','request_edit','docs_collect'] }}" href="{{ url_for('documents') }}">
+  <a class="nav {{ 'on' if ep in ['documents','doc_view','doc_new','request_new','request_edit','docs_collect','supply_new'] }}" href="{{ url_for('documents') }}">
     <svg viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/><path d="M9 13h6M9 17h4"/></svg>Заявки{% if role=='sklad' and req_open %}<span class="b">{{ req_open }}</span>{% endif %}</a>
   {% if role in ['sklad','proizv'] %}
   <a class="nav {{ 'on' if ep=='acceptance' }}" href="{{ url_for('acceptance') }}">
