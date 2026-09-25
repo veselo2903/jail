@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Новый документ — jail{% endblock %}
+{% block title %}Новая заявка — jail{% endblock %}
 {% block who_title %}<div class="rn-title">{{ 'Передача на производство' if kind=='OUT' else 'Возврат на склад' }}</div>{% endblock %}
 {% block content %}
 {# Одна карточка строки документа; используется и для формы, и для шаблона клонирования #}
@@ -48,7 +48,7 @@
 
   <div class="dn-common card">
     <div class="dn-field dn-field-note">
-      <label>Примечание к документу (необязательно)</label>
+      <label>Примечание к заявке (необязательно)</label>
       <input class="dn-input-note" name="note" value="{{ note }}">
     </div>
     <button class="dn-submit btn green block" type="submit">Отправить на приёмку</button>

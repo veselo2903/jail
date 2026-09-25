@@ -30,18 +30,24 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert "пар сейчас на производстве" not in client.get("/overview").text
     assert "Расхождения при приёмке (0)" not in client.get("/discrepancies").text
     assert client.get("/login/sklad").status_code == 302
-    assert client.get("/docs/new").status_code == 200
-    assert "Здесь пока пусто" not in client.get("/docs").text
-    assert "Новых заявок к сборке нет" not in client.get("/docs/collect").text
+    assert client.get("/requests/transfer/new").status_code == 200
+    # старые адреса /docs/... перенаправляют на новые
+    for old, new in (("/docs", "/requests"), ("/docs?tab=requests", "/requests?tab=requests"),
+                     ("/docs/collect", "/requests/collect"), ("/docs/new", "/requests/transfer/new"),
+                     ("/docs/7", "/requests/transfer/7")):
+        moved = client.get(old)
+        assert moved.status_code == 302 and moved.location.endswith(new), (old, moved.location)
+    assert "Здесь пока пусто" not in client.get("/requests").text
+    assert "Новых заявок к сборке нет" not in client.get("/requests/collect").text
     assert "Новых документов на приёмку нет" not in client.get("/acceptance").text
     assert query("SELECT COUNT(*) FROM documents")[0] == 0
-    assert client.post("/docs/new").status_code == 400
-    assert post("/docs/new").status_code == 200          # пустая форма: запись не создаётся
+    assert client.post("/requests/transfer/new").status_code == 400
+    assert post("/requests/transfer/new").status_code == 200          # пустая форма: запись не создаётся
     assert query("SELECT COUNT(*) FROM documents")[0] == 0
-    bad = post("/docs/new", {"customer_id": ["1", "9999"], "model_id": ["1", "9999"],
+    bad = post("/requests/transfer/new", {"customer_id": ["1", "9999"], "model_id": ["1", "9999"],
                              "status": ["zagotovka", "zagotovka"], "pairs": ["10", "10"]})
     assert bad.status_code == 200 and query("SELECT COUNT(*) FROM documents")[0] == 0
-    created = post("/docs/new", {"customer_id": ["1", "1", "1"], "model_id": ["1", "1", "1"],
+    created = post("/requests/transfer/new", {"customer_id": ["1", "1", "1"], "model_id": ["1", "1", "1"],
                                  "status": ["zagotovka"] * 3, "pairs": ["10", "10", ""],
                                  "note": "общее"})
     assert created.status_code == 302
@@ -52,11 +58,11 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     line_id = query("SELECT MAX(id) FROM lines WHERE document_id=?", (doc_id,))[0]
     # черновиков больше нет: правки и отправки после создания не существует
     for gone in ("send", "revert", f"line/{line_id}/del"):
-        assert post(f"/docs/{doc_id}/{gone}").status_code == 404
+        assert post(f"/requests/transfer/{doc_id}/{gone}").status_code == 404
     assert client.get("/login/proizv").status_code == 302
-    assert post(f"/docs/{doc_id}/accept").status_code == 302
+    assert post(f"/requests/transfer/{doc_id}/accept").status_code == 302
     assert query("SELECT status FROM documents WHERE id=?", (doc_id,))[0] == "sent"
-    assert post(f"/docs/{doc_id}/accept", {f"recv_{first_line_id}": "10",
+    assert post(f"/requests/transfer/{doc_id}/accept", {f"recv_{first_line_id}": "10",
                                           f"recv_{line_id}": "9"}).status_code == 302
     assert query("SELECT status FROM documents WHERE id=?", (doc_id,))[0] == "accepted"
 
@@ -70,10 +76,10 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert client.get("/requests/2").status_code == 200
     assert query("SELECT status FROM requests WHERE id=1")[0] == "open"
     assert query("SELECT status FROM requests WHERE id=2")[0] == "done"
-    assert client.get("/docs/collect/blank").status_code == 200
-    assert post("/docs/collect/blank").status_code == 302
+    assert client.get("/requests/collect/blank").status_code == 200
+    assert post("/requests/collect/blank").status_code == 302
     assert query("SELECT COUNT(*) FROM requests")[0] == 3
-    blank = post("/docs/collect/blank", {"line_kind": "material", "item": "Ткань",
+    blank = post("/requests/collect/blank", {"line_kind": "material", "item": "Ткань",
                                          "qty": "2", "unit": "m2"})
     req_id = int(blank.location.split("/requests/")[1].split("?")[0])
     assert query("SELECT COUNT(*) FROM request_items WHERE request_id=?", (req_id,))[0] == 1
@@ -94,17 +100,17 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
                 (req_ids[-1], item_name, 3),
             )
             item_ids.append(cur.lastrowid)
-    collect_page = client.get("/docs/collect")
+    collect_page = client.get("/requests/collect")
     assert collect_page.status_code == 200
     assert "Подошва" in collect_page.text and "Нитки" in collect_page.text
     assert query("SELECT status FROM requests WHERE id=?", (req_ids[0],))[0] == "open"
-    saved = post("/docs/collect/save", {f"col_{item_ids[0]}": "3",
+    saved = post("/requests/collect/save", {f"col_{item_ids[0]}": "3",
                                         f"placed_{item_ids[0]}": "1"})
     assert saved.status_code == 302 and f"/requests/{req_ids[0]}?step=2" in saved.location
     assert query("SELECT status FROM requests WHERE id=?", (req_ids[0],))[0] == "progress"
     assert query("SELECT status FROM requests WHERE id=?", (req_ids[1],))[0] == "open"
     assert query("SELECT placed FROM request_items WHERE id=?", (item_ids[1],))[0] == 0
-    invalid = post("/docs/collect/save", {f"col_{item_ids[0]}": "3",
+    invalid = post("/requests/collect/save", {f"col_{item_ids[0]}": "3",
                                           f"placed_{item_ids[0]}": "1",
                                           f"col_{item_ids[1]}": "-1",
                                           f"placed_{item_ids[1]}": "1"})
@@ -147,7 +153,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
             pass
 
     assert client.get("/login/director").status_code == 302
-    assert post(f"/docs/{doc_id}/delete").status_code == 302
+    assert post(f"/requests/transfer/{doc_id}/delete").status_code == 302
     row = query("SELECT details FROM audit_events WHERE action='doc_delete_snapshot' ORDER BY id DESC LIMIT 1")
     assert json.loads(row[0])["document"]["id"] == doc_id
     assert client.get("/payroll").status_code == 200
@@ -181,7 +187,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
                                    "unit_custom": ["", "кг", "", ""],
                                    "item_note": ["", "чёрная", "", ""], "note": "общее", "urgent_2": "1"})
     assert multi.status_code == 302
-    assert "/docs" in multi.location and "requests" in multi.location
+    assert multi.location.endswith("/requests?tab=requests")
     multi_id = query("SELECT MAX(id) FROM requests")[0]
     assert query("SELECT status, sent_at IS NOT NULL FROM requests WHERE id=?", (multi_id,)) == ("open", 1)
     assert query("SELECT note, urgent FROM requests WHERE id=?", (multi_id,)) == ("общее", 1)
@@ -192,13 +198,13 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert query("SELECT unit, note FROM request_items WHERE request_id=? AND item='Кожа'", (multi_id,)) == ("кг", "чёрная")
     assert query("SELECT unit FROM request_items WHERE request_id=? AND item='Нитки'", (multi_id,))[0] is None
     assert client.get(f"/requests/{multi_id}").status_code == 404  # у производства нет страницы заявки
-    docs_page = client.get("/docs?tab=requests").text
+    docs_page = client.get("/requests?tab=requests").text
     assert "кг" in docs_page and "dq-item-urgent" in docs_page and "onclick=\"location='/requests/" not in docs_page
     # Правка в течение 15 минут; склад видит заявку не раньше.
     assert query("SELECT created_ts IS NOT NULL FROM requests WHERE id=?", (multi_id,))[0] == 1
     edit_page = client.get(f"/requests/{multi_id}/edit")
     assert edit_page.status_code == 200 and "rn-edit-hint" in edit_page.text and "Кожа" in edit_page.text
-    assert "редактировать" in client.get("/docs?tab=requests").text
+    assert "редактировать" in client.get("/requests?tab=requests").text
     assert post(f"/requests/{multi_id}/edit", {"item": [""], "qty": [""]}).status_code == 200
     edited = post(f"/requests/{multi_id}/edit", {"item": ["Уникальная деталь"], "qty": ["5"], "unit": ["pary"],
                                                  "unit_custom": [""], "item_note": [""], "note": "правка"})
@@ -207,21 +213,21 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert query("SELECT note, urgent FROM requests WHERE id=?", (multi_id,)) == ("правка", 0)
     assert query("SELECT COUNT(*) FROM audit_events WHERE action='request_edit_snapshot'")[0] == 1
     assert client.get("/login/sklad").status_code == 302
-    assert "Уникальная деталь" not in client.get("/docs/collect").text
-    assert "Уникальная деталь" not in client.get("/docs").text
+    assert "Уникальная деталь" not in client.get("/requests/collect").text
+    assert "Уникальная деталь" not in client.get("/requests").text
     assert client.get(f"/requests/{multi_id}").status_code == 404
     assert post(f"/requests/{multi_id}/take").status_code == 404
-    assert post(f"/docs/collect/{multi_id}/start").status_code == 404
+    assert post(f"/requests/collect/{multi_id}/start").status_code == 404
     assert client.get(f"/requests/{multi_id}/edit").status_code == 403
     with sqlite3.connect(db.DB_PATH) as conn:
         conn.execute("UPDATE requests SET created_ts=created_ts-16*60 WHERE id=?", (multi_id,))
-    assert "Уникальная деталь" in client.get("/docs/collect").text
+    assert "Уникальная деталь" in client.get("/requests/collect").text
     assert client.get(f"/requests/{multi_id}").status_code == 200
     assert client.get("/login/proizv").status_code == 302
     assert client.get(f"/requests/{multi_id}/edit").status_code == 302
     assert post(f"/requests/{multi_id}/edit", {"item": ["Другое"], "qty": ["1"]}).status_code == 302
     assert query("SELECT item FROM request_items WHERE request_id=?", (multi_id,))[0] == "Уникальная деталь"
-    assert "редактировать" not in client.get("/docs?tab=requests").text
+    assert "редактировать" not in client.get("/requests?tab=requests").text
     new_req = post("/requests/new", {"item": "Клей", "qty": "2"})
     assert new_req.status_code == 302
     new_req_id = query("SELECT MAX(id) FROM requests")[0]
@@ -230,18 +236,18 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert post(f"/requests/{new_req_id}/delete").status_code == 302
     assert query("SELECT COUNT(*) FROM requests WHERE id=?", (new_req_id,))[0] == 0
 
-    ret = post("/docs/new", {"customer_id": ["1"], "model_id": ["1"], "status": ["gotovoe"], "pairs": ["1"]})
+    ret = post("/requests/transfer/new", {"customer_id": ["1"], "model_id": ["1"], "status": ["gotovoe"], "pairs": ["1"]})
     assert ret.status_code == 302
     ret_id = query("SELECT MAX(id) FROM documents")[0]
     assert query("SELECT status FROM documents WHERE id=?", (ret_id,))[0] == "sent"
-    assert post(f"/docs/{ret_id}/delete").status_code == 403      # создатель не удаляет отправленное
+    assert post(f"/requests/transfer/{ret_id}/delete").status_code == 403      # создатель не удаляет отправленное
 
     assert client.get("/login/sklad").status_code == 302
     before = query("SELECT COUNT(*) FROM requests")[0]
-    assert post("/docs/collect/blank", {"line_kind": "pair", "customer_id": "1",
+    assert post("/requests/collect/blank", {"line_kind": "pair", "customer_id": "1",
                                         "model_id": "1", "pairs": "0", "operation": "op1"}).status_code == 302
     assert query("SELECT COUNT(*) FROM requests")[0] == before
-    new_blank = post("/docs/collect/blank", {"line_kind": "pair", "customer_id": "1",
+    new_blank = post("/requests/collect/blank", {"line_kind": "pair", "customer_id": "1",
                                              "model_id": "1", "pairs": "1",
                                              "operations": ["op1", "op6"]})
     new_blank_id = int(new_blank.location.split("/requests/")[1].split("?")[0])

@@ -65,7 +65,7 @@ KIND_LINE_STATUSES = {
 }
 
 # Заявку производство может править, а склад её видит только после этого срока.
-EDIT_WINDOW = 15 * 60
+EDIT_WINDOW = 20  # ВРЕМЕННО 20 секунд для проверки; рабочее значение: 15 * 60
 
 STATUS_LABEL = {"sent": "Отправлен", "accepted": "Принят"}
 
@@ -189,7 +189,11 @@ def _req_editable(r):
 
 
 def _clock(ts):
-    return datetime.fromtimestamp(ts, db.TZ).strftime("%H:%M")
+    return datetime.fromtimestamp(ts, db.TZ).strftime("%H:%M:%S")
+
+
+def _window_label():
+    return "%d мин" % (EDIT_WINDOW // 60) if EDIT_WINDOW % 60 == 0 else "%d с" % EDIT_WINDOW
 
 
 def _open_requests_count():
@@ -324,7 +328,7 @@ def _request_detail(r):
     )
 
 
-@app.route("/docs")
+@app.route("/requests")
 @login_required
 def documents():
     role = session["role"]
@@ -397,7 +401,7 @@ def documents():
                            can_transfer=can_transfer, can_request=can_request)
 
 
-@app.route("/docs/collect")
+@app.route("/requests/collect")
 @login_required
 def docs_collect():
     """Склад: единый список позиций по открытым заявкам."""
@@ -415,7 +419,7 @@ def docs_collect():
     return render_template("docs_collect.html", groups=groups)
 
 
-@app.route("/docs/collect/save", methods=["POST"])
+@app.route("/requests/collect/save", methods=["POST"])
 @login_required
 def docs_collect_save():
     """Сохранить общий чек-лист без изменения не показанных заявок."""
@@ -476,7 +480,7 @@ def docs_collect_save():
     return redirect(url_for("docs_collect"))
 
 
-@app.route("/docs/collect/<int:req_id>/start", methods=["POST"])
+@app.route("/requests/collect/<int:req_id>/start", methods=["POST"])
 @login_required
 def docs_collect_start(req_id):
     """Взять заявку в сборку и открыть мастер (шаг 1)."""
@@ -492,7 +496,7 @@ def docs_collect_start(req_id):
     return redirect(url_for("request_view", req_id=req_id, step=1))
 
 
-@app.route("/docs/collect/blank", methods=["GET", "POST"])
+@app.route("/requests/collect/blank", methods=["GET", "POST"])
 @login_required
 def docs_collect_blank():
     """Создать передачу только вместе с первой позицией."""
@@ -554,7 +558,21 @@ def _parse_doc_rows():
     return rows
 
 
-@app.route("/docs/new", methods=["GET", "POST"])
+@app.route("/docs")
+@app.route("/docs/<path:rest>")
+def legacy_docs(rest=""):
+    """Старые ссылки /docs/... ведут на новые адреса раздела «Заявки»."""
+    if rest.startswith("collect"):
+        path = "/requests/" + rest
+    elif rest == "new" or rest.split("/")[0].isdigit():
+        path = "/requests/transfer/" + rest
+    else:
+        path = "/requests"
+    query = ("?" + request.query_string.decode()) if request.query_string else ""
+    return redirect(request.script_root + path + query)
+
+
+@app.route("/requests/transfer/new", methods=["GET", "POST"])
 @login_required
 def doc_new():
     role = session["role"]
@@ -609,11 +627,11 @@ def doc_new():
             "INSERT INTO lines (document_id, customer_id, model_id, status, pairs_sent) VALUES (?, ?, ?, ?, ?)",
             (cur.lastrowid, cid, mid, status, pairs))
     g.db.commit()
-    flash("Документ №%d отправлен на приёмку." % cur.lastrowid)
+    flash("Заявка №%d отправлена на приёмку." % cur.lastrowid)
     return redirect(url_for("documents"))
 
 
-@app.route("/docs/<int:doc_id>")
+@app.route("/requests/transfer/<int:doc_id>")
 @login_required
 def doc_view(doc_id):
     role = session["role"]
@@ -634,7 +652,7 @@ def doc_view(doc_id):
     )
 
 
-@app.route("/docs/<int:doc_id>/accept", methods=["POST"])
+@app.route("/requests/transfer/<int:doc_id>/accept", methods=["POST"])
 @login_required
 def doc_accept(doc_id):
     role = session["role"]
@@ -669,7 +687,7 @@ def doc_accept(doc_id):
     return redirect(url_for("doc_view", doc_id=doc_id))
 
 
-@app.route("/docs/<int:doc_id>/delete", methods=["POST"])
+@app.route("/requests/transfer/<int:doc_id>/delete", methods=["POST"])
 @login_required
 def doc_delete(doc_id):
     role = session["role"]
@@ -685,7 +703,7 @@ def doc_delete(doc_id):
     g.db.execute("DELETE FROM lines WHERE document_id=?", (doc_id,))
     g.db.execute("DELETE FROM documents WHERE id=?", (doc_id,))
     g.db.commit()
-    flash(f"Документ №{doc_id} удалён.")
+    flash(f"Заявка №{doc_id} удалена.")
     return redirect(url_for("documents"))
 
 
@@ -971,13 +989,6 @@ def _load_req_items(req_id):
     ).fetchall()
 
 
-@app.route("/requests")
-@login_required
-def requests_list():
-    # Заявки и передачи объединены в одном разделе «Документы».
-    return redirect(url_for("documents", tab="requests"))
-
-
 def _parse_request_rows():
     """Собрать позиции новой заявки из параллельных полей формы."""
     f = request.form
@@ -1061,8 +1072,8 @@ def request_new():
         (1 if any(p[4] for p in parsed) else 0, "proizv", now, int(time.time()), now, note))  # срочность заявки = есть срочная позиция
     _insert_request_items(cur.lastrowid, parsed)
     g.db.commit()
-    flash("Заявка №%d создана. Склад увидит её через %d мин, до этого её можно изменить."
-          % (cur.lastrowid, EDIT_WINDOW // 60))
+    flash("Заявка №%d создана. Склад увидит её через %s, до этого её можно изменить."
+          % (cur.lastrowid, _window_label()))
     return redirect(url_for("documents", tab="requests"))
 
 
@@ -1076,7 +1087,7 @@ def request_edit(req_id):
     if not r:
         abort(404)
     if not _req_editable(r):
-        flash("Заявку №%d уже нельзя изменить: прошло %d минут." % (req_id, EDIT_WINDOW // 60))
+        flash("Заявку №%d уже нельзя изменить: прошло больше %s." % (req_id, _window_label()))
         return redirect(url_for("documents", tab="requests"))
     if request.method == "GET":
         rows = []
@@ -1108,7 +1119,7 @@ def request_view(req_id):
     role = session["role"]
     r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
     if not r or role == "proizv" or (role == "sklad" and _hidden_from_sklad(r)):
-        abort(404)  # производство работает только со списком в /docs и формой /requests/new
+        abort(404)  # производство работает только со списком /requests и формой /requests/new
     items = _load_req_items(req_id)
     can_take = (r["status"] == "open" and role == "sklad")
     can_collect = (r["status"] == "progress" and role == "sklad")
@@ -1305,7 +1316,7 @@ def request_delete(req_id):
     g.db.execute("DELETE FROM requests WHERE id=?", (req_id,))
     g.db.commit()
     flash(f"Заявка №{req_id} удалена.")
-    return redirect(url_for("requests_list"))
+    return redirect(url_for("documents", tab="requests"))
 
 
 # ---------- Сдельная зарплата ----------

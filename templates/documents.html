@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Документы — jail{% endblock %}
+{% block title %}Заявки — jail{% endblock %}
 {% block content %}
 
 {% if n_all or to_action %}<div class="card hero {{ 'warn' if to_action else '' }}">
@@ -8,7 +8,7 @@
     <div class="lbl">{{ 'Новая заявка' if to_action==1 else 'Новые заявки' }}</div>
   {% else %}
     <div class="big">{{ n_all }}</div>
-    <div class="lbl">документов и заявок</div>
+    <div class="lbl">заявок</div>
   {% endif %}
 </div>
 {% endif %}
@@ -35,7 +35,7 @@
 {% if rows %}
 <div class="card flush dq-list">
 <table class="dq-table">
-  <tr><th>№</th><th>Документ</th><th class="num">Кол-во</th><th>Статус</th><th>Дата</th><th></th></tr>
+  <tr><th>№</th><th>Заявка</th><th class="num">Кол-во</th><th>Статус</th><th>Дата</th><th></th></tr>
   {% for x in rows %}
   <tr class="linkrow {{ 'dq-row' if x.detail }}" {% if x.detail %}data-dq-toggle="dq-{{ x.id }}"{% else %}onclick="location='{{ x.url }}'"{% endif %}>
     <td>{{ x.id }}</td>
@@ -58,7 +58,7 @@
       {% endif %}
       {% if x.can_del %}
       <form class="dq-delete-form" method="post" action="{{ x.del_url }}" onclick="event.stopPropagation()"
-            onsubmit="return confirm('Удалить {{ 'заявку' if x.group=='req' else 'документ' }} №{{ x.id }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            onsubmit="return confirm('Удалить заявку №{{ x.id }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn danger sm" type="submit">удалить</button>
       </form>
       {% endif %}

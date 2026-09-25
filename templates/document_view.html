@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Документ №{{ d.id }} — jail{% endblock %}
+{% block title %}Заявка №{{ d.id }} — jail{% endblock %}
 {% block content %}
 
 <div class="card">
   <div class="row" style="justify-content:space-between">
     <div>
-      <b>Документ №{{ d.id }}</b>
+      <b>Заявка №{{ d.id }}</b>
       <span class="tag {{ d.status }}">{{ STATUS_LABEL[d.status] }}</span>
     </div>
     <a class="small" href="{{ url_for('documents') }}">к списку</a>
@@ -26,7 +26,7 @@
 {% else %}
 <div class="card hero">
   <div class="big">{{ sent }}</div>
-  <div class="lbl">пар в документе</div>
+  <div class="lbl">пар в заявке</div>
 </div>
 {% endif %}
 
@@ -84,15 +84,15 @@
   </table>
 </div>
 {% if d.status=='sent' %}
-<div class="card small">Документ отправлен. Ожидает приёмки другой стороной.</div>
+<div class="card small">Заявка отправлена. Ожидает приёмки другой стороной.</div>
 {% endif %}
 {% endif %}
 
 {% if can_delete %}
 <div class="card">
   <form method="post" action="{{ url_for('doc_delete', doc_id=d.id) }}"
-        onsubmit="return confirm('Удалить документ №{{ d.id }} безвозвратно?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="btn danger" type="submit">Удалить документ</button>
+        onsubmit="return confirm('Удалить заявку №{{ d.id }} безвозвратно?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn danger" type="submit">Удалить заявку</button>
   </form>
 </div>
 {% endif %}

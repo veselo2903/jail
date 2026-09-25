@@ -29,7 +29,7 @@
 {% endif %}
 
 {% if req_open %}
-<a class="card reqline" href="{{ url_for('requests_list') }}">
+<a class="card reqline" href="{{ url_for('documents', tab='requests') }}">
   <span class="reqn">{{ req_open }}</span>
   <span>заявок «чего не хватает» в работе у склада</span>
   <span class="go">→</span>
@@ -82,7 +82,7 @@
 
 {# ---- Последние документы ---- #}
 {% if recent %}<details open>
-  <summary>Последние документы</summary>
+  <summary>Последние заявки</summary>
   <div class="body" style="padding:0">
     <table>
       <tr><th>№</th><th>Тип</th><th class="num">Пар</th><th>Статус</th><th>Дата</th></tr>

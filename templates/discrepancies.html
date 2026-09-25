@@ -34,7 +34,7 @@
   <div class="body">
       {% for x in doc_discr %}
       <div style="margin-bottom:10px">
-        <div><b>Документ №{{ x.d.id }}</b> · {{ KIND_SHORT[x.d.kind] }} · {{ x.d.accepted_at }}</div>
+        <div><b>Заявка №{{ x.d.id }}</b> · {{ KIND_SHORT[x.d.kind] }} · {{ x.d.accepted_at }}</div>
         <table>
           <tr><th>Заказчик — модель</th><th class="num">Отдано</th><th class="num">Принято</th><th>Причина</th></tr>
           {% for l in x.bad %}
