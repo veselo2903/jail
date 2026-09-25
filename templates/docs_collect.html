@@ -17,7 +17,7 @@
       <tr><th style="width:52px">Полож.</th><th>Позиция</th><th class="num">Нужно</th><th class="num">Положил</th></tr>
       {% for grp in groups %}
         {% if grp.its %}
-        <tr class="grp"><td colspan="4">Заявка №{{ grp.r.id }}{% if grp.r.urgent %} · есть срочные позиции{% endif %}{% if grp.r.note %} · {{ grp.r.note }}{% endif %}</td></tr>
+        <tr class="grp"><td colspan="4">Заявка №{{ grp.r.id }}{% if grp.r.urgent %} · срочно{% endif %}{% if grp.r.note %} · {{ grp.r.note }}{% endif %}</td></tr>
         {% for i in grp.its %}
         <tr>
           <td><input class="chkbox" type="checkbox" name="placed_{{ i.id }}" value="1" data-qty="{{ i.qty if i.qty is not none else '' }}" data-col="col_{{ i.id }}" {{ 'checked' if i.placed }}></td>

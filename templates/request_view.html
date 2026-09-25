@@ -11,7 +11,7 @@
     <div>
       <b>Заявка №{{ r.id }}</b>
       <span class="tag rq-{{ r.status }}">{{ REQ_STATUS[r.status] }}</span>
-      {% if r.urgent %}<span class="tag urgent">Есть срочные позиции</span>{% endif %}
+      {% if r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}
     </div>
     <a class="small" href="{{ url_for('documents') }}">к списку</a>
   </div>

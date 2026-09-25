@@ -2,14 +2,9 @@
 {% block title %}Заявки — jail{% endblock %}
 {% block content %}
 
-{% if n_all or to_action %}<div class="card hero {{ 'warn' if to_action else '' }}">
-  {% if to_action %}
-    <div class="big">{{ to_action }}</div>
-    <div class="lbl">{{ 'Новая заявка' if to_action==1 else 'Новые заявки' }}</div>
-  {% else %}
-    <div class="big">{{ n_all }}</div>
-    <div class="lbl">заявок</div>
-  {% endif %}
+{% if to_action %}<div class="card hero warn">
+  <div class="big">{{ to_action }}</div>
+  <div class="lbl">{{ 'Новая заявка' if to_action==1 else 'Новые заявки' }}</div>
 </div>
 {% endif %}
 
@@ -28,15 +23,16 @@
 {% if rows %}
 <div class="card flush dq-list">
 <table class="dq-table">
-  <tr><th>№</th><th>Заявка</th><th class="num">Кол-во</th><th>Статус</th><th>Дата</th><th></th></tr>
+  <tr><th>№</th><th>Тип</th><th class="num">Кол-во</th><th>Статус</th><th>Дата</th><th></th></tr>
   {% for x in rows %}
   <tr class="linkrow {{ 'dq-row' if x.detail }}" {% if x.detail %}data-dq-toggle="dq-{{ x.id }}"{% else %}onclick="location='{{ x.url }}'"{% endif %}>
     <td>{{ x.id }}</td>
     <td>
       <b>{{ x.title }}</b>
-      {% if x.urgent %}<span class="tag urgent">Есть срочные позиции</span>{% endif %}
+      {% if x.urgent %}<span class="tag urgent">Срочно</span>{% endif %}
       {% if x.need_action %}<span class="tag sent">вам</span>{% endif %}
       <div class="small">{{ x.direction }}</div>
+      <div class="small dq-date-mobile">{{ x.created_at }}</div>
     </td>
     <td class="num">{{ x.amount }} <span class="small">{{ x.unit }}</span></td>
     <td>
@@ -66,7 +62,6 @@
         <div class="dq-item">
           <div class="dq-item-main">
             <span class="dq-item-name">{{ i.item }}</span>
-            {% if i.urgent %}<span class="tag urgent dq-item-urgent">Срочно</span>{% endif %}
             {% if i.note %}<div class="small dq-item-note">{{ i.note }}</div>{% endif %}
           </div>
           <div class="dq-item-qty">
@@ -100,7 +95,6 @@
       {% if x.detail.note %}<div class="dq-note small">Примечание к заявке: {{ x.detail.note }}</div>{% endif %}
       {% if x.detail.ship_note %}<div class="dq-ship-note small">Сообщение склада: {{ x.detail.ship_note }}</div>{% endif %}
       {% if x.detail.visible_at %}<div class="dq-visible-hint small">Склад увидит заявку в {{ x.detail.visible_at }}. До этого её можно изменить.</div>{% endif %}
-      <div class="dq-dates small">Создана {{ x.created_at }}{% if x.detail.done_at %} · отправлена складом {{ x.detail.done_at }}{% endif %}</div>
     </td>
   </tr>
   {% endif %}
@@ -111,6 +105,7 @@
 
 <style>
 .dq-row{cursor:pointer}
+.dq-date-mobile{display:none}
 .dq-detail[hidden]{display:none}
 .dq-detail-cell{background:var(--surface2);padding:12px 16px}
 .dq-items{display:grid;gap:8px}
@@ -121,11 +116,12 @@
 .dq-item-name{font-weight:650}
 .dq-item-qty,.dq-item-got{white-space:nowrap;font-variant-numeric:tabular-nums}
 .dq-added-title{margin-top:6px;font-weight:700}
-.dq-note,.dq-ship-note,.dq-dates,.dq-visible-hint{margin-top:8px}
+.dq-note,.dq-ship-note,.dq-visible-hint{margin-top:8px}
 .dq-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .dq-actions form{margin:0}
 @media(max-width:720px){
   .dq-item{flex-wrap:wrap}.dq-item-main{flex-basis:100%}
+  .dq-date-mobile{display:block}
   .dq-table tr > :nth-child(5),.dq-table tr > :nth-child(3){display:none}   /* дата и число позиций: есть в раскрытой строке */
   .dq-actions{flex-direction:column;align-items:stretch}
   .dq-actions .btn.sm{padding:7px 10px;font-size:13px}

@@ -240,7 +240,8 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert query("SELECT unit FROM request_items WHERE request_id=? AND item='Нитки'", (multi_id,))[0] is None
     assert client.get(f"/requests/{multi_id}").status_code == 404  # у производства нет страницы заявки
     docs_page = client.get("/requests").text
-    assert "кг" in docs_page and "dq-item-urgent" in docs_page and "onclick=\"location='/requests/" not in docs_page
+    assert "кг" in docs_page and "dq-item-urgent" not in docs_page and "dq-dates" not in docs_page \
+        and "Есть срочные позиции" not in docs_page and "tag urgent\">Срочно" in docs_page and "onclick=\"location='/requests/" not in docs_page
     # Правка в течение 15 минут; склад видит заявку не раньше.
     assert query("SELECT created_ts IS NOT NULL FROM requests WHERE id=?", (multi_id,))[0] == 1
     edit_page = client.get(f"/requests/{multi_id}/edit")
