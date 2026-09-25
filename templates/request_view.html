@@ -221,7 +221,6 @@
 
 {% endif %}
 
-{# ==================== ОТПРАВКА СКЛАДУ (производство, черновик) ==================== #}
 {% if can_take %}
 <form method="post" action="{{ url_for('request_take', req_id=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <button class="btn green block" type="submit" style="font-size:17px;padding:15px">Начали собирать</button>

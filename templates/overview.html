@@ -66,7 +66,7 @@
 {% endif %}
 
 {# ---- Свод по документам ---- #}
-{% if cnt.sent or cnt.accepted or cnt.draft %}<div class="three">
+{% if cnt.sent or cnt.accepted %}<div class="three">
   {% if cnt.sent %}
   <a class="card mini2" href="{{ url_for('documents', status='sent') }}">
     <div class="mini-n">{{ cnt.sent }}</div><div class="mini-l">в пути</div>
@@ -75,11 +75,6 @@
   {% if cnt.accepted %}
   <a class="card mini2" href="{{ url_for('documents', status='accepted') }}">
     <div class="mini-n">{{ cnt.accepted }}</div><div class="mini-l">принято</div>
-  </a>
-  {% endif %}
-  {% if cnt.draft %}
-  <a class="card mini2" href="{{ url_for('documents', status='draft') }}">
-    <div class="mini-n">{{ cnt.draft }}</div><div class="mini-l">черновики</div>
   </a>
   {% endif %}
 </div>

@@ -63,10 +63,10 @@ KIND_LINE_STATUSES = {
     "RETURN": ["gotovoe"],
 }
 
-STATUS_LABEL = {"draft": "Черновик", "sent": "Отправлен", "accepted": "Принят"}
+STATUS_LABEL = {"sent": "Отправлен", "accepted": "Принят"}
 
 # Заявки «чего не хватает» (производство → склад)
-REQ_STATUS = {"draft": "Черновик", "open": "Новая", "progress": "Собирается",
+REQ_STATUS = {"open": "Новая", "progress": "Собирается",
               "done": "Собрано", "shipped": "Отправлено"}
 
 # Тип позиции при сборке (кладовщик отмечает, что это)
@@ -322,7 +322,7 @@ def documents():
             amount=("%s → %s" % (sent, recv) if has_recv else str(sent)), unit="пар",
             status=d["status"], status_label=STATUS_LABEL[d["status"]], status_cls=d["status"],
             diff=(diff if has_recv else 0), has_recv=has_recv, urgent=0,
-            need_action=need_accept, can_del=(d["status"] == "draft" and (role == creator or role == "director")),
+            need_action=need_accept, can_del=(role == "director"),
             del_url=url_for("doc_delete", doc_id=d["id"]),
             url=url_for("doc_view", doc_id=d["id"]),
         ))
@@ -330,8 +330,6 @@ def documents():
     # --- Заявки ---
     reqs = g.db.execute("SELECT * FROM requests ORDER BY id DESC").fetchall()
     for r in reqs:
-        if r["status"] == "draft" and role != "proizv":
-            continue
         n = g.db.execute("SELECT COUNT(*) c FROM request_items WHERE request_id=?",
                          (r["id"],)).fetchone()["c"]
         if n == 0:
@@ -344,7 +342,7 @@ def documents():
             status=r["status"], status_label=REQ_STATUS[r["status"]], status_cls="rq-" + r["status"],
             diff=0, has_recv=False, urgent=r["urgent"],
             need_action=need,
-            can_del=(role == "proizv" and r["status"] in ("draft", "open", "progress")),
+            can_del=(role == "proizv" and r["status"] in ("open", "progress")),
             del_url=url_for("request_delete", req_id=r["id"]),
             url=None if role == "proizv" else url_for("request_view", req_id=r["id"]),
             detail=_request_detail(r) if role == "proizv" else None,
@@ -516,6 +514,16 @@ def docs_collect_blank():
     return redirect(url_for("request_view", req_id=cur.lastrowid, step=2))
 
 
+def _parse_doc_rows():
+    """Собрать строки документа из параллельных полей формы."""
+    f = request.form
+    cols = {k: f.getlist(k) for k in ("customer_id", "model_id", "status", "pairs")}
+    rows = []
+    for n in range(max(len(v) for v in cols.values())):
+        rows.append({k: (v[n] if n < len(v) else "").strip() for k, v in cols.items()})
+    return rows
+
+
 @app.route("/docs/new", methods=["GET", "POST"])
 @login_required
 def doc_new():
@@ -527,34 +535,52 @@ def doc_new():
 
     # У роли ровно один тип: склад -> OUT, производство -> RETURN.
     kind = creatable[0]
-    if request.method == "GET":
-        customers = g.db.execute("SELECT * FROM customers WHERE archived=0 ORDER BY name").fetchall()
-        models = g.db.execute("SELECT * FROM models WHERE archived=0 ORDER BY name").fetchall()
-        return render_template("document_new.html", kind=kind, customers=customers, models=models)
-    try:
-        cid = int(request.form["customer_id"])
-        mid = int(request.form["model_id"])
-        pairs = int(request.form["pairs"])
-    except (KeyError, ValueError):
-        flash("Заполните заказчика, модель и число пар.")
-        return redirect(url_for("doc_new"))
     allowed = KIND_LINE_STATUSES[kind]
-    status = request.form.get("status") or allowed[0]
-    if (pairs <= 0 or status not in allowed or
-        not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone() or
-        not g.db.execute("SELECT 1 FROM models WHERE id=? AND archived=0", (mid,)).fetchone()):
-        flash("Проверьте первую строку документа.")
-        return redirect(url_for("doc_new"))
+    customers = g.db.execute("SELECT * FROM customers WHERE archived=0 ORDER BY name").fetchall()
+    models = g.db.execute("SELECT * FROM models WHERE archived=0 ORDER BY name").fetchall()
+    blank = {"customer_id": "", "model_id": "", "status": allowed[0], "pairs": ""}
+
+    def page(rows, note):
+        return render_template("document_new.html", kind=kind, customers=customers, models=models,
+                               rows=rows or [blank], blank=blank, note=note)
+
+    if request.method == "GET":
+        return page([blank], "")
+    rows = _parse_doc_rows()
+    note = (request.form.get("note") or "").strip()
+
+    def fail(message):
+        flash(message)
+        return page(rows, note)
+
+    parsed = []
+    for n, row in enumerate(rows, 1):
+        if not row["pairs"]:
+            continue  # пустая карточка — пропускаем
+        try:
+            cid, mid, pairs = int(row["customer_id"]), int(row["model_id"]), int(row["pairs"])
+        except ValueError:
+            return fail("Строка %d: заполните заказчика, модель и число пар." % n)
+        if pairs <= 0:
+            return fail("Строка %d: число пар должно быть больше нуля." % n)
+        if (not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone() or
+                not g.db.execute("SELECT 1 FROM models WHERE id=? AND archived=0", (mid,)).fetchone()):
+            return fail("Строка %d: выберите действующих заказчика и модель." % n)
+        status = row["status"] if row["status"] in allowed else allowed[0]
+        parsed.append((cid, mid, status, pairs))
+    if not parsed:
+        return fail("Добавьте хотя бы одну строку с числом пар.")
+    now = db.now_str()
     cur = g.db.execute(
-        "INSERT INTO documents (kind, status, created_role, created_at, note) "
-        "VALUES (?, 'draft', ?, ?, '')",
-        (kind, role, db.now_str()),
-    )
-    g.db.execute(
-        "INSERT INTO lines (document_id, customer_id, model_id, status, pairs_sent) VALUES (?, ?, ?, ?, ?)",
-        (cur.lastrowid, cid, mid, status, pairs))
+        "INSERT INTO documents (kind, status, created_role, created_at, sent_at, note) "
+        "VALUES (?, 'sent', ?, ?, ?, ?)", (kind, role, now, now, note))
+    for cid, mid, status, pairs in parsed:
+        g.db.execute(
+            "INSERT INTO lines (document_id, customer_id, model_id, status, pairs_sent) VALUES (?, ?, ?, ?, ?)",
+            (cur.lastrowid, cid, mid, status, pairs))
     g.db.commit()
-    return redirect(url_for("doc_view", doc_id=cur.lastrowid))
+    flash("Документ №%d отправлен на приёмку." % cur.lastrowid)
+    return redirect(url_for("documents"))
 
 
 @app.route("/docs/<int:doc_id>")
@@ -568,92 +594,14 @@ def doc_view(doc_id):
     sent, recv, diff, has_recv = _doc_totals(doc_id)
     creator, acceptor = _doc_dir(d["kind"])
 
-    can_edit = (d["status"] == "draft" and role == creator)
-    can_send = (d["status"] == "draft" and role == creator and len(lines) > 0)
     can_accept = (d["status"] == "sent" and role == acceptor)
-    can_delete = (role == "director") or (d["status"] == "draft" and role == creator)
-    can_revert = (role == "director" and d["status"] != "draft")
-
-    customers = g.db.execute(
-        "SELECT * FROM customers WHERE archived=0 ORDER BY name").fetchall()
-    models = g.db.execute(
-        "SELECT * FROM models WHERE archived=0 ORDER BY name").fetchall()
+    can_delete = (role == "director")
 
     return render_template(
         "document_view.html", d=d, lines=lines, sent=sent, recv=recv,
         diff=diff, has_recv=has_recv, creator=creator, acceptor=acceptor,
-        can_edit=can_edit, can_send=can_send, can_accept=can_accept,
-        can_delete=can_delete, can_revert=can_revert,
-        customers=customers, models=models,
+        can_accept=can_accept, can_delete=can_delete,
     )
-
-
-def _draft_owner(doc_id):
-    d = g.db.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
-    if not d:
-        abort(404)
-    creator, _ = _doc_dir(d["kind"])
-    if d["status"] != "draft" or session.get("role") != creator:
-        abort(403)
-    return d
-
-
-@app.route("/docs/<int:doc_id>/line/add", methods=["POST"])
-@login_required
-def line_add(doc_id):
-    d = _draft_owner(doc_id)
-    try:
-        cid = int(request.form["customer_id"])
-        mid = int(request.form["model_id"])
-        pairs = int(request.form["pairs"])
-    except (KeyError, ValueError):
-        flash("Заполните заказчика, модель и число пар.")
-        return redirect(url_for("doc_view", doc_id=doc_id))
-    if pairs <= 0:
-        flash("Число пар должно быть больше нуля.")
-        return redirect(url_for("doc_view", doc_id=doc_id))
-    if not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone() or \
-       not g.db.execute("SELECT 1 FROM models WHERE id=? AND archived=0", (mid,)).fetchone():
-        flash("Выберите действующих заказчика и модель.")
-        return redirect(url_for("doc_view", doc_id=doc_id))
-    allowed = KIND_LINE_STATUSES.get(d["kind"], [])
-    status = request.form.get("status") or (allowed[0] if allowed else None)
-    if status not in allowed:
-        status = allowed[0] if allowed else None
-    g.db.execute(
-        "INSERT INTO lines (document_id, customer_id, model_id, status, pairs_sent) "
-        "VALUES (?, ?, ?, ?, ?)", (doc_id, cid, mid, status, pairs))
-    g.db.commit()
-    return redirect(url_for("doc_view", doc_id=doc_id))
-
-
-@app.route("/docs/<int:doc_id>/line/<int:line_id>/del", methods=["POST"])
-@login_required
-def line_del(doc_id, line_id):
-    _draft_owner(doc_id)
-    g.db.execute("DELETE FROM lines WHERE id=? AND document_id=?", (line_id, doc_id))
-    if not g.db.execute("SELECT 1 FROM lines WHERE document_id=?", (doc_id,)).fetchone():
-        g.db.execute("DELETE FROM documents WHERE id=?", (doc_id,))
-        g.db.commit()
-        return redirect(url_for("documents"))
-    g.db.commit()
-    return redirect(url_for("doc_view", doc_id=doc_id))
-
-
-@app.route("/docs/<int:doc_id>/send", methods=["POST"])
-@login_required
-def doc_send(doc_id):
-    _draft_owner(doc_id)
-    n = g.db.execute("SELECT COUNT(*) c FROM lines WHERE document_id=?",
-                     (doc_id,)).fetchone()["c"]
-    if n == 0:
-        flash("Нельзя отправить пустой документ.")
-        return redirect(url_for("doc_view", doc_id=doc_id))
-    note = (request.form.get("note") or "").strip()
-    g.db.execute("UPDATE documents SET status='sent', sent_at=?, note=? WHERE id=?",
-                 (db.now_str(), note, doc_id))
-    g.db.commit()
-    return redirect(url_for("doc_view", doc_id=doc_id))
 
 
 @app.route("/docs/<int:doc_id>/accept", methods=["POST"])
@@ -699,9 +647,8 @@ def doc_delete(doc_id):
     if not d:
         abort(404)
     creator, _ = _doc_dir(d["kind"])
-    # Черновик удаляет создатель или директор; отправленный/принятый — только директор
-    allowed = (role == "director") or (d["status"] == "draft" and role == creator)
-    if not allowed:
+    # Отправленный или принятый документ удаляет только директор
+    if role != "director":
         abort(403)
     _audit_snapshot("doc_delete_snapshot", str(doc_id),
                     {"document": dict(d), "lines": [dict(x) for x in _load_lines(doc_id)]})
@@ -710,28 +657,6 @@ def doc_delete(doc_id):
     g.db.commit()
     flash(f"Документ №{doc_id} удалён.")
     return redirect(url_for("documents"))
-
-
-@app.route("/docs/<int:doc_id>/revert", methods=["POST"])
-@login_required
-def doc_revert(doc_id):
-    """Вернуть документ в черновик для редактирования (директор)."""
-    if session["role"] != "director":
-        abort(403)
-    d = g.db.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
-    if not d or d["status"] == "draft":
-        abort(404)
-    _audit_snapshot("doc_revert_snapshot", str(doc_id),
-                    {"document": dict(d), "lines": [dict(x) for x in _load_lines(doc_id)]})
-    g.db.execute(
-        "UPDATE lines SET pairs_recv=NULL, discrepancy_note=NULL WHERE document_id=?",
-        (doc_id,))
-    g.db.execute(
-        "UPDATE documents SET status='draft', sent_at=NULL, accepted_at=NULL WHERE id=?",
-        (doc_id,))
-    g.db.commit()
-    flash(f"Документ №{doc_id} возвращён в черновик — теперь его можно изменить.")
-    return redirect(url_for("doc_view", doc_id=doc_id))
 
 
 # ---------- Справочники ----------
@@ -992,7 +917,7 @@ def overview():
         recent.append(dict(d=d, sent=sent, recv=recv, diff=diff, has_recv=has_recv))
 
     # Счётчики документов
-    cnt = {"sent": 0, "draft": 0, "accepted": 0}
+    cnt = {"sent": 0, "accepted": 0}
     for r in g.db.execute(
             "SELECT status, COUNT(*) c FROM documents WHERE EXISTS "
             "(SELECT 1 FROM lines WHERE document_id=documents.id) GROUP BY status"):
@@ -1100,8 +1025,6 @@ def request_view(req_id):
     r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
     if not r or role == "proizv":
         abort(404)  # производство работает только со списком в /docs и формой /requests/new
-    if r["status"] == "draft":
-        abort(404)
     items = _load_req_items(req_id)
     can_take = (r["status"] == "open" and role == "sklad")
     can_collect = (r["status"] == "progress" and role == "sklad")
@@ -1289,7 +1212,7 @@ def request_delete(req_id):
     r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
     if not r:
         abort(404)
-    allowed = (role == "director") or (role == "proizv" and r["status"] in ("draft", "open", "progress"))
+    allowed = (role == "director") or (role == "proizv" and r["status"] in ("open", "progress"))
     if not allowed:
         abort(403)
     _audit_snapshot("request_delete_snapshot", str(req_id),

@@ -54,7 +54,7 @@
     <td class="num">
       {% if x.can_del %}
       <form method="post" action="{{ x.del_url }}" onclick="event.stopPropagation()"
-            onsubmit="return confirm('Удалить {{ 'заявку' if x.group=='req' else 'черновик' }} №{{ x.id }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            onsubmit="return confirm('Удалить {{ 'заявку' if x.group=='req' else 'документ' }} №{{ x.id }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="btn danger sm" type="submit">удалить</button>
       </form>
       {% endif %}

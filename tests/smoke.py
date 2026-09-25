@@ -36,19 +36,23 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert "Новых документов на приёмку нет" not in client.get("/acceptance").text
     assert query("SELECT COUNT(*) FROM documents")[0] == 0
     assert client.post("/docs/new").status_code == 400
-    assert post("/docs/new").status_code == 302
+    assert post("/docs/new").status_code == 200          # пустая форма: запись не создаётся
     assert query("SELECT COUNT(*) FROM documents")[0] == 0
-    created = post("/docs/new", {"customer_id": "1", "model_id": "1", "pairs": "10"})
+    bad = post("/docs/new", {"customer_id": ["1", "9999"], "model_id": ["1", "9999"],
+                             "status": ["zagotovka", "zagotovka"], "pairs": ["10", "10"]})
+    assert bad.status_code == 200 and query("SELECT COUNT(*) FROM documents")[0] == 0
+    created = post("/docs/new", {"customer_id": ["1", "1", "1"], "model_id": ["1", "1", "1"],
+                                 "status": ["zagotovka"] * 3, "pairs": ["10", "10", ""],
+                                 "note": "общее"})
     assert created.status_code == 302
-    doc_id = int(created.location.rsplit("/", 1)[-1])
-    assert query("SELECT COUNT(*) FROM lines WHERE document_id=?", (doc_id,))[0] == 1
-    first_line_id = query("SELECT id FROM lines WHERE document_id=?", (doc_id,))[0]
-
-    assert post(f"/docs/{doc_id}/line/add", {"customer_id": "9999", "model_id": "9999", "pairs": "10"}).status_code == 302
-    assert query("SELECT COUNT(*) FROM lines")[0] == 1
-    assert post(f"/docs/{doc_id}/line/add", {"customer_id": "1", "model_id": "1", "pairs": "10"}).status_code == 302
+    doc_id = query("SELECT MAX(id) FROM documents")[0]
+    assert query("SELECT status, sent_at IS NOT NULL, note FROM documents WHERE id=?", (doc_id,)) == ("sent", 1, "общее")
+    assert query("SELECT COUNT(*) FROM lines WHERE document_id=?", (doc_id,))[0] == 2
+    first_line_id = query("SELECT MIN(id) FROM lines WHERE document_id=?", (doc_id,))[0]
     line_id = query("SELECT MAX(id) FROM lines WHERE document_id=?", (doc_id,))[0]
-    assert post(f"/docs/{doc_id}/send").status_code == 302
+    # черновиков больше нет: правки и отправки после создания не существует
+    for gone in ("send", "revert", f"line/{line_id}/del"):
+        assert post(f"/docs/{doc_id}/{gone}").status_code == 404
     assert client.get("/login/proizv").status_code == 302
     assert post(f"/docs/{doc_id}/accept").status_code == 302
     assert query("SELECT status FROM documents WHERE id=?", (doc_id,))[0] == "sent"
@@ -193,16 +197,16 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     new_req = post("/requests/new", {"item": "Клей", "qty": "2"})
     assert new_req.status_code == 302
     new_req_id = query("SELECT MAX(id) FROM requests")[0]
-    assert post(f"/requests/{new_req_id}/item/1/del").status_code == 404      # редактирования черновика больше нет
+    assert post(f"/requests/{new_req_id}/item/1/del").status_code == 404      # редактирования после создания нет
     assert post(f"/requests/{new_req_id}/submit").status_code == 404
     assert post(f"/requests/{new_req_id}/delete").status_code == 302
     assert query("SELECT COUNT(*) FROM requests WHERE id=?", (new_req_id,))[0] == 0
 
-    new_doc = post("/docs/new", {"customer_id": "1", "model_id": "1", "pairs": "1"})
-    new_doc_id = int(new_doc.location.rsplit("/", 1)[-1])
-    new_line_id = query("SELECT id FROM lines WHERE document_id=?", (new_doc_id,))[0]
-    assert post(f"/docs/{new_doc_id}/line/{new_line_id}/del").status_code == 302
-    assert query("SELECT COUNT(*) FROM documents WHERE id=?", (new_doc_id,))[0] == 0
+    ret = post("/docs/new", {"customer_id": ["1"], "model_id": ["1"], "status": ["gotovoe"], "pairs": ["1"]})
+    assert ret.status_code == 302
+    ret_id = query("SELECT MAX(id) FROM documents")[0]
+    assert query("SELECT status FROM documents WHERE id=?", (ret_id,))[0] == "sent"
+    assert post(f"/docs/{ret_id}/delete").status_code == 403      # создатель не удаляет отправленное
 
     assert client.get("/login/sklad").status_code == 302
     before = query("SELECT COUNT(*) FROM requests")[0]
