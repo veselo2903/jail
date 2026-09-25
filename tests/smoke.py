@@ -175,11 +175,13 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     multi = post("/requests/new", {"item": ["Клей", "Кожа", "", "Нитки"], "qty": ["2", "3", "", ""],
                                    "unit": ["m2", "other", "sht", "sht"],
                                    "unit_custom": ["", "кг", "", ""],
-                                   "item_note": ["", "чёрная", "", ""], "note": "общее", "urgent": "1"})
+                                   "item_note": ["", "чёрная", "", ""], "note": "общее", "urgent_2": "1"})
     assert multi.status_code == 302
     multi_id = int(multi.location.rsplit("/", 1)[-1])
     assert query("SELECT note, urgent FROM requests WHERE id=?", (multi_id,)) == ("общее", 1)
     assert query("SELECT COUNT(*) FROM request_items WHERE request_id=?", (multi_id,))[0] == 3
+    assert query("SELECT item FROM request_items WHERE request_id=? AND urgent=1", (multi_id,)) == ("Кожа",)
+    assert query("SELECT COUNT(*) FROM request_items WHERE request_id=? AND urgent=0", (multi_id,))[0] == 2
     assert query("SELECT unit FROM request_items WHERE request_id=? AND item='Клей'", (multi_id,))[0] == "m2"
     assert query("SELECT unit, note FROM request_items WHERE request_id=? AND item='Кожа'", (multi_id,)) == ("кг", "чёрная")
     assert query("SELECT unit FROM request_items WHERE request_id=? AND item='Нитки'", (multi_id,))[0] is None

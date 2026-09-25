@@ -28,6 +28,10 @@
       <label>Примечание к позиции (необязательно)</label>
       <input class="rn-input-item-note" name="item_note" value="{{ row.item_note }}">
     </div>
+    <label class="rn-urgent">
+      <input class="rn-urgent-checkbox" type="checkbox" name="urgent_{{ n }}" value="1" data-item-urgent {{ 'checked' if row.urgent }}>
+      <span class="rn-urgent-text">Срочно</span>
+    </label>
   </div>
 </div>
 {% endmacro %}
@@ -50,10 +54,6 @@
       <label>Примечание к заявке (необязательно)</label>
       <input class="rn-input-request-note" name="note" value="{{ note }}">
     </div>
-    <label class="rn-urgent">
-      <input class="rn-urgent-checkbox" type="checkbox" name="urgent" value="1" {{ 'checked' if urgent }}>
-      <span class="rn-urgent-text">Срочно</span>
-    </label>
     <button class="rn-submit btn green block" type="submit">Создать заявку</button>
   </div>
 </form>
@@ -89,6 +89,7 @@
     var cards = items.querySelectorAll('[data-item-card]');
     cards.forEach(function(c, i){
       c.querySelector('[data-item-num]').textContent = i + 1;
+      c.querySelector('[data-item-urgent]').name = 'urgent_' + (i + 1);
       c.querySelector('[data-item-remove]').hidden = cards.length < 2;
     });
   }

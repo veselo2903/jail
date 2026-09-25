@@ -1019,7 +1019,8 @@ def _parse_request_rows():
         def at(lst):
             return (lst[n] if n < len(lst) else "").strip()
         rows.append({"item": at(names), "qty": at(qtys), "unit": at(units) or "sht",
-                     "unit_custom": at(customs)[:20], "item_note": at(notes)})
+                     "unit_custom": at(customs)[:20], "item_note": at(notes),
+                     "urgent": bool(f.get("urgent_%d" % (n + 1)))})
     return rows
 
 
@@ -1028,17 +1029,16 @@ def _parse_request_rows():
 def request_new():
     if session["role"] != "proizv":
         abort(403)
-    blank = {"item": "", "qty": "", "unit": "sht", "unit_custom": "", "item_note": ""}
+    blank = {"item": "", "qty": "", "unit": "sht", "unit_custom": "", "item_note": "", "urgent": False}
     if request.method == "GET":
-        return render_template("request_new.html", rows=[blank], blank=blank, note="", urgent=False)
+        return render_template("request_new.html", rows=[blank], blank=blank, note="")
     rows = _parse_request_rows()
     note = (request.form.get("note") or "").strip()
-    urgent = 1 if request.form.get("urgent") else 0
 
     def fail(message):
         flash(message)
         return render_template("request_new.html", rows=rows or [blank], blank=blank,
-                               note=note, urgent=bool(urgent))
+                               note=note)
 
     parsed = []
     for n, row in enumerate(rows, 1):
@@ -1062,16 +1062,17 @@ def request_new():
                 unit = row["unit"]
             else:
                 return fail("Позиция %d: неизвестная единица измерения." % n)
-        parsed.append((row["item"], qty, unit, row["item_note"] or None))
+        parsed.append((row["item"], qty, unit, row["item_note"] or None, 1 if row["urgent"] else 0))
     if not parsed:
         return fail("Добавьте хотя бы одну позицию заявки.")
     cur = g.db.execute(
         "INSERT INTO requests (status, urgent, created_role, created_at, note) "
-        "VALUES ('draft', ?, ?, ?, ?)", (urgent, "proizv", db.now_str(), note))
-    for item, qty, unit, item_note in parsed:
+        "VALUES ('draft', ?, ?, ?, ?)",
+        (1 if any(p[4] for p in parsed) else 0, "proizv", db.now_str(), note))  # срочность заявки = есть срочная позиция
+    for item, qty, unit, item_note, item_urgent in parsed:
         g.db.execute(
-            "INSERT INTO request_items (request_id, item, qty, note, unit) VALUES (?, ?, ?, ?, ?)",
-            (cur.lastrowid, item, qty, item_note, unit))
+            "INSERT INTO request_items (request_id, item, qty, note, unit, urgent) VALUES (?, ?, ?, ?, ?, ?)",
+            (cur.lastrowid, item, qty, item_note, unit, item_urgent))
     g.db.commit()
     return redirect(url_for("request_view", req_id=cur.lastrowid))
 

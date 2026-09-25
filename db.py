@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS request_items (
     status      TEXT,
     operation   TEXT,
     unit        TEXT,
+    urgent      INTEGER NOT NULL DEFAULT 0,  -- срочная позиция
     FOREIGN KEY(request_id) REFERENCES requests(id),
     FOREIGN KEY(customer_id) REFERENCES customers(id),
     FOREIGN KEY(model_id) REFERENCES models(id)
@@ -176,6 +177,8 @@ def _migrate(conn):
             conn.execute("ALTER TABLE request_items ADD COLUMN model_id INTEGER")
         if "status" not in ricols:
             conn.execute("ALTER TABLE request_items ADD COLUMN status TEXT")
+        if "urgent" not in ricols:
+            conn.execute("ALTER TABLE request_items ADD COLUMN urgent INTEGER NOT NULL DEFAULT 0")
         if "operation" not in ricols:
             conn.execute("ALTER TABLE request_items ADD COLUMN operation TEXT")
         if "unit" not in ricols:

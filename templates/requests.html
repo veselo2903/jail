@@ -25,7 +25,7 @@
     <td>{{ x.r.id }}</td>
     <td>
       {% if x.its %}{{ x.its[0].item }}{% if x.n > 1 %} <span class="small">и ещё {{ x.n-1 }}</span>{% endif %}{% endif %}
-      {% if x.r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}
+      {% if x.r.urgent %}<span class="tag urgent">Есть срочные позиции</span>{% endif %}
     </td>
     <td class="num">{{ x.n }}</td>
     <td><span class="tag rq-{{ x.r.status }}">{{ REQ_STATUS[x.r.status] }}</span></td>

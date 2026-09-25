@@ -11,7 +11,7 @@
     <div>
       <b>Заявка №{{ r.id }}</b>
       <span class="tag rq-{{ r.status }}">{{ REQ_STATUS[r.status] }}</span>
-      {% if r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}
+      {% if r.urgent %}<span class="tag urgent">Есть срочные позиции</span>{% endif %}
     </div>
     <a class="small" href="{{ url_for('documents', tab='requests') }}">к списку</a>
   </div>
@@ -44,7 +44,7 @@
       {% for i in need_items %}
       <tr>
         <td><input class="chkbox" type="checkbox" name="placed_{{ i.id }}" value="1" data-qty="{{ i.qty if i.qty is not none else '' }}" data-col="col_{{ i.id }}" {{ 'checked' if i.placed }}></td>
-        <td>{{ i.item }}{% if i.note %}<div class="small">{{ i.note }}</div>{% endif %}</td>
+        <td>{{ i.item }}{% if i.urgent %} <span class="tag urgent item-urgent-tag">Срочно</span>{% endif %}{% if i.note %}<div class="small">{{ i.note }}</div>{% endif %}</td>
         <td class="num">{{ i.qty if i.qty is not none else '—' }}{% if i.qty is not none and i.unit %} <span class="small">{{ UNITS.get(i.unit, i.unit) }}</span>{% endif %}</td>
         <td class="num" style="width:96px"><input name="col_{{ i.id }}" type="number" min="0" inputmode="numeric" value="{{ i.collected if i.collected is not none else '' }}" placeholder="{{ i.qty if i.qty is not none else '' }}"></td>
         <td style="width:150px">
@@ -190,7 +190,7 @@
     <tr><th>Что нужно было</th><th>Тип</th><th class="num">Нужно</th><th class="num">Положено</th></tr>
     {% for i in need_items %}
     <tr>
-      <td>{{ i.item }}{% if i.note %}<div class="small">{{ i.note }}</div>{% endif %}</td>
+      <td>{{ i.item }}{% if i.urgent %} <span class="tag urgent item-urgent-tag">Срочно</span>{% endif %}{% if i.note %}<div class="small">{{ i.note }}</div>{% endif %}</td>
       <td>{% if i.item_type %}{{ ITEM_TYPES[i.item_type] }}{% else %}<span class="small">—</span>{% endif %}</td>
       <td class="num">{{ i.qty if i.qty is not none else '—' }}{% if i.qty is not none and i.unit %} <span class="small">{{ UNITS.get(i.unit, i.unit) }}</span>{% endif %}</td>
       <td class="num">

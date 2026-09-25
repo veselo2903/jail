@@ -17,11 +17,11 @@
       <tr><th style="width:52px">Полож.</th><th>Позиция</th><th class="num">Нужно</th><th class="num">Положил</th></tr>
       {% for grp in groups %}
         {% if grp.its %}
-        <tr class="grp"><td colspan="4">Заявка №{{ grp.r.id }}{% if grp.r.urgent %} · срочно{% endif %}{% if grp.r.note %} · {{ grp.r.note }}{% endif %}</td></tr>
+        <tr class="grp"><td colspan="4">Заявка №{{ grp.r.id }}{% if grp.r.urgent %} · есть срочные позиции{% endif %}{% if grp.r.note %} · {{ grp.r.note }}{% endif %}</td></tr>
         {% for i in grp.its %}
         <tr>
           <td><input class="chkbox" type="checkbox" name="placed_{{ i.id }}" value="1" data-qty="{{ i.qty if i.qty is not none else '' }}" data-col="col_{{ i.id }}" {{ 'checked' if i.placed }}></td>
-          <td>{{ i.item }}{% if i.note %}<div class="small">{{ i.note }}</div>{% endif %}</td>
+          <td>{{ i.item }}{% if i.urgent %} <span class="tag urgent item-urgent-tag">Срочно</span>{% endif %}{% if i.note %}<div class="small">{{ i.note }}</div>{% endif %}</td>
           <td class="num">{{ i.qty if i.qty is not none else '—' }}{% if i.qty is not none and i.unit %} <span class="small">{{ UNITS.get(i.unit, i.unit) }}</span>{% endif %}</td>
           <td class="num" style="width:100px"><input name="col_{{ i.id }}" type="number" min="0" inputmode="numeric" value="{{ i.collected if i.collected is not none else '' }}" placeholder="{{ i.qty if i.qty is not none else '' }}"></td>
         </tr>
