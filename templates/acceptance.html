@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Приёмка — jail{% endblock %}
+{% block content %}
+<h1>Приёмка</h1>
+
+{% if pending %}<div class="card hero warn">
+  <div class="big">{{ pending|length }}</div>
+  <div class="lbl">
+    документов ждут приёмки · {{ total_pending_pairs }} пар
+  </div>
+</div>
+
+<h3>Ждут приёмки</h3>
+<div class="card flush">
+<table>
+  <tr><th>№</th><th>Тип</th><th class="num">Пар</th><th>Отправлен</th><th></th></tr>
+  {% for r in pending %}
+  <tr class="linkrow" onclick="location='{{ url_for('doc_view', doc_id=r.d.id) }}'">
+    <td>{{ r.d.id }}</td>
+    <td>{{ KIND_SHORT[r.d.kind] }}</td>
+    <td class="num">{{ r.sent }}</td>
+    <td class="small">{{ r.d.sent_at or r.d.created_at }}</td>
+    <td class="num"><span class="btn green sm">Принять</span></td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
+{% if done %}
+<details>
+  <summary>Недавно принятые ({{ done|length }})</summary>
+  <div class="body" style="padding:0">
+    <table>
+      <tr><th>№</th><th>Тип</th><th class="num">Отдано → Принято</th><th>Расхождение</th><th>Принят</th></tr>
+      {% for r in done %}
+      <tr class="linkrow" onclick="location='{{ url_for('doc_view', doc_id=r.d.id) }}'">
+        <td>{{ r.d.id }}</td>
+        <td>{{ KIND_SHORT[r.d.kind] }}</td>
+        <td class="num">{{ r.sent }} → {{ r.recv }}</td>
+        <td>{% if r.diff!=0 %}<span class="tag d">{{ r.diff }}</span>{% else %}<span class="diff-zero">0</span>{% endif %}</td>
+        <td class="small">{{ r.d.accepted_at }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</details>
+{% endif %}
+
+{% endblock %}

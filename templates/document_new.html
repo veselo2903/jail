@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Новый документ — jail{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h3 style="margin-top:0">Новый документ</h3>
+  <div class="dir-badge">{{ 'Склад → Производство' if kind=='OUT' else 'Производство → Склад' }}</div>
+  <form method="post" action="{{ url_for('doc_new') }}" class="grid" style="margin-top:14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div><label>Заказчик</label><select name="customer_id" required>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+    <div><label>Модель</label><select name="model_id" required>{% for m in models %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
+    <div><label>Статус товара</label><select name="status" required>{% for s in KIND_LINE_STATUSES[kind] %}<option value="{{ s }}">{{ LINE_STATUSES[s] }}</option>{% endfor %}</select></div>
+    <div><label>Пары</label><input name="pairs" type="number" min="1" inputmode="numeric" required></div>
+    <button class="btn block" type="submit">Создать документ</button>
+  </form>
+</div>
+
+<a class="btn grey" href="{{ url_for('documents') }}">Назад</a>
+
+<style>
+.dir-badge{display:inline-flex;align-items:center;gap:8px;font-weight:650;font-size:15px;
+  background:var(--blue-bg);color:var(--blue-d);padding:9px 16px;border-radius:10px}
+.dir-badge .arr{font-size:18px;line-height:1}
+</style>
+
+{% endblock %}

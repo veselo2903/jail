@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}Документ №{{ d.id }} — jail{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <div>
+      <b>Документ №{{ d.id }}</b>
+      <span class="tag {{ d.status }}">{{ STATUS_LABEL[d.status] }}</span>
+    </div>
+    <a class="small" href="{{ url_for('documents') }}">к списку</a>
+  </div>
+  <div class="small" style="margin-top:6px">{{ KINDS[d.kind][0] }}</div>
+  {% if d.note %}<div class="small">Примечание: {{ d.note }}</div>{% endif %}
+  <div class="small" style="margin-top:6px">
+    Создан {{ d.created_at }}{% if d.sent_at %} · отправлен {{ d.sent_at }}{% endif %}{% if d.accepted_at %} · принят {{ d.accepted_at }}{% endif %}
+  </div>
+</div>
+
+{# ---- РЕЗУЛЬТАТ (крупно) ---- #}
+{% if has_recv %}
+<div class="card hero {{ 'ok' if diff==0 else 'warn' }}">
+  <div class="big">{{ recv }}</div>
+  <div class="lbl">пар принято из {{ sent }}{% if diff!=0 %} · расхождение {{ diff }}{% endif %}</div>
+</div>
+{% else %}
+<div class="card hero">
+  <div class="big">{{ sent }}</div>
+  <div class="lbl">пар в документе</div>
+</div>
+{% endif %}
+
+{# ================= ЧЕРНОВИК (создатель) ================= #}
+{% if can_edit %}
+{% if lines %}<div class="card" style="padding:6px 12px">
+  <table>
+    <tr><th>Заказчик — модель</th><th class="num">Пары</th><th></th></tr>
+    {% for l in lines %}
+    <tr>
+      <td>{{ l.customer }} — {{ l.model }}
+        {% if l.status %}<span class="st {{ l.status }}">{{ LINE_STATUSES[l.status] }}</span>{% endif %}
+      </td>
+      <td class="num">{{ l.pairs_sent }}</td>
+      <td class="num">
+        <form method="post" action="{{ url_for('line_del', doc_id=d.id, line_id=l.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn grey sm" type="submit">удалить</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="{{ url_for('line_add', doc_id=d.id) }}" class="grid"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="grid" style="grid-template-columns:1fr 1fr">
+      <div>
+        <div class="lbl-row">
+          <label>Заказчик</label>
+          {% if role in ['sklad','director'] %}<a href="#" class="addlink" data-add="customer">+ новый</a>{% endif %}
+        </div>
+        <select name="customer_id" id="sel-customer">
+          {% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+        {% if role in ['sklad','director'] %}
+        <div class="addbox" id="add-customer">
+          <input type="text" placeholder="Название заказчика" id="new-customer">
+          <button type="button" class="btn sm" data-save="customer">Добавить</button>
+          <button type="button" class="btn grey sm" data-cancel="customer">×</button>
+        </div>
+        {% endif %}
+      </div>
+      <div>
+        <div class="lbl-row">
+          <label>Модель</label>
+          {% if role in ['sklad','director'] %}<a href="#" class="addlink" data-add="model">+ новая</a>{% endif %}
+        </div>
+        <select name="model_id" id="sel-model">
+          {% for m in models %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}
+        </select>
+        {% if role in ['sklad','director'] %}
+        <div class="addbox" id="add-model">
+          <input type="text" placeholder="Название модели" id="new-model">
+          <button type="button" class="btn sm" data-save="model">Добавить</button>
+          <button type="button" class="btn grey sm" data-cancel="model">×</button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% set allowed = KIND_LINE_STATUSES[d.kind] %}
+    {% if allowed|length > 1 %}
+    <div>
+      <label>Статус товара</label>
+      <div class="seg">
+        {% for s in allowed %}
+        <label class="seg-opt">
+          <input type="radio" name="status" value="{{ s }}" {{ 'checked' if loop.first }}>
+          <span>{{ LINE_STATUSES[s] }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <input type="hidden" name="status" value="{{ allowed[0] }}">
+    {% endif %}
+    <div>
+      <label>Пары</label>
+      <input name="pairs" type="number" min="1" inputmode="numeric">
+    </div>
+    <button class="btn" type="submit">Добавить строку</button>
+  </form>
+</div>
+
+{% if role in ['sklad','director'] %}
+<style>
+.lbl-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.lbl-row label{margin:0}
+.lbl-row .addlink{font-size:14px;font-weight:650;padding:6px 12px;border-radius:8px;
+  background:var(--blue-bg);color:var(--blue-d)}
+.lbl-row .addlink:hover{background:#dbe7fd}
+.addbox{display:none;gap:8px;margin-top:8px}
+.addbox.open{display:flex}
+.addbox input{flex:1}
+</style>
+<script>
+(function(){
+  var kinds = {customer:"customers", model:"models"};
+  document.querySelectorAll(".addlink").forEach(function(a){
+    a.addEventListener("click", function(e){
+      e.preventDefault();
+      var k = a.dataset.add;
+      var box = document.getElementById("add-"+k);
+      box.classList.toggle("open");
+      if(box.classList.contains("open")) document.getElementById("new-"+k).focus();
+    });
+  });
+  document.querySelectorAll("[data-cancel]").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.getElementById("add-"+b.dataset.cancel).classList.remove("open");
+    });
+  });
+  document.querySelectorAll("[data-save]").forEach(function(b){
+    b.addEventListener("click", function(){ save(b.dataset.save); });
+  });
+  document.querySelectorAll(".addbox input").forEach(function(inp){
+    inp.addEventListener("keydown", function(e){
+      if(e.key==="Enter"){ e.preventDefault(); save(inp.id.replace("new-","")); }
+    });
+  });
+  function save(k){
+    var inp = document.getElementById("new-"+k);
+    var name = inp.value.trim();
+    if(!name){ inp.focus(); return; }
+    var fd = new FormData(); fd.append("name", name);
+    fetch("{{ url_for('index') }}refs/"+kinds[k]+"/quick_add", {method:"POST", headers:{"X-CSRF-Token":"{{ csrf_token }}"}, body:fd})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d.ok){ alert(d.error || "Ошибка"); return; }
+        var sel = document.getElementById("sel-"+k);
+        var opt = sel.querySelector('option[value="'+d.id+'"]');
+        if(!opt){ opt = document.createElement("option"); opt.value=d.id; opt.textContent=d.name; sel.appendChild(opt); }
+        sel.value = d.id;
+        inp.value = "";
+        document.getElementById("add-"+k).classList.remove("open");
+      })
+      .catch(function(){ alert("Не удалось добавить"); });
+  }
+})();
+</script>
+{% endif %}
+
+{% if can_send %}
+<div class="card">
+  <h3>Примечание и отправка</h3>
+  <form method="post" action="{{ url_for('doc_send', doc_id=d.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div style="margin-bottom:12px">
+      <label>Примечание (необязательно)</label>
+      <input name="note" value="{{ d.note or '' }}" placeholder="Примечание (необязательно)">
+    </div>
+    <button class="btn green block" type="submit" style="font-size:16px;padding:14px">Отправить на приёмку →</button>
+  </form>
+</div>
+{% endif %}
+
+{# ================= ПРИЁМКА (приёмщик) ================= #}
+{% elif can_accept %}
+<div class="card">
+  <h3 style="margin-top:0">Приёмка</h3>
+  <p class="small">Проверьте построчно. Поле «принято» уже заполнено — исправьте, если пришло другое количество.</p>
+  <form method="post" action="{{ url_for('doc_accept', doc_id=d.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <table>
+      <tr><th>Заказчик — модель</th><th class="num">Отдано</th><th class="num">Принято</th><th>Расхождение</th></tr>
+      {% for l in lines %}
+      <tr>
+        <td>{{ l.customer }} — {{ l.model }}
+          {% if l.status %}<span class="st {{ l.status }}">{{ LINE_STATUSES[l.status] }}</span>{% endif %}
+        </td>
+        <td class="num">{{ l.pairs_sent }}</td>
+        <td class="num" style="width:110px">
+          <input name="recv_{{ l.id }}" type="number" min="0" inputmode="numeric" value="{{ l.pairs_sent }}">
+        </td>
+        <td style="min-width:160px">
+          <input name="note_{{ l.id }}" placeholder="причина, если есть">
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    <button class="btn green block" type="submit" style="margin-top:12px">Подтвердить приёмку</button>
+  </form>
+</div>
+
+{# ================= ПРОСМОТР (отправлен / принят) ================= #}
+{% else %}
+<div class="card" style="padding:6px 12px">
+  <table>
+    <tr>
+      <th>Заказчик — модель</th><th class="num">Отдано</th>
+      {% if has_recv %}<th class="num">Принято</th><th class="num">Δ</th>{% endif %}
+    </tr>
+    {% for l in lines %}
+    <tr>
+      <td>{{ l.customer }} — {{ l.model }}
+        {% if l.status %}<span class="st {{ l.status }}">{{ LINE_STATUSES[l.status] }}</span>{% endif %}
+        {% if l.discrepancy_note %}<div class="small">{{ l.discrepancy_note }}</div>{% endif %}
+      </td>
+      <td class="num">{{ l.pairs_sent }}</td>
+      {% if has_recv %}
+      <td class="num">{{ l.pairs_recv if l.pairs_recv is not none else '—' }}</td>
+      <td class="num">
+        {% set dd = (l.pairs_recv or 0) - l.pairs_sent %}
+        {% if l.pairs_recv is not none and dd != 0 %}<span class="diff-neg">{{ dd }}</span>{% else %}0{% endif %}
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% if d.status=='sent' %}
+<div class="card small">Документ отправлен. Ожидает приёмки другой стороной.</div>
+{% endif %}
+{% endif %}
+
+{% if can_revert or can_delete %}
+<div class="card">
+  <div class="row">
+    {% if can_revert %}
+    <form method="post" action="{{ url_for('doc_revert', doc_id=d.id) }}"
+          onsubmit="return confirm('Вернуть документ в черновик? Данные приёмки будут очищены, статус станет «Черновик».')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn grey" type="submit">Вернуть в черновик</button>
+    </form>
+    {% endif %}
+    {% if can_delete %}
+    <form method="post" action="{{ url_for('doc_delete', doc_id=d.id) }}"
+          onsubmit="return confirm('Удалить документ №{{ d.id }} безвозвратно?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn danger" type="submit">Удалить документ</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if can_revert %}<div class="small" style="margin-top:8px">Вернуть в черновик — чтобы изменить уже отправленный или принятый документ.</div>{% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

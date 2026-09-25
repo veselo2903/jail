@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Обзор — jail{% endblock %}
+{% block content %}
+<h1>Обзор</h1>
+
+{# ---- Главное: что сейчас на производстве ---- #}
+{% if at_prod_total %}<div class="card hero">
+  <div class="big">{{ at_prod_total }}</div>
+  <div class="lbl">пар сейчас на производстве</div>
+</div>
+{% endif %}
+
+{# ---- В пути: два направления ---- #}
+{% if to_prod or to_sklad %}<div class="two">
+  {% if to_prod %}
+  <a class="card mini b" href="{{ url_for('documents', tab='transfers') }}">
+    <div class="mini-n">{{ to_prod }}</div>
+    <div class="mini-l">едет на производство</div>
+    <div class="mini-s">склад → производство</div>
+  </a>
+  {% endif %}
+  {% if to_sklad %}
+  <a class="card mini g" href="{{ url_for('documents', tab='transfers') }}">
+    <div class="mini-n">{{ to_sklad }}</div>
+    <div class="mini-l">едет на склад</div>
+    <div class="mini-s">производство → склад</div>
+  </a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if req_open %}
+<a class="card reqline" href="{{ url_for('requests_list') }}">
+  <span class="reqn">{{ req_open }}</span>
+  <span>заявок «чего не хватает» в работе у склада</span>
+  <span class="go">→</span>
+</a>
+<style>
+.reqline{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--ink);
+  padding:14px 18px}
+.reqline .reqn{font-size:26px;font-weight:800;color:var(--blue-d);font-variant-numeric:tabular-nums}
+.reqline .go{margin-left:auto;color:var(--blue);font-size:20px;font-weight:700}
+.reqline:hover{border-color:var(--line2)}
+</style>
+{% endif %}
+
+{# ---- По моделям ---- #}
+{% if by_model %}<h3>По моделям</h3>
+<div class="card flush">
+<table>
+  <tr>
+    <th>Модель</th>
+    <th class="num">На производстве</th>
+    <th class="num">Едет туда</th>
+    <th class="num">Едет назад</th>
+  </tr>
+  {% for r in by_model %}
+  <tr>
+    <td>{{ r.model }}</td>
+    <td class="num"><b>{{ r.at_prod }}</b></td>
+    <td class="num">{% if r.to_prod %}<span class="up">{{ r.to_prod }}</span>{% else %}—{% endif %}</td>
+    <td class="num">{% if r.to_sklad %}<span class="down">{{ r.to_sklad }}</span>{% else %}—{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
+{# ---- Свод по документам ---- #}
+{% if cnt.sent or cnt.accepted or cnt.draft %}<div class="three">
+  {% if cnt.sent %}
+  <a class="card mini2" href="{{ url_for('documents', status='sent') }}">
+    <div class="mini-n">{{ cnt.sent }}</div><div class="mini-l">в пути</div>
+  </a>
+  {% endif %}
+  {% if cnt.accepted %}
+  <a class="card mini2" href="{{ url_for('documents', status='accepted') }}">
+    <div class="mini-n">{{ cnt.accepted }}</div><div class="mini-l">принято</div>
+  </a>
+  {% endif %}
+  {% if cnt.draft %}
+  <a class="card mini2" href="{{ url_for('documents', status='draft') }}">
+    <div class="mini-n">{{ cnt.draft }}</div><div class="mini-l">черновики</div>
+  </a>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ---- Последние документы ---- #}
+{% if recent %}<details open>
+  <summary>Последние документы</summary>
+  <div class="body" style="padding:0">
+    <table>
+      <tr><th>№</th><th>Тип</th><th class="num">Пар</th><th>Статус</th><th>Дата</th></tr>
+      {% for r in recent %}
+      <tr class="linkrow" onclick="location='{{ url_for('doc_view', doc_id=r.d.id) }}'">
+        <td>{{ r.d.id }}</td>
+        <td>{{ KIND_SHORT[r.d.kind] }}</td>
+        <td class="num">{{ r.sent }}{% if r.has_recv %} → {{ r.recv }}{% endif %}</td>
+        <td>
+          <span class="tag {{ r.d.status }}">{{ STATUS_LABEL[r.d.status] }}</span>
+          {% if r.has_recv and r.diff!=0 %}<span class="tag d">{{ r.diff }}</span>{% endif %}
+        </td>
+        <td class="small">{{ r.d.created_at }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</details>
+{% endif %}
+
+<style>
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}
+.mini{display:block;padding:22px 22px;border-left:4px solid var(--line2);
+  text-decoration:none;color:var(--ink);transition:transform .12s var(--ease-out),box-shadow .12s var(--ease-out)}
+a.mini:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(16,32,43,.1)}
+.mini.b{border-left-color:var(--blue)}
+.mini.g{border-left-color:var(--green)}
+.mini-n{font-size:42px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-1px}
+.mini.b .mini-n{color:var(--blue-d)}
+.mini.g .mini-n{color:var(--green)}
+.mini-l{color:var(--ink);font-weight:700;margin-top:8px}
+.mini-s{color:var(--muted);font-size:12.5px;margin-top:2px}
+.mini2{text-align:center;padding:16px 10px;text-decoration:none;color:var(--ink)}
+.mini2 .mini-n{font-size:30px}
+.mini2 .mini-l{color:var(--muted);font-weight:600;font-size:13px}
+.mini2:hover{border-color:var(--line2)}
+.up{color:var(--blue-d);font-weight:700}
+.down{color:var(--green);font-weight:700}
+@media(max-width:560px){.mini-n{font-size:32px}}
+</style>
+
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Новая заявка — jail{% endblock %}
+{% block content %}
+<div class="card">
+  <h3 style="margin-top:0">Новая заявка «чего не хватает»</h3>
+  <form method="post" action="{{ url_for('request_new') }}" class="grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div><label>Что нужно</label><input name="item" required></div>
+    <div><label>Количество (необязательно)</label><input name="qty" type="number" min="1" inputmode="numeric"></div>
+    <div><label>Примечание к позиции (необязательно)</label><input name="item_note"></div>
+    <div><label>Примечание к заявке (необязательно)</label><input name="note"></div>
+    <label class="chk"><input type="checkbox" name="urgent" value="1"> Срочно</label>
+    <button class="btn green block" type="submit">Создать заявку</button>
+  </form>
+</div>
+<a class="btn grey" href="{{ url_for('documents') }}">Назад</a>
+{% endblock %}

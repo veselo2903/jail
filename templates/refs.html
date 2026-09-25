@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Справочники — jail{% endblock %}
+{% block content %}
+
+<div class="subtabs">
+  <a href="{{ url_for('refs', tab='customers', arch=('1' if show_arch else None)) }}" class="{{ 'active' if tab=='customers' }}">Заказчики</a>
+  <a href="{{ url_for('refs', tab='models', arch=('1' if show_arch else None)) }}" class="{{ 'active' if tab=='models' }}">Модели</a>
+  <a href="{{ url_for('refs', tab='workers', arch=('1' if show_arch else None)) }}" class="{{ 'active' if tab=='workers' }}">Работники</a>
+</div>
+
+{% macro archbtn(table, r) %}
+  <form method="post" action="{{ url_for('ref_arch', table=table, rid=r.id, arch=('1' if show_arch else None)) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if r.archived %}<input type="hidden" name="restore" value="1">
+      <button class="btn grey sm" type="submit">вернуть</button>
+    {% else %}
+      <button class="btn grey sm" type="submit">в архив</button>
+    {% endif %}
+  </form>
+{% endmacro %}
+
+{# ---------- Заказчики / Модели ---------- #}
+{% if tab in ['customers','models'] %}
+  {% set items = customers if tab=='customers' else models %}
+  {% if can_edit %}
+  <div class="card">
+    <form method="post" action="{{ url_for('ref_add', table=tab) }}" class="row"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input name="name" placeholder="{{ 'Новый заказчик' if tab=='customers' else 'Новая модель' }}" style="flex:1">
+      <button class="btn" type="submit">Добавить</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if items %}<div class="card" style="padding:6px 12px">
+    <table>
+      {% for r in items %}
+      <tr>
+        <td>
+          {% if can_edit %}
+          <form method="post" action="{{ url_for('ref_edit', table=tab, rid=r.id) }}" class="row"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="name" value="{{ r.name }}" style="flex:1">
+            <button class="btn grey sm" type="submit">сохранить</button>
+          </form>
+          {% else %}{{ r.name }}{% endif %}
+        </td>
+        {% if can_edit %}<td class="num">{{ archbtn(tab, r) }}</td>{% endif %}
+        {% if r.archived %}<td class="small">в архиве</td>{% endif %}
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+
+{# ---------- Работники ---------- #}
+{% else %}
+  {% if can_edit %}
+  <div class="card">
+    <form method="post" action="{{ url_for('ref_add', table='workers') }}" class="row"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input name="number" placeholder="Табельный №" style="width:130px">
+      <input name="name" placeholder="Имя" style="flex:1">
+      <button class="btn" type="submit">Добавить</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if workers %}<div class="card" style="padding:6px 12px">
+    <table>
+      <tr><th style="width:120px">Табельный</th><th>Имя</th>{% if can_edit %}<th></th>{% endif %}</tr>
+      {% for r in workers %}
+      <tr>
+        {% if can_edit %}
+        <td colspan="{{ 2 }}">
+          <form method="post" action="{{ url_for('ref_edit', table='workers', rid=r.id) }}" class="row"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="number" value="{{ r.number }}" style="width:120px">
+            <input name="name" value="{{ r.name }}" style="flex:1">
+            <button class="btn grey sm" type="submit">сохранить</button>
+          </form>
+        </td>
+        <td class="num">{{ archbtn('workers', r) }}</td>
+        {% else %}
+        <td>{{ r.number }}</td><td>{{ r.name }}{% if r.archived %} <span class="small">(в архиве)</span>{% endif %}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+{% endif %}
+
+<div class="row">
+  {% if show_arch %}
+    <a class="btn grey sm" href="{{ url_for('refs', tab=tab) }}">Скрыть архив</a>
+  {% else %}
+    <a class="btn grey sm" href="{{ url_for('refs', tab=tab, arch='1') }}">Показать архив</a>
+  {% endif %}
+</div>
+
+{% endblock %}

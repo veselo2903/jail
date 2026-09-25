@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Документы — jail{% endblock %}
+{% block content %}
+<h1>Документы</h1>
+
+{% if n_all or to_action %}<div class="card hero {{ 'warn' if to_action else '' }}">
+  {% if to_action %}
+    <div class="big">{{ to_action }}</div>
+    <div class="lbl">{{ 'Новая заявка' if to_action==1 else 'Новые заявки' }}</div>
+  {% else %}
+    <div class="big">{{ n_all }}</div>
+    <div class="lbl">документов и заявок</div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# Кнопки создания под роль #}
+<div class="row" style="margin-bottom:14px">
+  {% if can_request %}
+  <a class="btn green block" href="{{ url_for('request_new') }}" style="flex:1">+ Заявка «чего не хватает»</a>
+  {% endif %}
+  {% if role=='sklad' %}
+  <a class="btn block" href="{{ url_for('docs_collect') }}" style="flex:1">+ Передача на производство</a>
+  {% elif role=='proizv' %}
+  <a class="btn block" href="{{ url_for('doc_new') }}" style="flex:1">+ Возврат на склад</a>
+  {% endif %}
+</div>
+
+{% if n_all %}<div class="subtabs">
+  <a href="{{ url_for('documents', tab='all') }}" class="{{ 'active' if tab=='all' }}">Все <span class="n">{{ n_all }}</span></a>
+  {% if n_doc %}<a href="{{ url_for('documents', tab='transfers') }}" class="{{ 'active' if tab=='transfers' }}">Передачи <span class="n">{{ n_doc }}</span></a>{% endif %}
+  {% if n_req %}<a href="{{ url_for('documents', tab='requests') }}" class="{{ 'active' if tab=='requests' }}">Заявки <span class="n">{{ n_req }}</span></a>{% endif %}
+</div>
+{% endif %}
+
+{% if rows %}
+<div class="card flush">
+<table>
+  <tr><th>№</th><th>Документ</th><th class="num">Кол-во</th><th>Статус</th><th>Дата</th><th></th></tr>
+  {% for x in rows %}
+  <tr class="linkrow" onclick="location='{{ x.url }}'">
+    <td>{{ x.id }}</td>
+    <td>
+      <b>{{ x.title }}</b>
+      {% if x.urgent %}<span class="tag urgent">Срочно</span>{% endif %}
+      {% if x.need_action %}<span class="tag sent">вам</span>{% endif %}
+      <div class="small">{{ x.direction }}</div>
+    </td>
+    <td class="num">{{ x.amount }} <span class="small">{{ x.unit }}</span></td>
+    <td>
+      <span class="tag {{ x.status_cls }}">{{ x.status_label }}</span>
+      {% if x.has_recv and x.diff != 0 %}<span class="tag d">{{ x.diff }}</span>{% endif %}
+    </td>
+    <td class="small">{{ x.created_at }}</td>
+    <td class="num">
+      {% if x.can_del %}
+      <form method="post" action="{{ x.del_url }}" onclick="event.stopPropagation()"
+            onsubmit="return confirm('Удалить черновик №{{ x.id }}?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn danger sm" type="submit">удалить</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+
+{% endblock %}

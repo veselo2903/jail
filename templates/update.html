@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Обновление — jail{% endblock %}
+{% block content %}
+
+<div class="card hero">
+  <div class="big">{{ cur }}</div>
+  <div class="lbl">текущая версия системы</div>
+</div>
+
+{% if err %}<div class="flash">{{ err }}</div>{% endif %}
+
+{% if applied is not none %}
+<div class="ok-box">
+  Обновление применено · файлов: {{ applied|length }}.
+  {% if reloaded %}Система перезагружена автоматически.{% else %}Теперь нажмите Reload на вкладке Web в PythonAnywhere, чтобы изменения вступили в силу.{% endif %}
+</div>
+<details>
+  <summary>Что обновилось ({{ applied|length }})</summary>
+  <div class="body">
+    {% for f in applied %}<div class="small">{{ f }}</div>{% endfor %}
+  </div>
+</details>
+{% endif %}
+
+<div class="card">
+  <h3>Загрузить обновление</h3>
+  <form method="post" action="{{ url_for('update') }}" enctype="multipart/form-data" class="grid"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div>
+      <label>Файл обновления (.zip)</label>
+      <input type="file" name="pkg" accept=".zip">
+    </div>
+    <button class="btn block" type="submit">Применить обновление</button>
+  </form>
+</div>
+
+<details>
+  <summary>Как это работает</summary>
+  <div class="body small">
+    Архив обновления содержит только изменённые файлы и файл VERSION — например
+    <b>app.py</b>, <b>templates/documents.html</b>, <b>VERSION</b>. Система распакует их
+    поверх текущих. База данных <b>jail.db</b> не трогается никогда — заказчики, модели,
+    работники и документы сохраняются. После применения нужен один Reload
+    (делается автоматически, если сервер это позволяет, иначе кнопкой на вкладке Web).
+  </div>
+</details>
+
+{% if history %}
+<details>
+  <summary>История обновлений ({{ history|length }})</summary>
+  <div class="body">
+    {% for h in history %}<div class="small">{{ h }}</div>{% endfor %}
+  </div>
+</details>
+{% endif %}
+
+{% if not role %}
+<a class="btn grey" href="{{ url_for('login') }}">К входу</a>
+{% endif %}
+
+{% endblock %}

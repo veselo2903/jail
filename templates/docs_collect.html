@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Сборка — jail{% endblock %}
+{% block content %}
+<h1>Сборка</h1>
+
+{% set has_items = groups|selectattr('its')|list %}
+{% if has_items %}<div class="card" style="padding:14px 18px">
+  <b>Что нужно положить</b>
+  <div class="small">Идите по списку: кладёте позицию — ставьте галочку и, если нужно, впишите сколько положили.</div>
+</div>
+{% endif %}
+
+{% if has_items %}
+<form method="post" action="{{ url_for('docs_collect_save') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="card flush">
+    <table class="pick">
+      <tr><th style="width:52px">Полож.</th><th>Позиция</th><th class="num">Нужно</th><th class="num">Положил</th></tr>
+      {% for grp in groups %}
+        {% if grp.its %}
+        <tr class="grp"><td colspan="4">Заявка №{{ grp.r.id }}{% if grp.r.urgent %} · срочно{% endif %}{% if grp.r.note %} · {{ grp.r.note }}{% endif %}</td></tr>
+        {% for i in grp.its %}
+        <tr>
+          <td><input class="chkbox" type="checkbox" name="placed_{{ i.id }}" value="1" data-qty="{{ i.qty if i.qty is not none else '' }}" data-col="col_{{ i.id }}" {{ 'checked' if i.placed }}></td>
+          <td>{{ i.item }}{% if i.note %}<div class="small">{{ i.note }}</div>{% endif %}</td>
+          <td class="num">{{ i.qty if i.qty is not none else '—' }}</td>
+          <td class="num" style="width:100px"><input name="col_{{ i.id }}" type="number" min="0" inputmode="numeric" value="{{ i.collected if i.collected is not none else '' }}" placeholder="{{ i.qty if i.qty is not none else '' }}"></td>
+        </tr>
+        {% endfor %}
+        {% endif %}
+      {% endfor %}
+    </table>
+  </div>
+  <button class="btn green block" type="submit" style="font-size:16px;padding:14px">Сохранить и далее →</button>
+</form>
+{% endif %}
+
+<a class="btn grey block" href="{{ url_for('docs_collect_blank') }}" style="margin-top:14px">Передача без заявки</a>
+<a class="btn grey" href="{{ url_for('documents') }}" style="margin-top:8px">Назад</a>
+
+<style>
+.pick th,.pick td{padding:10px 10px}
+.chkbox{width:22px;height:22px;accent-color:var(--green);cursor:pointer}
+tr.grp td{background:var(--surface2);color:var(--muted);font-size:12.5px;font-weight:700;
+  letter-spacing:.2px;padding:8px 12px;border-bottom:1px solid var(--line)}
+tr.grp a{margin-left:8px;font-weight:600}
+</style>
+
+{% endblock %}

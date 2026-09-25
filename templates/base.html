@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}jail{% endblock %}</title>
+<style>
+:root{
+  --bg:#eef3f8; --surface:#ffffff; --surface2:#f5f8fb;
+  --line:#e3eaf2; --line2:#cdd8e3;
+  --ink:#132030; --muted:#5b6b7d; --faint:#93a3b5;
+  --blue:#1f6feb; --blue-d:#1657c7; --blue-bg:#e8f1fe;
+  --green:#12a150; --green-bg:#e3f6ea;
+  --warn:#d64545; --warn-bg:#fdecec;
+  --nav:#12233f; --nav2:#0e1c33;
+  --r:14px; --shadow:0 1px 2px rgba(16,32,43,.04),0 8px 24px rgba(16,32,43,.06);
+  --shadow-sm:0 1px 2px rgba(16,32,43,.05);
+  --ease-out:cubic-bezier(0.23,1,0.32,1);
+  --st-blue:#e2edff; --st-blue-t:#1657c7;
+  --st-green:#e3f6ea; --st-green-t:#0f7a3d;
+  --st-grey:#eef1f5; --st-grey-t:#5b6875;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  background:var(--bg);color:var(--ink);font-size:16px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;display:flex;min-height:100vh}
+a{color:var(--blue);text-decoration:none}
+
+/* ---- Боковое меню ---- */
+.side{width:194px;flex:none;background:linear-gradient(180deg,var(--nav),var(--nav2));
+  color:#a9bbd4;padding:16px 10px;position:sticky;top:0;height:100vh;align-self:flex-start}
+.side .brand{display:flex;align-items:center;gap:9px;font-weight:800;color:#fff;
+  font-size:19px;padding:6px 10px 16px}
+.side .brand .mark{width:17px;height:17px;border-radius:6px;
+  background:linear-gradient(135deg,#4d95ff,var(--green))}
+.side a.nav{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:11px;
+  color:#a9bbd4;font-weight:600;font-size:14.5px;margin-bottom:3px;
+  transition:background .15s var(--ease-out),color .15s var(--ease-out)}
+.side a.nav svg{width:20px;height:20px;flex:none;stroke:currentColor;fill:none;
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.side a.nav .b{margin-left:auto;background:var(--warn);color:#fff;border-radius:999px;
+  min-width:21px;height:21px;font-size:12px;font-weight:800;display:flex;
+  align-items:center;justify-content:center;padding:0 6px}
+.side a.nav.on{background:var(--blue);color:#fff;box-shadow:0 6px 16px rgba(31,111,235,.4)}
+.side a.nav:not(.on):hover{background:rgba(255,255,255,.08);color:#e6eefb}
+
+/* ---- Основная область ---- */
+.app{flex:1;min-width:0;display:flex;flex-direction:column}
+.who{display:flex;align-items:center;gap:12px;justify-content:flex-end;
+  padding:14px 20px;color:var(--muted);font-size:15px;border-bottom:1px solid var(--line);
+  background:rgba(255,255,255,.6)}
+.who b{color:var(--ink)}
+.who .logout{display:inline-block;padding:8px 14px;border:1px solid var(--line2);
+  border-radius:9px;color:var(--muted);font-size:14px;font-weight:600}
+.who .logout:hover{background:var(--surface2);color:var(--ink)}
+.wrap{max-width:900px;width:100%;margin:0 auto;padding:20px 18px 44px}
+
+.subtabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px}
+.subtabs a{padding:7px 13px;border-radius:999px;background:var(--surface);
+  border:1px solid var(--line);color:var(--muted);font-size:14px;font-weight:600}
+.subtabs a:hover{border-color:var(--line2);color:var(--ink)}
+.subtabs a.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.subtabs a .n{opacity:.75;margin-left:3px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:18px;margin-bottom:16px;box-shadow:var(--shadow)}
+.card.flush{padding:6px 14px}
+.hero{text-align:center;padding:32px 16px}
+.hero .big{font-size:64px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;
+  letter-spacing:-2px;color:var(--blue-d)}
+.hero .lbl{color:var(--muted);margin-top:10px;font-size:15px}
+.hero.warn .big{color:var(--warn)}
+.hero.ok .big{color:var(--green)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:1px solid var(--blue);background:var(--blue);color:#fff;padding:11px 18px;
+  border-radius:11px;font-size:15px;font-weight:700;cursor:pointer;
+  transition:background .16s var(--ease-out),border-color .16s var(--ease-out),transform .16s var(--ease-out)}
+.btn:hover{background:var(--blue-d);border-color:var(--blue-d)}
+.btn:active{transform:scale(0.97)}
+.btn:focus-visible{outline:3px solid var(--blue-bg);outline-offset:1px}
+.btn.green{background:var(--green);border-color:var(--green)}
+.btn.green:hover{filter:brightness(.96)}
+.btn.grey{background:#fff;color:var(--muted);border-color:var(--line2)}
+.btn.grey:hover{background:var(--surface2);color:var(--ink)}
+.btn.danger{background:#fff;color:var(--warn);border-color:#eab6b6}
+.btn.danger:hover{background:var(--warn-bg)}
+.btn.sm{padding:9px 16px;font-size:15px}
+.btn.block{display:flex;width:100%}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);
+  font-size:14.5px;vertical-align:middle}
+th{color:var(--faint);font-weight:700;font-size:12px;letter-spacing:.3px;
+  text-transform:uppercase;background:var(--surface2)}
+tr:last-child td{border-bottom:none}
+td.num,th.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+tr.linkrow{cursor:pointer;transition:background .1s}
+tr.linkrow:hover td{background:#f7fbff}
+
+.tag{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;
+  font-weight:700;line-height:1.4}
+.tag.draft{background:#eef1f5;color:var(--muted)}
+.tag.sent{background:var(--blue-bg);color:var(--blue-d)}
+.tag.accepted{background:var(--green-bg);color:var(--green)}
+.tag.d{background:var(--warn-bg);color:var(--warn)}
+.tag.rq-draft{background:#eef1f5;color:var(--muted)}
+.tag.rq-open{background:var(--blue-bg);color:var(--blue-d)}
+.tag.rq-progress{background:#dbe7fd;color:#1e40af}
+.tag.rq-done{background:var(--green-bg);color:var(--green)}
+.tag.rq-shipped{background:var(--green);color:#fff}
+.tag.urgent{background:var(--warn-bg);color:var(--warn)}
+.small{color:var(--muted);font-size:13px}
+.diff-neg{color:var(--warn);font-weight:700}
+.diff-zero{color:var(--green);font-weight:700}
+h3{margin:0 0 12px;font-size:18px;font-weight:700}
+
+input,select{font:inherit;padding:11px 12px;border:1px solid var(--line2);
+  border-radius:10px;background:#fff;color:var(--ink);width:100%}
+input:focus,select:focus{outline:3px solid var(--blue-bg);border-color:var(--blue)}
+input[type=file]{padding:9px;background:var(--surface2)}
+label{display:block;font-size:13px;color:var(--muted);margin:0 0 5px;font-weight:600}
+.grid{display:grid;gap:12px}
+
+.flash{background:var(--blue-bg);color:var(--blue-d);border:1px solid #c9ddfb;
+  padding:11px 14px;border-radius:10px;margin-bottom:14px;font-size:14px}
+.ok-box{background:var(--green-bg);color:var(--green);border:1px solid #bfe6cd;
+  padding:12px 15px;border-radius:10px;margin-bottom:14px;font-size:14px}
+
+details{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);
+  margin-bottom:16px;box-shadow:var(--shadow)}
+details>summary{cursor:pointer;padding:14px 16px;font-weight:650;list-style:none}
+details>summary::-webkit-details-marker{display:none}
+details>summary::after{content:"▾";float:right;color:var(--faint)}
+details[open]>summary::after{content:"▴"}
+details[open]>summary{border-bottom:1px solid var(--line)}
+details .body{padding:14px 16px}
+.empty{text-align:center;color:var(--muted);padding:30px 12px}
+footer{color:var(--faint);font-size:12px;text-align:center;padding:18px}
+
+/* Чипы статуса товара */
+.st{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:999px;
+  font-size:12px;font-weight:700;line-height:1.5;vertical-align:middle}
+.st.zagotovka{background:var(--st-blue);color:var(--st-blue-t)}
+.st.upakovka{background:var(--st-green);color:var(--st-green-t)}
+.st.gotovoe{background:var(--st-grey);color:var(--st-grey-t)}
+
+/* Сегмент-переключатель */
+.seg{display:inline-flex;background:var(--surface2);border:1px solid var(--line);
+  border-radius:11px;padding:4px;gap:4px}
+.seg-opt{position:relative;margin:0;cursor:pointer}
+.seg-opt input{position:absolute;opacity:0;pointer-events:none}
+.seg-opt span{display:block;padding:8px 16px;border-radius:8px;font-size:14px;
+  font-weight:650;color:var(--muted);transition:background .16s var(--ease-out),color .16s var(--ease-out)}
+.seg-opt input:checked + span{background:#fff;color:var(--blue-d);box-shadow:var(--shadow-sm)}
+.seg-opt:hover span{color:var(--ink)}
+
+/* Появление */
+.wrap > .card,.wrap > details,.wrap > .two,.wrap > .three,.wrap > h3{
+  animation:rise .34s var(--ease-out) both}
+.wrap > *:nth-child(2){animation-delay:.03s}
+.wrap > *:nth-child(3){animation-delay:.06s}
+.wrap > *:nth-child(4){animation-delay:.09s}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+@media(max-width:720px){
+  body{flex-direction:column}
+  .side{width:100%;height:auto;position:sticky;top:0;z-index:10;padding:8px 8px;
+    display:flex;align-items:center;gap:4px;overflow-x:auto}
+  .side .brand{padding:6px 8px 6px 6px;font-size:17px}
+  .side a.nav{flex-direction:column;gap:3px;padding:8px 10px;font-size:11px;margin:0;
+    white-space:nowrap;text-align:center}
+  .side a.nav .b{position:absolute;margin:0;transform:translate(14px,-6px);min-width:17px;height:17px;font-size:11px}
+  .side a.nav{position:relative}
+  .who{padding:10px 16px}
+  .hero .big{font-size:52px}
+  th,td{padding:9px 8px;font-size:14px}
+  .card{padding:15px}
+  .seg{width:100%}.seg-opt{flex:1}.seg-opt span{text-align:center}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.001ms !important;transition-duration:.001ms !important}
+}
+</style>
+</head>
+<body>
+{% set ep = request.endpoint %}
+{% if role %}
+<nav class="side">
+  <div class="brand"><span class="mark"></span>jail</div>
+  {% if role=='director' %}
+  <a class="nav {{ 'on' if ep=='overview' }}" href="{{ url_for('overview') }}">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>Обзор</a>
+  {% endif %}
+  <a class="nav {{ 'on' if ep in ['documents','doc_view','doc_new','requests_list','request_view'] }}" href="{{ url_for('documents') }}">
+    <svg viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/><path d="M9 13h6M9 17h4"/></svg>Документы{% if role=='sklad' and req_open %}<span class="b">{{ req_open }}</span>{% endif %}</a>
+  {% if role in ['sklad','proizv'] %}
+  <a class="nav {{ 'on' if ep=='acceptance' }}" href="{{ url_for('acceptance') }}">
+    <svg viewBox="0 0 24 24"><path d="M4 13l2 6h12l2-6"/><path d="M4 13h5l1 2h4l1-2h5"/><path d="M12 3v7m0 0l-3-3m3 3l3-3"/></svg>Приёмка{% if pending_accept %}<span class="b">{{ pending_accept }}</span>{% endif %}</a>
+  {% endif %}
+  {% if role in ['sklad','proizv','director'] %}
+  <a class="nav {{ 'on' if ep=='discrepancies' }}" href="{{ url_for('discrepancies') }}">
+    <svg viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>Расхождения</a>
+  {% endif %}
+  <a class="nav {{ 'on' if ep=='refs' }}" href="{{ url_for('refs') }}">
+    <svg viewBox="0 0 24 24"><path d="M5 4a1 1 0 0 1 1-1h13v18H6a1 1 0 0 1-1-1z"/><path d="M9 3v18"/></svg>Справочники</a>
+  {% if role in ['proizv','director'] %}
+  <a class="nav {{ 'on' if ep and ep.startswith('payroll') }}" href="{{ url_for('payroll') }}">
+    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M15 14h3"/></svg>Сдельная ЗП</a>
+  {% endif %}
+  {% if role=='director' and enable_web_updates %}
+  <a class="nav {{ 'on' if ep=='update' }}" href="{{ url_for('update') }}">
+    <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg>Обновление</a>
+  {% endif %}
+</nav>
+{% endif %}
+<div class="app">
+  {% if role %}<div class="who"><b>{{ role_name }}</b><a href="{{ url_for('logout') }}" class="logout">выйти</a></div>{% endif %}
+  <div class="wrap">
+    {% with msgs = get_flashed_messages() %}
+      {% for m in msgs %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </div>
+  <footer>jail · версия {{ VERSION }} · тестовый режим</footer>
+</div>
+</body>
+</html>
