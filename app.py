@@ -100,8 +100,8 @@ def _selected_operations():
     return [key for key in OPERATIONS if key in raw]
 
 
-def _operation_names(value):
-    """Показать новые наборы и ранее сохранённое одиночное значение."""
+def _operation_details(value, prices_value=None):
+    """Названия операций и цены этой партии за пару (если заданы)."""
     if not value:
         return []
     try:
@@ -112,7 +112,19 @@ def _operation_names(value):
         keys = [keys]
     if not isinstance(keys, list):
         return []
-    return [OPERATIONS[key] for key in keys if isinstance(key, str) and key in OPERATIONS]
+    try:
+        prices = json.loads(prices_value) if prices_value else {}
+    except (TypeError, ValueError):
+        prices = {}
+    if not isinstance(prices, dict):
+        prices = {}
+    return [dict(name=OPERATIONS[key], price_kopeks=prices.get(key)
+                 if type(prices.get(key)) is int and prices[key] >= 0 else None)
+            for key in keys if isinstance(key, str) and key in OPERATIONS]
+
+
+def _operation_names(value):
+    return [row["name"] for row in _operation_details(value)]
 
 
 # ---------- Соединение с БД ----------
@@ -246,6 +258,7 @@ def _inject():
         LINE_STATUSES=LINE_STATUSES, KIND_LINE_STATUSES=KIND_LINE_STATUSES,
         REQ_STATUS=REQ_STATUS, ITEM_TYPES=ITEM_TYPES,
         OPERATIONS=OPERATIONS, UNITS=UNITS, operation_names=_operation_names,
+        operation_details=_operation_details,
         role=role, role_name=ROLES.get(role), pending_accept=pending,
         req_open=req_open, enable_web_updates=ENABLE_WEB_UPDATES,
         csrf_token=session["csrf_token"], new_send_token=lambda: secrets.token_urlsafe(24),
@@ -1151,9 +1164,22 @@ def _parse_party_shipment_items():
                 not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone() or
                 not g.db.execute("SELECT 1 FROM models WHERE id=? AND archived=0", (mid,)).fetchone()):
             return None, "Партия %d: проверьте поля и выберите операции." % position
+        prices = {}
+        for op in OPERATIONS:
+            raw_price = (request.form.get("party_price_%s_%s" % (key, op)) or "").strip()
+            if not raw_price:
+                continue
+            if op not in operations:
+                return None, "Партия %d: отметьте операцию «%s» для её цены." % (position, OPERATIONS[op])
+            try:
+                prices[op] = _parse_kopeks(raw_price)
+            except ValueError:
+                return None, "Партия %d: проверьте цену операции «%s»." % (position, OPERATIONS[op])
         items.append(dict(kind="pair", item="", qty=pairs, unit="pary",
                           item_type=None, customer_id=cid, model_id=mid,
-                          operation=json.dumps(operations), request_item_id=None,
+                          operation=json.dumps(operations),
+                          operation_prices=json.dumps(prices) if prices else None,
+                          request_item_id=None,
                           party_index=key))
         for n in range(max(len(names), len(qtys))):
             name = (names[n] if n < len(names) else "").strip()
@@ -1259,10 +1285,11 @@ def _send_shipment(req_id=None, multi=False):
         inserted = g.db.execute(
             "INSERT INTO shipment_items "
             "(shipment_id, request_item_id, request_number, line_kind, item, qty, unit, item_type, "
-            "customer_id, model_id, operation, party_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "customer_id, model_id, operation, operation_prices, party_item_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (cur.lastrowid, i["request_item_id"], i.get("request_number"),
              i["kind"], i["item"], i["qty"], i["unit"], i["item_type"],
-             i["customer_id"], i["model_id"], i["operation"],
+             i["customer_id"], i["model_id"], i["operation"], i.get("operation_prices"),
              party_items.get(party_index) if i["kind"] == "material" else None))
         if i["kind"] == "pair" and party_index is not None:
             party_items[party_index] = inserted.lastrowid

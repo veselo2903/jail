@@ -5,8 +5,10 @@
   <div class="dq-item-main">
     {% if i.line_kind == 'pair' %}
       <span class="dq-item-name">{{ i.customer }} — {{ i.model }}</span>
-      {% set names = operation_names(i.operation) %}
-      {% if names %}<div class="small">Операции: {{ names|join(', ') }}</div>{% endif %}
+      {% set operations = operation_details(i.operation, i.operation_prices) %}
+      {% if operations %}<div class="small dq-operation-list">
+        {% for op in operations %}<div>{{ op.name }}{% if op.price_kopeks is not none %} — {{ op.price_kopeks|rubles }} ₽/пару{% endif %}</div>{% endfor %}
+      </div>{% endif %}
     {% else %}
       <span class="dq-item-name">{{ i.item }}</span>
     {% endif %}

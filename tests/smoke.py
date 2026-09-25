@@ -108,6 +108,8 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert 'class="btn grey sm sklad-back-to-requests"' in supply_page
     assert 'class="btn block sklad-add-party-btn"' in supply_page
     assert supply_page.index('data-add-party') < supply_page.index('sklad-incoming-spoiler')
+    assert "Дополнительные материалы вне партии" in supply_page
+    assert "Цена за пару, ₽" in supply_page
 
     # Первая отправка частичная. Остаток остаётся виден; повторная отправка закрывает заявку.
     partial = post("/requests/supply/new", {
@@ -147,17 +149,24 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert count("shipments") == 2  # повторный запрос не дублирует отгрузку
     assert "Кожа" in client.get("/requests").text
 
-    # Самостоятельная поставка: материалы каждой партии связаны с её моделью и операциями.
+    # Самостоятельная поставка: материалы и цены операций принадлежат конкретным партиям.
+    assert post("/requests/supply/new", {
+        "party_id": ["0"], "party_customer_0": "1", "party_model_0": "1",
+        "party_qty_0": "3", "party_operations_0": ["op1"],
+        "party_price_0_op1": "12,345"}).status_code == 302
+    assert count("shipments") == 2
     sent = post("/requests/supply/new", {
         "material_name": ["Подошва"], "material_qty": ["7"], "material_unit": ["pary"],
         "party_id": ["0", "1"],
         "party_customer_0": "1", "party_model_0": "1", "party_qty_0": "3",
         "party_operations_0": ["op1", "op7"],
+        "party_price_0_op1": "12,50",
         "party_material_name_0": ["Кожа", "Нитка"],
         "party_material_qty_0": ["4", "2"],
         "party_material_unit_0": ["m2", "sht"],
         "party_customer_1": "1", "party_model_1": "2", "party_qty_1": "5",
         "party_operations_1": ["op3"],
+        "party_price_1_op3": "3.25",
         "party_material_name_1": ["Клей"],
         "party_material_qty_1": ["1"], "party_material_unit_1": ["kg"],
         "ship_note": "вне заявки"})
@@ -172,6 +181,10 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
         "SELECT operation FROM shipment_items WHERE shipment_id=? AND line_kind='pair' ORDER BY id",
         (ship_id,))]
     assert pair_ops == [["op1", "op7"], ["op3"]]
+    party_prices = [json.loads(x[0]) for x in sqlite3.connect(db.DB_PATH).execute(
+        "SELECT operation_prices FROM shipment_items WHERE shipment_id=? AND line_kind='pair' ORDER BY id",
+        (ship_id,))]
+    assert party_prices == [{"op1": 1250}, {"op3": 325}]
     warehouse = client.get("/requests")
     assert warehouse.status_code == 200 and "Поставка №" in warehouse.text
     assert "вне заявки" in warehouse.text
@@ -181,6 +194,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert "Поставка без заявки" in production.text and "Подошва" in production.text
     assert "Отправки по заявке" in production.text
     assert "Штробель сапожники" in production.text
+    assert "12.50 ₽/пару" in production.text and "3.25 ₽/пару" in production.text
 
     # Старую отправленную заявку переносим в журнал один раз.
     with sqlite3.connect(db.DB_PATH) as conn:

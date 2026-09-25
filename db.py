@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS shipment_items (
     customer_id     INTEGER REFERENCES customers(id),
     model_id        INTEGER REFERENCES models(id),
     operation       TEXT,
+    operation_prices TEXT,
     party_item_id   INTEGER REFERENCES shipment_items(id) ON DELETE SET NULL
 );
 
@@ -337,6 +338,8 @@ def _migrate_shipments(conn):
         conn.execute("ALTER TABLE shipment_items ADD COLUMN request_number INTEGER")
     if "party_item_id" not in item_cols:
         conn.execute("ALTER TABLE shipment_items ADD COLUMN party_item_id INTEGER REFERENCES shipment_items(id) ON DELETE SET NULL")
+    if "operation_prices" not in item_cols:
+        conn.execute("ALTER TABLE shipment_items ADD COLUMN operation_prices TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_shipment_items_party ON shipment_items(party_item_id)")
     old = conn.execute(
         "SELECT * FROM requests WHERE status='shipped' AND NOT EXISTS "
