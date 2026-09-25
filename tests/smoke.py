@@ -106,6 +106,8 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert "Запрошено 10" in supply_page
     assert '<details class="sklad-incoming-spoiler">' in supply_page
     assert 'class="btn grey sm sklad-back-to-requests"' in supply_page
+    assert 'class="btn block sklad-add-party-btn"' in supply_page
+    assert supply_page.index('data-add-party') < supply_page.index('sklad-incoming-spoiler')
 
     # Первая отправка частичная. Остаток остаётся виден; повторная отправка закрывает заявку.
     partial = post("/requests/supply/new", {
