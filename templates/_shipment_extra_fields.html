@@ -1,8 +1,11 @@
 <div class="shipment-extra sklad-extra-fields">
-  <div class="shipment-material-rows sklad-material-list"></div>
-  <div class="shipment-pair-rows sklad-model-list"></div>
-  <div class="shipment-add-actions sklad-add-actions">
-    <button class="btn grey sm sklad-add-material-btn" type="button" data-add-material>+ Материал</button>
-    <button class="btn grey sm sklad-add-model-btn" type="button" data-add-pair>+ Модель и операции</button>
-  </div>
+  <div class="shipment-party-rows sklad-party-list"></div>
+  <button class="btn grey sm sklad-add-party-btn" type="button" data-add-party>+ Добавить партию</button>
+  <details class="sklad-unassigned-materials">
+    <summary>Материалы без привязки к модели</summary>
+    <div class="sklad-unassigned-content">
+      <div class="shipment-material-rows sklad-unassigned-material-list"></div>
+      <button class="btn grey sm sklad-add-material-btn" type="button" data-add-material>+ Материал</button>
+    </div>
+  </details>
 </div>

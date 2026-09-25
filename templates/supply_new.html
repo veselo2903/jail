@@ -36,25 +36,37 @@
   <button class="btn green block sklad-send-supply-btn" type="submit">Отправить поставку</button>
 </form>
 </div>
+<template id="shipment-party-template">
+  <section class="card shipment-party sklad-party-card">
+    <input type="hidden" name="party_id" value="INDEX">
+    <div class="sklad-party-head"><b>Партия <span class="sklad-party-number"></span></b><button class="btn grey sm shipment-remove" type="button" title="Убрать партию">×</button></div>
+    <div class="sklad-party-fields">
+      <div><label>Заказчик</label><select name="party_customer_INDEX">{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+      <div><label>Модель</label><select name="party_model_INDEX">{% for m in models %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
+      <div><label>Пар</label><input name="party_qty_INDEX" type="number" min="1" max="1000000" inputmode="numeric" placeholder="Количество"></div>
+    </div>
+    <fieldset class="operations sklad-party-operations"><legend>Операции для этой партии</legend><div class="operation-grid">
+      {% for key, title in OPERATIONS.items() %}<label class="operation-choice sklad-operation-choice"><input type="checkbox" name="party_operations_INDEX" value="{{ key }}"><span>{{ title }}</span></label>{% endfor %}
+    </div></fieldset>
+    <div class="sklad-party-materials"><b>Материалы партии</b><div class="shipment-party-material-rows sklad-party-material-list"></div>
+      <button class="btn grey sm sklad-add-party-material-btn" type="button" data-add-party-material>+ Материал в партию</button>
+    </div>
+  </section>
+</template>
+<template id="shipment-party-material-template">
+  <div class="shipment-extra-row sklad-party-material-row">
+    <div><label>Материал</label><input name="party_material_name_INDEX" placeholder="Название"></div>
+    <div><label>Количество</label><input name="party_material_qty_INDEX" type="number" min="1" max="1000000" inputmode="numeric"></div>
+    <div><label>Ед.</label><select name="party_material_unit_INDEX">{% for key, title in UNITS.items() %}<option value="{{ key }}">{{ title }}</option>{% endfor %}</select></div>
+    <button class="btn grey sm shipment-remove" type="button" title="Убрать материал">×</button>
+  </div>
+</template>
 <template id="shipment-material-template">
-  <div class="shipment-extra-row sklad-material-row">
+  <div class="shipment-extra-row sklad-unassigned-material-row">
     <div><label>Материал</label><input name="material_name" placeholder="Название"></div>
     <div><label>Количество</label><input name="material_qty" type="number" min="1" max="1000000" inputmode="numeric"></div>
     <div><label>Ед.</label><select name="material_unit">{% for key, title in UNITS.items() %}<option value="{{ key }}">{{ title }}</option>{% endfor %}</select></div>
-    <button class="btn grey sm shipment-remove" type="button" title="Убрать строку">×</button>
-  </div>
-</template>
-<template id="shipment-pair-template">
-  <div class="shipment-extra-pair sklad-model-row">
-    <div class="shipment-extra-row">
-      <div><label>Заказчик</label><select name="pair_customer_id">{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
-      <div><label>Модель</label><select name="pair_model_id">{% for m in models %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
-      <div><label>Пары</label><input name="pair_qty" type="number" min="1" max="1000000" inputmode="numeric"></div>
-      <button class="btn grey sm shipment-remove" type="button" title="Убрать строку">×</button>
-    </div>
-    <fieldset class="operations sklad-model-operations"><legend>Операции для этой модели</legend><div class="operation-grid">
-      {% for key, title in OPERATIONS.items() %}<label class="operation-choice sklad-operation-choice"><input type="checkbox" name="pair_operations_INDEX" value="{{ key }}"><span>{{ title }}</span></label>{% endfor %}
-    </div></fieldset>
+    <button class="btn grey sm shipment-remove" type="button" title="Убрать материал">×</button>
   </div>
 </template>
 <style>
@@ -78,21 +90,33 @@
 .supply-choice .tag{vertical-align:middle}
 .sklad-supply-quantity{width:104px;min-width:0;padding:7px 8px;text-align:center}
 .sklad-send-supply-btn{margin-top:16px}
-.shipment-add-actions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
-.shipment-extra-row{display:grid;grid-template-columns:2fr 1fr 90px 40px;gap:8px;align-items:end;margin:10px 0}
-.shipment-extra-row label{margin-bottom:4px}.shipment-extra-row .shipment-remove{padding:9px 0}
-.shipment-extra-pair{padding:12px;border:1px solid var(--line);border-radius:10px;margin:10px 0}
-.shipment-extra-pair .shipment-extra-row{grid-template-columns:repeat(3,minmax(0,1fr)) 40px;margin:0 0 12px}
+.sklad-extra-fields{margin-top:10px}
+.sklad-add-party-btn{margin:3px 0 12px}
+.shipment-party{padding:14px;margin:10px 0;box-shadow:none}
+.sklad-party-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.sklad-party-head .shipment-remove{padding:5px 12px}
+.sklad-party-fields{display:grid;grid-template-columns:1fr 1fr 130px;gap:9px}
+.sklad-party-fields label,.shipment-extra-row label{margin-bottom:4px}
+.sklad-party-fields input,.sklad-party-fields select{width:100%}
+.sklad-party-operations{margin-top:14px}
+.sklad-party-materials{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+.sklad-party-materials>b{font-size:14px}
+.sklad-add-party-material-btn{margin-top:7px}
+.sklad-unassigned-materials{margin:2px 0 14px}
+.sklad-unassigned-content{padding:4px 14px 14px}
+.shipment-extra-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) 90px 40px;gap:8px;align-items:end;margin:10px 0}
+.shipment-extra-row .shipment-remove{padding:9px 0}
 .operations{border:0;padding:0;margin:0}.operations legend{font-size:13px;color:var(--muted);font-weight:650;margin-bottom:7px}
 .operation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
 .operation-choice{display:flex;align-items:center;gap:8px;margin:0;padding:8px;border:1px solid var(--line2);border-radius:8px;color:var(--ink);cursor:pointer}
-.operation-choice input{width:19px;height:19px;flex:none;accent-color:var(--blue)}
-.operation-choice:has(input:checked){border-color:var(--blue);background:var(--blue-bg)}
+.operation-choice input{width:19px;height:19px;flex:none;accent-color:var(--green)}
+.operation-choice:has(input:checked){border-color:var(--green);background:var(--green-bg)}
 @media(max-width:620px){
  .sklad-supply-header{gap:10px;flex-wrap:wrap}.sklad-supply-title{font-size:21px}
  .supply-item{grid-template-columns:minmax(0,1fr) 86px;gap:6px}.sklad-supply-quantity{width:86px}
  .supply-request{padding:8px}.sklad-incoming-content{padding:3px 6px 7px}
- .shipment-extra-row,.shipment-extra-pair .shipment-extra-row{grid-template-columns:1fr 1fr}
+ .sklad-party-fields{grid-template-columns:1fr 1fr}.sklad-party-fields>div:last-child{grid-column:1 / -1}
+ .shipment-extra-row{grid-template-columns:1fr 1fr}
  .shipment-extra-row>div:first-child{grid-column:1 / -1}
  .shipment-extra-row .shipment-remove{grid-column:2;justify-self:end;width:40px}
  .operation-grid{grid-template-columns:1fr}
@@ -101,17 +125,45 @@
 <script>
 (function(){
  const form=document.getElementById('supply-form');
- const material=document.getElementById('shipment-material-template'),pair=document.getElementById('shipment-pair-template');
- form.querySelector('[data-add-material]').addEventListener('click',function(){form.querySelector('.shipment-material-rows').appendChild(material.content.cloneNode(true))});
- form.querySelector('[data-add-pair]').addEventListener('click',function(){form.querySelector('.shipment-pair-rows').appendChild(pair.content.cloneNode(true))});
- form.addEventListener('click',function(e){if(e.target.classList.contains('shipment-remove'))(e.target.closest('.shipment-extra-pair')||e.target.closest('.shipment-extra-row')).remove()});
+ const partyTemplate=document.getElementById('shipment-party-template');
+ const partyMaterialTemplate=document.getElementById('shipment-party-material-template');
+ const materialTemplate=document.getElementById('shipment-material-template');
+ let nextParty=0;
+ form.querySelector('[data-add-party]').addEventListener('click',function(){
+   const id=String(nextParty++),node=partyTemplate.content.cloneNode(true);
+   node.querySelectorAll('[name]').forEach(function(input){input.name=input.name.replace('INDEX',id)});
+   node.querySelector('[name="party_id"]').value=id;
+   node.querySelector('.sklad-party-number').textContent=String(form.querySelectorAll('.shipment-party').length+1);
+   form.querySelector('.shipment-party-rows').appendChild(node);
+ });
+ form.querySelector('[data-add-material]').addEventListener('click',function(){
+   form.querySelector('.shipment-material-rows').appendChild(materialTemplate.content.cloneNode(true));
+ });
+ form.addEventListener('click',function(e){
+   if(e.target.matches('[data-add-party-material]')){
+     const party=e.target.closest('.shipment-party'),id=party.querySelector('[name="party_id"]').value;
+     const node=partyMaterialTemplate.content.cloneNode(true);
+     node.querySelectorAll('[name]').forEach(function(input){input.name=input.name.replace('INDEX',id)});
+     party.querySelector('.shipment-party-material-rows').appendChild(node);
+   }
+   if(e.target.classList.contains('shipment-remove')){
+     const row=e.target.closest('.shipment-extra-row')||e.target.closest('.shipment-party');
+     if(row)row.remove();
+     form.querySelectorAll('.sklad-party-number').forEach(function(label,index){label.textContent=String(index+1)});
+   }
+ });
  form.addEventListener('submit',function(e){
-   form.querySelectorAll('.shipment-extra-pair').forEach(function(row,n){row.querySelectorAll('.operation-choice input').forEach(function(input){input.name='pair_operations_'+n})});
-   const selected=form.querySelector('.supply-choice input:checked');
-   const material=Array.from(form.querySelectorAll('[name="material_name"]')).some(function(x){return x.value.trim()});
-   const pair=Array.from(form.querySelectorAll('[name="pair_qty"]')).some(function(x){return x.value.trim()});
-   if(!selected&&!material&&!pair){e.preventDefault();alert('Отметьте позицию заявки или добавьте материал либо модель.');return}
-   if(Array.from(form.querySelectorAll('.shipment-extra-pair')).some(function(row){return row.querySelector('[name="pair_qty"]').value.trim()&&!row.querySelector('.operation-choice input:checked')})){e.preventDefault();alert('Выберите операции для каждой модели.');return}
+   const requested=form.querySelector('.supply-choice input:checked');
+   const unassigned=Array.from(form.querySelectorAll('[name="material_name"]')).some(function(x){return x.value.trim()});
+   const party=Array.from(form.querySelectorAll('.shipment-party')).some(function(row){
+     return row.querySelector('[name^="party_qty_"]').value.trim()||row.querySelector('.operation-choice input:checked')||
+       Array.from(row.querySelectorAll('[name^="party_material_name_"]')).some(function(x){return x.value.trim()});
+   });
+   if(!requested&&!unassigned&&!party){e.preventDefault();alert('Отметьте позицию заявки или добавьте партию либо материал.');return}
+   const missing=Array.from(form.querySelectorAll('.shipment-party')).find(function(row){
+     return row.querySelector('[name^="party_qty_"]').value.trim()&&!row.querySelector('.operation-choice input:checked');
+   });
+   if(missing){e.preventDefault();alert('Выберите операции для каждой партии.');return}
    form.querySelector('button[type="submit"]').disabled=true;
  });
 })();

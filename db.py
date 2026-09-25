@@ -146,7 +146,8 @@ CREATE TABLE IF NOT EXISTS shipment_items (
     item_type       TEXT,
     customer_id     INTEGER REFERENCES customers(id),
     model_id        INTEGER REFERENCES models(id),
-    operation       TEXT
+    operation       TEXT,
+    party_item_id   INTEGER REFERENCES shipment_items(id) ON DELETE SET NULL
 );
 
 -- Этап 2: внесение бумаг для сдельной зарплаты. Структура заложена заранее.
@@ -334,6 +335,9 @@ def _migrate_shipments(conn):
     item_cols = {r["name"] for r in conn.execute("PRAGMA table_info(shipment_items)")}
     if "request_number" not in item_cols:
         conn.execute("ALTER TABLE shipment_items ADD COLUMN request_number INTEGER")
+    if "party_item_id" not in item_cols:
+        conn.execute("ALTER TABLE shipment_items ADD COLUMN party_item_id INTEGER REFERENCES shipment_items(id) ON DELETE SET NULL")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_shipment_items_party ON shipment_items(party_item_id)")
     old = conn.execute(
         "SELECT * FROM requests WHERE status='shipped' AND NOT EXISTS "
         "(SELECT 1 FROM shipments WHERE legacy_request_id=requests.id)"

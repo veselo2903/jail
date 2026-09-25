@@ -145,16 +145,27 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert count("shipments") == 2  # повторный запрос не дублирует отгрузку
     assert "Кожа" in client.get("/requests").text
 
-    # Самостоятельная отправка: несколько разных моделей и материал в одной записи.
+    # Самостоятельная поставка: материалы каждой партии связаны с её моделью и операциями.
     sent = post("/requests/supply/new", {
         "material_name": ["Подошва"], "material_qty": ["7"], "material_unit": ["pary"],
-        "pair_customer_id": ["1", "1"], "pair_model_id": ["1", "2"],
-        "pair_qty": ["3", "5"], "pair_operations_0": ["op1", "op7"],
-        "pair_operations_1": ["op3"], "ship_note": "вне заявки"})
+        "party_id": ["0", "1"],
+        "party_customer_0": "1", "party_model_0": "1", "party_qty_0": "3",
+        "party_operations_0": ["op1", "op7"],
+        "party_material_name_0": ["Кожа", "Нитка"],
+        "party_material_qty_0": ["4", "2"],
+        "party_material_unit_0": ["m2", "sht"],
+        "party_customer_1": "1", "party_model_1": "2", "party_qty_1": "5",
+        "party_operations_1": ["op3"],
+        "party_material_name_1": ["Клей"],
+        "party_material_qty_1": ["1"], "party_material_unit_1": ["kg"],
+        "ship_note": "вне заявки"})
     assert sent.status_code == 302
     ship_id = one("SELECT MAX(id) FROM shipments")[0]
     assert one("SELECT request_id, note FROM shipments WHERE id=?", (ship_id,)) == (None, "вне заявки")
-    assert one("SELECT COUNT(*) FROM shipment_items WHERE shipment_id=?", (ship_id,))[0] == 3
+    assert one("SELECT COUNT(*) FROM shipment_items WHERE shipment_id=?", (ship_id,))[0] == 6
+    assert one("SELECT COUNT(*) FROM shipment_items WHERE shipment_id=? AND party_item_id IS NOT NULL", (ship_id,))[0] == 3
+    assert one("SELECT COUNT(DISTINCT party_item_id) FROM shipment_items WHERE shipment_id=?", (ship_id,))[0] == 2
+    assert one("SELECT party_item_id FROM shipment_items WHERE shipment_id=? AND item='Подошва'", (ship_id,))[0] is None
     pair_ops = [json.loads(x[0]) for x in sqlite3.connect(db.DB_PATH).execute(
         "SELECT operation FROM shipment_items WHERE shipment_id=? AND line_kind='pair' ORDER BY id",
         (ship_id,))]

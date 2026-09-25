@@ -87,7 +87,7 @@ OPERATIONS = {
     "op6": "Вклейка простилок в колодку",
     "op7": "Упаковка",
 }
-UNITS = {"sht": "шт", "pary": "пары", "m2": "м²"}
+UNITS = {"sht": "шт", "pary": "пары", "m2": "м²", "kg": "кг", "l": "л"}
 
 
 def _selected_operations():
@@ -1120,6 +1120,59 @@ def _parse_extra_shipment_items():
     return result, None
 
 
+def _parse_party_shipment_items():
+    """Разобрать партии обуви и материалы, привязанные к каждой партии."""
+    items, error = _parse_extra_shipment_items()  # материалы без привязки
+    if error:
+        return None, error
+    party_ids = request.form.getlist("party_id")
+    if len(party_ids) > 100 or len(set(party_ids)) != len(party_ids):
+        return None, "Проверьте список партий."
+    for position, key in enumerate(party_ids, 1):
+        if not key.isascii() or not key.isdigit() or len(key) > 6:
+            return None, "Проверьте список партий."
+        raw_qty = (request.form.get("party_qty_" + key) or "").strip()
+        names = request.form.getlist("party_material_name_" + key)
+        qtys = request.form.getlist("party_material_qty_" + key)
+        units = request.form.getlist("party_material_unit_" + key)
+        selected = request.form.getlist("party_operations_" + key)
+        has_material = any(x.strip() for x in names + qtys)
+        if not raw_qty and not selected and not has_material:
+            continue  # пустую карточку не сохраняем
+        try:
+            cid = int(request.form.get("party_customer_" + key) or "")
+            mid = int(request.form.get("party_model_" + key) or "")
+            pairs = int(raw_qty)
+        except ValueError:
+            return None, "Партия %d: укажите заказчика, модель и число пар." % position
+        operations = [op for op in OPERATIONS if op in selected]
+        if (not 0 < pairs <= 1_000_000 or not selected or
+                len(operations) != len(set(selected)) or
+                not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone() or
+                not g.db.execute("SELECT 1 FROM models WHERE id=? AND archived=0", (mid,)).fetchone()):
+            return None, "Партия %d: проверьте поля и выберите операции." % position
+        items.append(dict(kind="pair", item="", qty=pairs, unit="pary",
+                          item_type=None, customer_id=cid, model_id=mid,
+                          operation=json.dumps(operations), request_item_id=None,
+                          party_index=key))
+        for n in range(max(len(names), len(qtys))):
+            name = (names[n] if n < len(names) else "").strip()
+            raw = (qtys[n] if n < len(qtys) else "").strip()
+            if not name and not raw:
+                continue
+            try:
+                qty = int(raw)
+            except ValueError:
+                qty = 0
+            unit = units[n] if n < len(units) else ""
+            if not name or not 0 < qty <= 1_000_000 or unit not in UNITS:
+                return None, "Партия %d, материал %d: заполните название, количество и единицу." % (position, n + 1)
+            items.append(dict(kind="material", item=name, qty=qty, unit=unit,
+                              item_type="material", customer_id=None, model_id=None,
+                              operation=None, request_item_id=None, party_index=key))
+    return items, None
+
+
 def _send_shipment(req_id=None, multi=False):
     """Одна поставка: позиции из любых входящих заявок и свои позиции склада."""
     if session.get("role") != "sklad":
@@ -1181,7 +1234,7 @@ def _send_shipment(req_id=None, multi=False):
                 operation=old["operation"], request_item_id=None,
                 request_number=None))
             affected.add(req_id)
-    extras, error = _parse_extra_shipment_items()
+    extras, error = _parse_party_shipment_items() if multi else _parse_extra_shipment_items()
     if error:
         flash(error)
         return redirect(back)
@@ -1200,14 +1253,19 @@ def _send_shipment(req_id=None, multi=False):
         if g.db.execute("SELECT 1 FROM shipments WHERE client_token=?", (token,)).fetchone():
             return redirect(url_for("documents"))
         raise
+    party_items = {}
     for i in items:
-        g.db.execute(
+        party_index = i.get("party_index")
+        inserted = g.db.execute(
             "INSERT INTO shipment_items "
             "(shipment_id, request_item_id, request_number, line_kind, item, qty, unit, item_type, "
-            "customer_id, model_id, operation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "customer_id, model_id, operation, party_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (cur.lastrowid, i["request_item_id"], i.get("request_number"),
              i["kind"], i["item"], i["qty"], i["unit"], i["item_type"],
-             i["customer_id"], i["model_id"], i["operation"]))
+             i["customer_id"], i["model_id"], i["operation"],
+             party_items.get(party_index) if i["kind"] == "material" else None))
+        if i["kind"] == "pair" and party_index is not None:
+            party_items[party_index] = inserted.lastrowid
     incomplete = False
     for target_id in affected:
         complete = all(x["remaining"] == 0 for x in _needed_items(target_id))
