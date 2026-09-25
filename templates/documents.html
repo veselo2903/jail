@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Документы — jail{% endblock %}
 {% block content %}
-<h1>Документы</h1>
 
 {% if n_all or to_action %}<div class="card hero {{ 'warn' if to_action else '' }}">
   {% if to_action %}

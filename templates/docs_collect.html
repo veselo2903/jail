@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Сборка — jail{% endblock %}
 {% block content %}
-<h1>Сборка</h1>
 
 {% set has_items = groups|selectattr('its')|list %}
 {% if has_items %}<div class="card" style="padding:14px 18px">
