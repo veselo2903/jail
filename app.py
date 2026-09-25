@@ -124,6 +124,27 @@ def _csrf_guard():
             abort(400, description="Недействительный токен формы. Обновите страницу и повторите действие.")
 
 
+@app.url_value_preprocessor
+def _pull_role_url(endpoint, values):
+    """Роль из адреса (/sklad/..., /proizv/..., /director/...) в g, не в аргументы view."""
+    g.url_role = values.pop("role_url", None) if values else None
+
+
+@app.url_defaults
+def _add_role_url(endpoint, values):
+    """url_for() сам подставляет роль текущей сессии в адрес страницы."""
+    if "role_url" not in values and session.get("role") in ROLES \
+            and app.url_map.is_endpoint_expecting(endpoint, "role_url"):
+        values["role_url"] = session["role"]
+
+
+@app.before_request
+def _role_url_guard():
+    role = session.get("role")
+    if g.get("url_role") and role in ROLES and g.url_role != role:
+        abort(403)  # адрес другой роли: /sklad/... открывает только склад
+
+
 @app.before_request
 def _open_db():
     g.db = db.get_db()
@@ -328,7 +349,7 @@ def _request_detail(r):
     )
 
 
-@app.route("/requests")
+@app.route("/<any(sklad,proizv,director):role_url>/requests")
 @login_required
 def documents():
     role = session["role"]
@@ -401,7 +422,7 @@ def documents():
                            can_transfer=can_transfer, can_request=can_request)
 
 
-@app.route("/requests/collect")
+@app.route("/<any(sklad,proizv,director):role_url>/requests/collect")
 @login_required
 def docs_collect():
     """Склад: единый список позиций по открытым заявкам."""
@@ -419,7 +440,7 @@ def docs_collect():
     return render_template("docs_collect.html", groups=groups)
 
 
-@app.route("/requests/collect/save", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/collect/save", methods=["POST"])
 @login_required
 def docs_collect_save():
     """Сохранить общий чек-лист без изменения не показанных заявок."""
@@ -480,7 +501,7 @@ def docs_collect_save():
     return redirect(url_for("docs_collect"))
 
 
-@app.route("/requests/collect/<int:req_id>/start", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/collect/<int:req_id>/start", methods=["POST"])
 @login_required
 def docs_collect_start(req_id):
     """Взять заявку в сборку и открыть мастер (шаг 1)."""
@@ -496,7 +517,7 @@ def docs_collect_start(req_id):
     return redirect(url_for("request_view", req_id=req_id, step=1))
 
 
-@app.route("/requests/collect/blank", methods=["GET", "POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/collect/blank", methods=["GET", "POST"])
 @login_required
 def docs_collect_blank():
     """Создать передачу только вместе с первой позицией."""
@@ -563,16 +584,23 @@ def _parse_doc_rows():
 def legacy_docs(rest=""):
     """Старые ссылки /docs/... ведут на новые адреса раздела «Заявки»."""
     if rest.startswith("collect"):
-        path = "/requests/" + rest
+        path = "requests/" + rest
     elif rest == "new" or rest.split("/")[0].isdigit():
-        path = "/requests/transfer/" + rest
+        path = "requests/transfer/" + rest
     else:
-        path = "/requests"
+        path = "requests"
+    return _redirect_with_role(path)
+
+
+def _redirect_with_role(path):
+    role = session.get("role")
+    if role not in ROLES:
+        return redirect(url_for("login"))
     query = ("?" + request.query_string.decode()) if request.query_string else ""
-    return redirect(request.script_root + path + query)
+    return redirect("%s/%s/%s%s" % (request.script_root, role, path, query))
 
 
-@app.route("/requests/transfer/new", methods=["GET", "POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/transfer/new", methods=["GET", "POST"])
 @login_required
 def doc_new():
     role = session["role"]
@@ -631,7 +659,7 @@ def doc_new():
     return redirect(url_for("documents"))
 
 
-@app.route("/requests/transfer/<int:doc_id>")
+@app.route("/<any(sklad,proizv,director):role_url>/requests/transfer/<int:doc_id>")
 @login_required
 def doc_view(doc_id):
     role = session["role"]
@@ -652,7 +680,7 @@ def doc_view(doc_id):
     )
 
 
-@app.route("/requests/transfer/<int:doc_id>/accept", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/transfer/<int:doc_id>/accept", methods=["POST"])
 @login_required
 def doc_accept(doc_id):
     role = session["role"]
@@ -687,7 +715,7 @@ def doc_accept(doc_id):
     return redirect(url_for("doc_view", doc_id=doc_id))
 
 
-@app.route("/requests/transfer/<int:doc_id>/delete", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/transfer/<int:doc_id>/delete", methods=["POST"])
 @login_required
 def doc_delete(doc_id):
     role = session["role"]
@@ -708,7 +736,7 @@ def doc_delete(doc_id):
 
 
 # ---------- Справочники ----------
-@app.route("/refs")
+@app.route("/<any(sklad,proizv,director):role_url>/refs")
 @login_required
 def refs():
     tab = request.args.get("tab", "customers")
@@ -737,7 +765,7 @@ def _ref_guard(table):
         abort(404)
 
 
-@app.route("/refs/<table>/add", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/refs/<table>/add", methods=["POST"])
 @login_required
 def ref_add(table):
     _ref_guard(table)
@@ -755,7 +783,7 @@ def ref_add(table):
     return redirect(url_for("refs", tab=table))
 
 
-@app.route("/refs/<table>/quick_add", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/refs/<table>/quick_add", methods=["POST"])
 @login_required
 def ref_quick_add(table):
     """Быстрое добавление заказчика/модели прямо из документа (склад/директор)."""
@@ -776,7 +804,7 @@ def ref_quick_add(table):
     return {"ok": True, "id": cur.lastrowid, "name": name, "existed": False}
 
 
-@app.route("/refs/<table>/<int:rid>/edit", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/refs/<table>/<int:rid>/edit", methods=["POST"])
 @login_required
 def ref_edit(table, rid):
     _ref_guard(table)
@@ -794,7 +822,7 @@ def ref_edit(table, rid):
     return redirect(url_for("refs", tab=table))
 
 
-@app.route("/refs/<table>/<int:rid>/arch", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/refs/<table>/<int:rid>/arch", methods=["POST"])
 @login_required
 def ref_arch(table, rid):
     _ref_guard(table)
@@ -805,7 +833,7 @@ def ref_arch(table, rid):
 
 
 # ---------- Расхождения ----------
-@app.route("/discrepancies")
+@app.route("/<any(sklad,proizv,director):role_url>/discrepancies")
 @login_required
 def discrepancies():
     if not can_see_discrepancies():
@@ -860,7 +888,7 @@ def discrepancies():
 
 
 # ---------- Приёмка ----------
-@app.route("/acceptance")
+@app.route("/<any(sklad,proizv,director):role_url>/acceptance")
 @login_required
 def acceptance():
     role = session["role"]
@@ -890,7 +918,7 @@ def acceptance():
 
 
 # ---------- Обзор директора ----------
-@app.route("/overview")
+@app.route("/<any(sklad,proizv,director):role_url>/overview")
 @login_required
 def overview():
     if session["role"] != "director":
@@ -1054,7 +1082,7 @@ def _insert_request_items(req_id, parsed):
             (req_id, item, qty, item_note, unit, item_urgent))
 
 
-@app.route("/requests/new", methods=["GET", "POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/new", methods=["GET", "POST"])
 @login_required
 def request_new():
     if session["role"] != "proizv":
@@ -1077,7 +1105,7 @@ def request_new():
     return redirect(url_for("documents", tab="requests"))
 
 
-@app.route("/requests/<int:req_id>/edit", methods=["GET", "POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/edit", methods=["GET", "POST"])
 @login_required
 def request_edit(req_id):
     """Правка заявки производством: та же страница, что и при создании, но только первые 15 минут."""
@@ -1113,7 +1141,7 @@ def request_edit(req_id):
     return redirect(url_for("documents", tab="requests"))
 
 
-@app.route("/requests/<int:req_id>")
+@app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>")
 @login_required
 def request_view(req_id):
     role = session["role"]
@@ -1156,7 +1184,7 @@ def _req_progress_sklad(req_id):
     return r
 
 
-@app.route("/requests/<int:req_id>/collect", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/collect", methods=["POST"])
 @login_required
 def request_collect(req_id):
     """Кладовщик сохраняет сборку: галочка «положил», кол-во, тип по каждой позиции."""
@@ -1188,7 +1216,7 @@ def request_collect(req_id):
     return redirect(url_for("request_view", req_id=req_id, step=2))
 
 
-@app.route("/requests/<int:req_id>/pair/add", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/pair/add", methods=["POST"])
 @login_required
 def request_pair_add(req_id):
     """Кладовщик добавляет пары с операцией на модель."""
@@ -1219,7 +1247,7 @@ def request_pair_add(req_id):
     return redirect(url_for("request_view", req_id=req_id, step=2))
 
 
-@app.route("/requests/<int:req_id>/material/add", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/material/add", methods=["POST"])
 @login_required
 def request_material_add(req_id):
     """Кладовщик добавляет в «что положил» материал: название + кол-во."""
@@ -1246,7 +1274,7 @@ def request_material_add(req_id):
     return redirect(url_for("request_view", req_id=req_id, step=2))
 
 
-@app.route("/requests/<int:req_id>/placed/<int:item_id>/del", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/placed/<int:item_id>/del", methods=["POST"])
 @login_required
 def request_placed_del(req_id, item_id):
     r = _req_progress_sklad(req_id)
@@ -1261,7 +1289,7 @@ def request_placed_del(req_id, item_id):
     return redirect(url_for("request_view", req_id=req_id, step=2))
 
 
-@app.route("/requests/<int:req_id>/take", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/take", methods=["POST"])
 @login_required
 def request_take(req_id):
     if session["role"] != "sklad":
@@ -1275,7 +1303,7 @@ def request_take(req_id):
     return redirect(url_for("request_view", req_id=req_id))
 
 
-@app.route("/requests/<int:req_id>/ship", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/ship", methods=["POST"])
 @login_required
 def request_ship(req_id):
     """Склад отправляет собранную заявку на производство."""
@@ -1300,7 +1328,7 @@ def request_ship(req_id):
     return redirect(url_for("request_view", req_id=req_id))
 
 
-@app.route("/requests/<int:req_id>/delete", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/delete", methods=["POST"])
 @login_required
 def request_delete(req_id):
     role = session["role"]
@@ -1337,7 +1365,7 @@ def _rubles(kopeks):
     return f"{kopeks // 100}.{kopeks % 100:02d}"
 
 
-@app.route("/payroll")
+@app.route("/<any(sklad,proizv,director):role_url>/payroll")
 @login_required
 def payroll():
     role = session["role"]
@@ -1382,7 +1410,7 @@ def payroll():
                            start=start, end=end, today=today.isoformat())
 
 
-@app.route("/payroll/rates", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/payroll/rates", methods=["POST"])
 @login_required
 def payroll_rate_set():
     if session["role"] != "director":
@@ -1408,7 +1436,7 @@ def payroll_rate_set():
     return redirect(url_for("payroll"))
 
 
-@app.route("/payroll/records", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/payroll/records", methods=["POST"])
 @login_required
 def payroll_record_add():
     if session["role"] not in ("proizv", "director"):
@@ -1446,7 +1474,7 @@ def payroll_record_add():
     return redirect(url_for("payroll", start=work_date[:7] + "-01", end=work_date))
 
 
-@app.route("/payroll/records/<int:record_id>/delete", methods=["POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/payroll/records/<int:record_id>/delete", methods=["POST"])
 @login_required
 def payroll_record_delete(record_id):
     if session["role"] != "director":
@@ -1525,7 +1553,7 @@ def _current_version():
         return VERSION
 
 
-@app.route("/update", methods=["GET", "POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/update", methods=["GET", "POST"])
 def update():
     if not ENABLE_WEB_UPDATES:
         abort(404)
@@ -1564,6 +1592,14 @@ def update():
     return render_template("update.html", cur=_current_version(),
                            applied=applied, reloaded=reloaded, err=err,
                            history=history)
+
+
+@app.route("/<path:rest>", methods=["GET", "POST"])
+def legacy_without_role(rest):
+    """Адрес без роли (старые ссылки) -> тот же адрес с ролью из сессии."""
+    if request.method != "GET" or rest.split("/")[0] in ROLES:
+        abort(404)
+    return _redirect_with_role(rest)
 
 
 if __name__ == "__main__":

@@ -13,7 +13,36 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     os.environ["JAIL_SECRET_KEY"] = "local-tests-only-secret"
     from jail.app import app, db
 
-    client = app.test_client()
+    class RoleClient:
+        """Тестовый клиент: после входа подставляет роль в адрес (/sklad/..., /proizv/..., /director/...)."""
+        ROLES = ("sklad", "proizv", "director")
+
+        def __init__(self, inner):
+            self.inner, self.role = inner, None
+
+        def __getattr__(self, name):
+            return getattr(self.inner, name)
+
+        def _path(self, path):
+            if self.role and path != "/" and not path.startswith(("/login", "/logout", "/docs")) \
+                    and path.split("/")[1] not in self.ROLES and not path.startswith("/x/"):
+                return "/%s%s" % (self.role, path)
+            return path
+
+        def _track(self, path):
+            parts = path.split("?")[0].split("/")
+            if len(parts) == 3 and parts[1] == "login" and parts[2] in self.ROLES:
+                self.role = parts[2]
+
+        def get(self, path, **kw):
+            response = self.inner.get(self._path(path), **kw)
+            self._track(path)
+            return response
+
+        def post(self, path, **kw):
+            return self.inner.post(self._path(path), **kw)
+
+    client = RoleClient(app.test_client())
     assert client.get("/login").status_code == 200
     with client.session_transaction() as state:
         token = state["csrf_token"]
@@ -32,11 +61,15 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert client.get("/login/sklad").status_code == 302
     assert client.get("/requests/transfer/new").status_code == 200
     # старые адреса /docs/... перенаправляют на новые
-    for old, new in (("/docs", "/requests"), ("/docs?tab=requests", "/requests?tab=requests"),
-                     ("/docs/collect", "/requests/collect"), ("/docs/new", "/requests/transfer/new"),
-                     ("/docs/7", "/requests/transfer/7")):
-        moved = client.get(old)
+    for old, new in (("/docs", "/sklad/requests"), ("/docs?tab=requests", "/sklad/requests?tab=requests"),
+                     ("/docs/collect", "/sklad/requests/collect"), ("/docs/new", "/sklad/requests/transfer/new"),
+                     ("/docs/7", "/sklad/requests/transfer/7"), ("/requests/new", "/sklad/requests/new")):
+        moved = client.inner.get(old)
         assert moved.status_code == 302 and moved.location.endswith(new), (old, moved.location)
+    # адрес другой роли закрыт, адрес без входа ведёт на вход
+    assert client.inner.get("/proizv/requests").status_code == 403
+    assert client.inner.get("/director/overview").status_code == 403
+    assert client.inner.get("/sklad/requests").status_code == 200
     assert "Здесь пока пусто" not in client.get("/requests").text
     assert "Новых заявок к сборке нет" not in client.get("/requests/collect").text
     assert "Новых документов на приёмку нет" not in client.get("/acceptance").text

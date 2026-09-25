@@ -178,7 +178,7 @@
   document.querySelectorAll("[data-save]").forEach(function(b){b.addEventListener("click",function(){save(b.dataset.save);});});
   document.querySelectorAll(".addbox input").forEach(function(inp){inp.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();save(inp.id.replace("new-",""));}});});
   function save(k){var inp=document.getElementById("new-"+k);var name=inp.value.trim();if(!name){inp.focus();return;}var fd=new FormData();fd.append("name",name);
-    fetch("{{ url_for('index') }}refs/"+kinds[k]+"/quick_add",{method:"POST",headers:{"X-CSRF-Token":"{{ csrf_token }}"},body:fd}).then(function(r){return r.json();}).then(function(d){if(!d.ok){alert(d.error||"Ошибка");return;}var sel=document.getElementById("sel-"+k);var opt=sel.querySelector('option[value="'+d.id+'"]');if(!opt){opt=document.createElement("option");opt.value=d.id;opt.textContent=d.name;sel.appendChild(opt);}sel.value=d.id;inp.value="";document.getElementById("add-"+k).classList.remove("open");}).catch(function(){alert("Не удалось добавить");});}
+    fetch("{{ url_for('ref_quick_add', table='__T__') }}".replace("__T__",kinds[k]),{method:"POST",headers:{"X-CSRF-Token":"{{ csrf_token }}"},body:fd}).then(function(r){return r.json();}).then(function(d){if(!d.ok){alert(d.error||"Ошибка");return;}var sel=document.getElementById("sel-"+k);var opt=sel.querySelector('option[value="'+d.id+'"]');if(!opt){opt=document.createElement("option");opt.value=d.id;opt.textContent=d.name;sel.appendChild(opt);}sel.value=d.id;inp.value="";document.getElementById("add-"+k).classList.remove("open");}).catch(function(){alert("Не удалось добавить");});}
 })();
 </script>
 
