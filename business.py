@@ -179,6 +179,9 @@ def batch_detail(bid):
                 flash('Создана партия №'+str(newbid)+'. Назначения для обеих партий задайте заново.')
                 return url_for('business.batch_detail',bid=newbid)
             elif action=='material': core.plan_material(g.db,bid,f)
+            elif action=='no_materials':
+                g.db.execute('UPDATE production_batches SET no_materials=1 WHERE id=?',(bid,))
+                core.audit(g.db,actor,'no_materials',bid,{'reason':'Материалы для партии не требуются'})
             elif action=='reserve': core.reserve_material(g.db,bid,core.integer(f.get('plan_id')))
             elif action=='material_remove':
                 g.db.execute('DELETE FROM batch_material_plan WHERE id=? AND batch_id=?',(core.integer(f.get('plan_id')),bid))

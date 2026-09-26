@@ -186,7 +186,8 @@ def migrate(conn):
     conn.executescript(SCHEMA)
     additions = {
         'models': [('customer_id', 'INTEGER REFERENCES customers(id)')],
-        'production_batches': [('contract_cents', 'INTEGER CHECK(contract_cents>=0)')],
+        'production_batches': [('contract_cents', 'INTEGER CHECK(contract_cents>=0)'),
+                               ('no_materials', 'INTEGER NOT NULL DEFAULT 0 CHECK(no_materials IN (0,1))')],
         'requests': [('batch_id', 'INTEGER REFERENCES production_batches(id)')],
         'shipment_items': [('batch_id', 'INTEGER REFERENCES production_batches(id)'),
                            ('material_id', 'INTEGER REFERENCES materials(id)'),

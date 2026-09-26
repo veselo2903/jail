@@ -13,7 +13,7 @@
 1. Проверить исходники: `/opt/jail/.venv/bin/python /root/jail/tests/smoke.py` и `/opt/jail/.venv/bin/python /root/jail/tests/business.py`.
 2. Создать копию: `systemctl start jail-backup.service`; проверить `systemctl status jail-backup.service`.
 3. Скопировать `app.py`, `db.py`, `business.py`, `business_core.py`, `business_schema.py`, `VERSION`, `templates/` и `static/` из `/root/jail` в `/opt/jail`. Не копировать `jail.db` и `.venv`.
-4. Установить для файлов владельца `root:jail`, права `640`, для каталогов шаблонов `750`. Проверить, что ACL не закрывают доступ группе `jail`.
+4. Установить для файлов владельца `root:jail`, права `640`, для каталогов шаблонов `750`. Проверить, что ACL не закрывают доступ группе `jail`. Копирование через `copy2` переносит ACL исходников; после копирования нужно явно задать базовую ACL группы (`g::r--` для файлов, `g::r-x` для каталогов) и соответствующую маску. Один `chmod` при наличии расширенной ACL меняет маску и может оставить базовую группу без доступа.
 5. При изменении зависимостей выполнить `/opt/jail/.venv/bin/pip install -r /root/jail/requirements.txt`.
 6. `systemctl restart jail.service`; затем проверить `systemctl status jail.service`, `/jail/login` и журнал `journalctl -u jail.service -n 100`.
 

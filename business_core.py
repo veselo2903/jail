@@ -493,7 +493,7 @@ def batch_finance(conn,bid):
     # Immutable accepted sums plus forecast for remaining units, with current rates.
     labor_forecast=labor_actual+sum(max(0,t['qty_pairs']-t['done'])*(t['rate_cents'] or 0) for t in tasks if t['mode'] in ('internal','external'))
     plans=conn.execute('SELECT * FROM batch_material_plan WHERE batch_id=?',(bid,)).fetchall()
-    mat_unknown=any(p['estimated_unit_cents'] is None and p['owner_customer_id'] is None for p in plans)
+    mat_unknown=(not plans and not b['no_materials']) or any(p['estimated_unit_cents'] is None and p['owner_customer_id'] is None for p in plans)
     mat_plan=sum((p['qty_milli']*(p['estimated_unit_cents'] or 0)+500)//1000 for p in plans if not p['owner_customer_id'])
     mat_actual=conn.execute("SELECT COALESCE(SUM(cost_cents),0) FROM inventory_movements WHERE batch_id=? AND kind IN ('consume','loss') AND owner_customer_id IS NULL",(bid,)).fetchone()[0]
     costs=conn.execute('SELECT COALESCE(SUM(planned_cents),0),COALESCE(SUM(actual_cents),0) FROM batch_costs WHERE batch_id=?',(bid,)).fetchone()
@@ -551,6 +551,7 @@ def split_batch(conn,bid,form,actor):
         conn.execute('UPDATE batch_material_plan SET qty_milli=qty_milli-?,reserved_milli=0 WHERE id=?',(newqty,p['id']))
         conn.execute('INSERT INTO batch_material_plan(batch_id,material_id,owner_customer_id,qty_milli,estimated_unit_cents,note) VALUES (?,?,?,?,?,?)',
             (newbid,p['material_id'],p['owner_customer_id'],newqty,p['estimated_unit_cents'],p['note']))
+    conn.execute('UPDATE production_batches SET no_materials=? WHERE id=?',(b['no_materials'],newbid))
     conn.execute('DELETE FROM batch_assignments WHERE batch_operation_id IN (SELECT id FROM batch_operations WHERE batch_id=?)',(bid,))
     conn.execute('UPDATE production_batches SET qty_pairs=qty_pairs-?,contract_cents=? WHERE id=?',(qty,total-newtotal,bid))
     audit(conn,actor,'batch_split',bid,{'new_batch':newbid,'qty':qty,'new_contract_cents':newtotal,'note':form.get('note','')})
