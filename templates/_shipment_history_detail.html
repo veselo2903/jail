@@ -19,8 +19,7 @@
 {% if i.line_kind == 'pair' %}
   {% for material in x.detail['items'] if material.party_item_id == i.id %}
   <div class="dq-item dq-party-material">
-    <div class="dq-item-main"><span class="dq-item-name">{{ material.item }}</span></div>
-    <div class="dq-item-qty">{{ material.qty }} {{ UNITS.get(material.unit, material.unit or '') }}</div>
+    <div class="dq-item-main"><span class="dq-item-name">{{ material.item }}</span><span class="dq-item-qty">{{ material.qty }} {{ UNITS.get(material.unit, material.unit or '') }}</span></div>
   </div>
   {% endfor %}
 {% endif %}

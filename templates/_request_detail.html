@@ -10,7 +10,7 @@
     </div>
     {% if d.show_result %}
     {% set sent = d.sent_totals.get(i.id, 0) %}
-    {% if sent %}<div class="dq-item-got"><span class="{{ 'diff-neg' if i.qty is not none and sent < i.qty else 'diff-zero' }}">отправлено {{ sent }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span></div>{% endif %}
+    {% if sent %}<span class="dq-item-got"><span class="{{ 'diff-neg' if i.qty is not none and sent < i.qty else 'diff-zero' }}">Отправлено {{ sent }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span></span>{% endif %}
     {% endif %}
   </div>
   {% endfor %}
@@ -35,8 +35,8 @@
 {% for entry in d.shipments %}
 <div class="dq-item">
   <div class="dq-item-main">
-    <b>Поставка №{{ entry.s.id }}</b><span class="small">{{ entry.s.created_at }}</span>
-    <span class="small">
+    <b class="dq-supply-number">Поставка №{{ entry.s.id }}</b><span class="small dq-supply-date">{{ entry.s.created_at }}</span>
+    <span class="small dq-supply-lines">
       {% for i in entry['items'] %}
         {% if not loop.first %}; {% endif %}
         {% if i.line_kind == 'pair' %}
@@ -48,7 +48,7 @@
         {% endif %}
       {% endfor %}
     </span>
-    {% if entry.s.note %}<span class="small">{{ entry.s.note }}</span>{% endif %}
+    {% if entry.s.note %}<span class="small dq-supply-note">{{ entry.s.note }}</span>{% endif %}
   </div>
 </div>
 {% endfor %}
