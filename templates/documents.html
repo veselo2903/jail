@@ -57,7 +57,8 @@
   </tr>
   {% if x.detail %}
   <tr class="dq-detail {{ 'sklad-request-detail' if role == 'sklad' and x.group == 'req' else 'sklad-supply-detail' if role == 'sklad' and x.group == 'shipment' else '' }}" id="{{ x.detail_id }}" hidden>
-    <td class="dq-detail-cell" colspan="6">
+    <td class="dq-detail-indent" aria-hidden="true"></td>
+    <td class="dq-detail-cell" colspan="5">
       {% if x.group == 'shipment' %}
         {% include '_shipment_history_detail.html' %}
       {% else %}
@@ -77,7 +78,8 @@
 .sklad-requests-heading{padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface2);color:var(--ink);font-size:15px;font-weight:700;letter-spacing:.01em}
 .dq-date-mobile{display:none}
 .dq-detail[hidden]{display:none}
-.dq-detail-cell{background:var(--surface2);padding:9px 12px}
+.dq-detail-indent,.dq-detail-cell{background:var(--surface2)}
+.dq-detail-cell{padding:9px 12px}
 .dq-items{display:grid;gap:4px}
 .dq-item{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;
   padding:6px 9px;border:1px solid var(--line);border-left:3px solid #b8c9dc;border-radius:8px;
