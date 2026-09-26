@@ -5,8 +5,8 @@
   <div class="dq-item">
     <div class="dq-item-main">
       <span class="dq-item-name">{{ i.item }}</span>
-      {% if i.qty is not none %}<span class="dq-item-qty">{{ i.qty }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span>{% endif %}
       {% if i.note %}<span class="small dq-item-note">{{ i.note }}</span>{% endif %}
+      {% if i.qty is not none %}<span class="dq-item-qty">{{ i.qty }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span>{% endif %}
     </div>
     {% if d.show_result %}
     {% set sent = d.sent_totals.get(i.id, 0) %}
@@ -22,8 +22,8 @@
       {% if i.line_kind == 'pair' %}
       <span class="dq-item-name">{{ i.customer }} — {{ i.model }}</span>
       {% set names = operation_names(i.operation) %}
-      <span class="dq-item-qty">{{ i.collected if i.collected is not none else '—' }} пар</span>
       {% if names %}<span class="small dq-item-note">{{ names|join(' · ') }}</span>{% endif %}
+      <span class="dq-item-qty">{{ i.collected if i.collected is not none else '—' }} пар</span>
       {% else %}<span class="dq-item-name">{{ i.item }}</span><span class="dq-item-qty">{{ i.collected if i.collected is not none else '—' }} {{ UNITS.get(i.unit, i.unit or '') }}</span>{% endif %}
     </div>
   </div>
