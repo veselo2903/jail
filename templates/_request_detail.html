@@ -8,6 +8,7 @@
       {% if i.note %}<span class="small dq-item-note">{{ i.note }}</span>{% endif %}
       {% if i.qty is not none %}<span class="dq-item-qty">{{ i.qty }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span>{% endif %}
     </div>
+    {% if i.status == 'rejected' %}<span class="tag rq-rejected dq-item-rejected">{{ 'Остаток отклонён складом' if d.sent_totals.get(i.id, 0) else 'Отклонено складом' }}</span>{% endif %}
     {% if d.show_result %}
     {% set sent = d.sent_totals.get(i.id, 0) %}
     {% if sent %}<span class="dq-item-got"><span class="{{ 'diff-neg' if i.qty is not none and sent < i.qty else 'diff-zero' }}">Отправлено {{ sent }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span></span>{% endif %}

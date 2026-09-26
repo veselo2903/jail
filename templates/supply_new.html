@@ -17,7 +17,7 @@
   {% for entry in incoming %}
   {% set r = entry.r %}
   <section class="card supply-request sklad-supply-request" data-request-id="{{ r.id }}">
-    <div class="supply-request-head sklad-supply-request-head"><b>Заявка №{{ r.id }}</b>{% if r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}<span class="small sklad-supply-request-date">{{ r.created_at }}</span></div>
+    <div class="supply-request-head sklad-supply-request-head"><b>Заявка №{{ r.id }}</b>{% if r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}<span class="tag rq-completed sklad-supply-request-resolution" hidden>Обработана</span><span class="small sklad-supply-request-date">{{ r.created_at }}</span></div>
     {% if r.note %}<div class="small sklad-supply-request-note">{{ r.note }}</div>{% endif %}
     {% for e in entry.need %}
     {% set i = e.row %}
@@ -37,7 +37,9 @@
           <input class="sklad-supply-quantity" id="supply-qty-{{ i.id }}" name="qty_{{ i.id }}" type="number" min="1" max="1000000" inputmode="numeric" value="{{ i.collected if i.placed and i.collected is not none else '' }}" placeholder="Не кладу" aria-label="Количество в поставку: {{ i.item }}{% if i.unit %}, {{ UNITS.get(i.unit, i.unit) }}{% endif %}">
         </div>
         {% if e.remaining is not none and e.remaining > 0 %}<button class="btn grey sm sklad-supply-fill-btn" type="button" data-quantity-all="{{ e.remaining }}" aria-label="Положить весь остаток: {{ i.item }}">Положить всё</button>{% endif %}
+        <button class="btn grey sm sklad-supply-reject-btn" type="button" data-reject-url="{{ url_for('request_item_reject', req_id=r.id, item_id=i.id) }}" aria-label="Отклонить позицию: {{ i.item }}">Отклонить</button>
       </div>
+      <div class="sklad-supply-item-error" role="alert" hidden></div>
     </div>
     {% endfor %}
   </section>
@@ -123,7 +125,7 @@
 .sklad-supply-item-note{margin-top:3px;font-size:12px;color:var(--muted)}
 .sklad-supply-item-meta{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px;font-size:12px;color:var(--muted)}
 .sklad-supply-item-remaining{font-weight:700;color:var(--ink)}
-.sklad-supply-item-actions{display:flex;align-items:flex-end;gap:8px}
+.sklad-supply-item-actions{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px}
 .sklad-supply-quantity-field{width:132px;min-width:0}
 .sklad-supply-quantity-field label{margin:0 0 4px;font-size:12px;color:var(--ink)}
 .sklad-supply-quantity{width:100%;height:42px;min-width:0;padding:7px 8px;text-align:center;font-size:14px}
@@ -131,6 +133,13 @@
 .supply-item.is-selected .sklad-supply-quantity{border-color:#7eb492;background:#f0faf3}
 .btn.grey.sklad-supply-fill-btn.is-filled{color:#a64b4b;border-color:#e5c8c5;background:#fff7f6}
 .btn.grey.sklad-supply-fill-btn.is-filled:hover{background:#f6e5e3}
+.btn.grey.sklad-supply-reject-btn{height:42px;padding:7px 10px;font-size:13px;background:#fff7f6;border-color:#e5c8c5;color:#a64b4b}
+.btn.grey.sklad-supply-reject-btn:hover{background:#f6e5e3;border-color:#d8aaa6;color:#913f3f}
+.btn.grey.sklad-supply-reject-btn:disabled{cursor:default;transform:none}
+.supply-item.is-rejected .sklad-supply-quantity-field,.supply-item.is-rejected .sklad-supply-fill-btn,.supply-item.is-rejected .sklad-supply-item-remaining{display:none}
+.sklad-supply-item-error{grid-column:1 / -1;color:#a64b4b;font-size:12px}
+.sklad-supply-item-error[hidden],.sklad-supply-request-resolution[hidden]{display:none}
+.supply-request.is-completed .tag.urgent{display:none}
 .sklad-supply-note-label{margin-top:16px}
 .sklad-send-supply-btn{margin-top:16px;min-height:52px;font-size:16px}
 .sklad-extra-fields{margin-top:10px}
@@ -166,7 +175,7 @@
 @media(max-width:620px){
  .sklad-supply-header{gap:10px;flex-wrap:wrap}.sklad-supply-title{font-size:21px}
  .supply-item{grid-template-columns:minmax(0,1fr);gap:8px}
- .sklad-supply-item-actions{width:100%}.sklad-supply-quantity-field{flex:1;width:auto}
+ .sklad-supply-item-actions{width:100%}.sklad-supply-quantity-field{flex:1;width:auto;min-width:110px}
  .supply-request{padding:8px}.sklad-incoming-content{padding:3px 6px 7px}
  .sklad-party-fields{grid-template-columns:1fr 1fr}.sklad-party-fields>div:last-child{grid-column:1 / -1}
  .shipment-extra-row{grid-template-columns:minmax(0,1fr) 78px 48px}
@@ -184,6 +193,7 @@
  const partyMaterialTemplate=document.getElementById('shipment-party-material-template');
  const materialTemplate=document.getElementById('shipment-material-template');
  let nextParty=0;
+ let pendingRejections=0;
  function syncRequestedRow(row){
    const input=row.querySelector('.sklad-supply-quantity');
    row.classList.toggle('is-selected',Number(input.value)>0);
@@ -218,7 +228,52 @@
      e.target.closest('.sklad-operation-row').querySelector('.sklad-operation-price').disabled=!e.target.checked;
    }
  });
- form.addEventListener('click',function(e){
+ form.addEventListener('click',async function(e){
+   const rejectButton=e.target.closest('[data-reject-url]');
+   if(rejectButton){
+     if(rejectButton.disabled)return;
+     const row=rejectButton.closest('.sklad-supply-item'),input=row.querySelector('.sklad-supply-quantity');
+     const error=row.querySelector('.sklad-supply-item-error'),fill=row.querySelector('[data-quantity-all]');
+     const send=form.querySelector('button[type="submit"]');
+     pendingRejections++;
+     send.disabled=true;
+     rejectButton.disabled=true;
+     input.disabled=true;
+     if(fill)fill.disabled=true;
+     error.hidden=true;
+     rejectButton.textContent='Отклоняю…';
+     try{
+       const response=await fetch(rejectButton.dataset.rejectUrl,{
+         method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':form.querySelector('[name="csrf_token"]').value,'Accept':'application/json'}
+       });
+       const result=await response.json();
+       if(!response.ok||result.status!=='rejected')throw new Error(result.error||'Не удалось отклонить позицию. Повторите действие.');
+       input.value='';
+       row.classList.remove('is-selected');
+       row.classList.add('is-rejected');
+       rejectButton.textContent='Отклонено';
+       rejectButton.setAttribute('aria-label','Позиция отклонена');
+       if(result.complete){
+         const card=row.closest('.supply-request');
+         card.classList.add('is-completed');
+         card.querySelector('.sklad-supply-request-resolution').hidden=false;
+       }
+       const count=form.querySelector('.sklad-incoming-count');
+       const badge=document.querySelector('.side .nav.on .b');
+       [count,badge].forEach(function(node){if(node){node.textContent=String(result.pending_count);node.style.display=result.pending_count?'':'none'}});
+     }catch(failure){
+       rejectButton.disabled=false;
+       input.disabled=false;
+       if(fill)fill.disabled=false;
+       rejectButton.textContent='Отклонить';
+       error.textContent='Не удалось отклонить позицию. Обновите страницу или повторите действие.';
+       error.hidden=false;
+     }finally{
+       pendingRejections--;
+       send.disabled=pendingRejections>0;
+     }
+     return;
+   }
    const fillButton=e.target.closest('[data-quantity-all]');
    if(fillButton){
      const row=fillButton.closest('.sklad-supply-item'),input=row.querySelector('.sklad-supply-quantity');
@@ -242,6 +297,7 @@
    }
  });
  form.addEventListener('submit',function(e){
+   if(pendingRejections){e.preventDefault();return}
    const requested=Array.from(form.querySelectorAll('.sklad-supply-quantity')).some(function(input){return Number(input.value)>0});
    const unassigned=Array.from(form.querySelectorAll('[name="material_name"]')).some(function(x){return x.value.trim()});
    const party=Array.from(form.querySelectorAll('.shipment-party')).some(function(row){

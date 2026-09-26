@@ -196,6 +196,60 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert "Штробель сапожники" in production.text
     assert "12.50 ₽/пару" in production.text and "3.25 ₽/пару" in production.text
 
+    # Отказ закрывает позиции без поставки; производство видит результат.
+    with sqlite3.connect(db.DB_PATH) as conn:
+        rejected_req = conn.execute(
+            "INSERT INTO requests(status,created_role,created_at) VALUES ('open','proizv','25.09.2026 10:00')").lastrowid
+        rejected_item = conn.execute(
+            "INSERT INTO request_items(request_id,item,qty,unit) VALUES (?,?,3,'sht')",
+            (rejected_req, "Материал для отказа")).lastrowid
+        unknown_item = conn.execute(
+            "INSERT INTO request_items(request_id,item) VALUES (?,?)",
+            (rejected_req, "Без количества")).lastrowid
+    reject_path = f"/requests/{rejected_req}/items/{rejected_item}/reject"
+    assert post(reject_path).status_code == 403
+    assert client.get("/login/sklad").status_code == 302
+    assert client.post(reject_path).status_code == 400
+    shipment_count = count("shipments")
+    rejected = post(reject_path)
+    assert rejected.status_code == 200 and not rejected.json["complete"]
+    assert one("SELECT status FROM request_items WHERE id=?", (rejected_item,))[0] == "rejected"
+    assert one("SELECT status FROM requests WHERE id=?", (rejected_req,))[0] == "progress"
+    assert "Материал для отказа" not in client.get("/requests/supply/new").text
+    assert "Без количества" in client.get("/requests/supply/new").text
+    assert client.get("/login/proizv").status_code == 302
+    assert "Отклонено складом" in client.get("/requests").text
+    assert post(f"/requests/{rejected_req}/delete").status_code == 403
+    assert client.get("/login/sklad").status_code == 302
+    assert post(f"/requests/{rejected_req}/items/{unknown_item}/reject").json["complete"]
+    assert post(reject_path).json["complete"]  # повторный клик безопасен
+    assert one("SELECT status FROM requests WHERE id=?", (rejected_req,))[0] == "shipped"
+    assert "Отклонена" in client.get("/requests").text
+    assert count("shipments") == shipment_count
+    with sqlite3.connect(db.DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        db._migrate_shipments(conn)
+        conn.commit()
+    assert count("shipments") == shipment_count  # перезапуск не создаёт поставку из отказа
+
+    # Частичную отправку можно закрыть отказом от остатка.
+    with sqlite3.connect(db.DB_PATH) as conn:
+        mixed_req = conn.execute(
+            "INSERT INTO requests(status,created_role,created_at) VALUES ('open','proizv','25.09.2026 11:00')").lastrowid
+        mixed_item = conn.execute(
+            "INSERT INTO request_items(request_id,item,qty,unit) VALUES (?,?,2,'sht')",
+            (mixed_req, "Частичный отказ")).lastrowid
+    assert post("/requests/supply/new", {f"qty_{mixed_item}": "1"}).status_code == 302
+    assert post(f"/requests/{mixed_req}/items/{mixed_item}/reject").json["complete"]
+    assert count("shipments") == shipment_count + 1
+    assert one("SELECT SUM(qty) FROM shipment_items WHERE request_item_id=?", (mixed_item,))[0] == 1
+    assert "Выполнена" in client.get("/requests").text
+    assert "Остаток отклонён складом" in client.get("/requests").text
+    assert post("/requests/supply/new", {f"qty_{mixed_item}": "1"}).status_code == 302
+    assert count("shipments") == shipment_count + 1
+    assert post(f"/requests/{req_id}/items/{item_ids[0]}/reject").status_code == 409
+    assert client.get("/login/proizv").status_code == 302
+
     # Старую отправленную заявку переносим в журнал один раз.
     with sqlite3.connect(db.DB_PATH) as conn:
         old = conn.execute(

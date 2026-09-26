@@ -343,7 +343,9 @@ def _migrate_shipments(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_shipment_items_party ON shipment_items(party_item_id)")
     old = conn.execute(
         "SELECT * FROM requests WHERE status='shipped' AND NOT EXISTS "
-        "(SELECT 1 FROM shipments WHERE legacy_request_id=requests.id)"
+        "(SELECT 1 FROM shipments WHERE legacy_request_id=requests.id) AND EXISTS "
+        "(SELECT 1 FROM request_items WHERE request_id=requests.id AND placed=1 "
+        "AND COALESCE(collected, 0)>0 AND COALESCE(status, '')<>'rejected')"
     ).fetchall()
     for r in old:
         linked = r["created_role"] == "proizv"
@@ -354,7 +356,7 @@ def _migrate_shipments(conn):
              r["done_at"] or r["created_at"], r["ship_note"]))
         items = conn.execute(
             "SELECT * FROM request_items WHERE request_id=? AND placed=1 "
-            "AND COALESCE(collected, 0)>0", (r["id"],)).fetchall()
+            "AND COALESCE(collected, 0)>0 AND COALESCE(status, '')<>'rejected'", (r["id"],)).fetchall()
         for i in items:
             kind = i["line_kind"] if i["line_kind"] in ("pair", "material") else "need"
             conn.execute(

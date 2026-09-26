@@ -9,7 +9,7 @@ from decimal import Decimal, InvalidOperation
 from functools import wraps
 from flask import (
     Flask, g, session, request, redirect, url_for,
-    render_template, abort, flash
+    render_template, abort, flash, jsonify
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -416,23 +416,31 @@ def documents():
         if n == 0:
             continue
         need = (role == "sklad" and r["status"] in ("open", "progress", "done"))
+        detail = _request_detail(r, role)
+        has_rejected = any(i["status"] == "rejected" for i in detail["need"])
+        if has_rejected:
+            all_rejected = not detail["shipments"] and all(i["status"] == "rejected" for i in detail["need"])
+            status_label = ("Отклонена" if all_rejected else "Выполнена") if r["status"] == "shipped" else "Обработана частично"
+            status_cls = "rq-rejected" if all_rejected else "rq-completed" if r["status"] == "shipped" else "rq-progress"
+        else:
+            status_label = "Отправлена частично" if r["status"] == "progress" and detail["shipments"] else REQ_STATUS[r["status"]]
+            status_cls = "rq-" + r["status"]
         rows.append(dict(
             group="req", id=r["id"], created_at=r["created_at"],
             title="Заявка", direction=("Склад → Производство" if r["created_role"] == "sklad" else "Производство → Склад"),
             amount=str(n), unit="поз.",
             status=r["status"],
-            status_label=("Отправлена частично" if r["status"] == "progress" and
-                          _shipment_history(r["id"]) else REQ_STATUS[r["status"]]),
-            status_cls="rq-" + r["status"],
+            status_label=status_label,
+            status_cls=status_cls,
             diff=0, has_recv=False, urgent=r["urgent"],
             need_action=need,
             can_del=((role == "proizv" and r["status"] in ("open", "progress") and
-                      not _shipment_history(r["id"])) or role == "director"),
+                      not detail["shipments"] and not has_rejected) or role == "director"),
             can_edit=(role == "proizv" and _req_editable(r)),
             edit_url=url_for("request_edit", req_id=r["id"]),
             del_url=url_for("request_delete", req_id=r["id"]),
             url=None,
-            detail=_request_detail(r, role),
+            detail=detail,
             detail_id="dq-%d" % r["id"],
         ))
 
@@ -1082,8 +1090,46 @@ def _needed_items(req_id):
             continue
         total = sent.get(i["id"], 0)
         remaining = max(0, i["qty"] - total) if i["qty"] is not None else (None if total == 0 else 0)
+        if i["status"] == "rejected":
+            remaining = 0
         result.append(dict(row=i, sent=total, remaining=remaining))
     return result
+
+
+def _resolve_request(req_id):
+    """Заявка обработана, когда каждую позицию отправили или отклонили."""
+    needed = _needed_items(req_id)
+    complete = bool(needed) and all(x["remaining"] == 0 for x in needed)
+    now = db.now_str()
+    g.db.execute(
+        "UPDATE requests SET status=?, taken_at=COALESCE(taken_at, ?), "
+        "done_at=CASE WHEN ? THEN ? ELSE done_at END WHERE id=?",
+        ("shipped" if complete else "progress", now, int(complete), now, req_id))
+    return complete
+
+
+@app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/items/<int:item_id>/reject", methods=["POST"])
+@login_required
+def request_item_reject(req_id, item_id):
+    if session["role"] != "sklad":
+        abort(403)
+    g.db.execute("BEGIN IMMEDIATE")
+    r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
+    if not r or r["created_role"] != "proizv" or _hidden_from_sklad(r):
+        abort(404)
+    entry = next((x for x in _needed_items(req_id) if x["row"]["id"] == item_id), None)
+    if entry is None:
+        abort(404)
+    if entry["row"]["status"] != "rejected":
+        if r["status"] not in ("open", "progress", "done") or entry["remaining"] == 0:
+            return jsonify(error="Позиция уже обработана. Обновите страницу."), 409
+        _audit_snapshot("request_item_reject_snapshot", str(item_id), dict(entry["row"]))
+        g.db.execute(
+            "UPDATE request_items SET status='rejected', placed=0, collected=NULL WHERE id=?",
+            (item_id,))
+    complete = _resolve_request(req_id)
+    g.db.commit()
+    return jsonify(status="rejected", complete=complete, pending_count=_open_requests_count())
 
 
 def _parse_extra_shipment_items():
@@ -1208,6 +1254,7 @@ def _send_shipment(req_id=None, multi=False):
     if not token or len(token) > 128:
         flash("Обновите страницу и повторите отправку.")
         return redirect(back)
+    g.db.execute("BEGIN IMMEDIATE")
     existing = g.db.execute(
         "SELECT id FROM shipments WHERE client_token=?", (token,)).fetchone()
     if existing:
@@ -1242,7 +1289,7 @@ def _send_shipment(req_id=None, multi=False):
                 flash("Для отмеченной позиции укажите положительное количество.")
                 return redirect(back)
             if remaining == 0:
-                flash("Эта позиция уже отправлена полностью.")
+                flash("Эта позиция уже обработана.")
                 return redirect(back)
             items.append(dict(kind="need", item=i["item"], qty=qty, unit=i["unit"],
                               item_type=i["item_type"], customer_id=None, model_id=None,
@@ -1295,13 +1342,8 @@ def _send_shipment(req_id=None, multi=False):
             party_items[party_index] = inserted.lastrowid
     incomplete = False
     for target_id in affected:
-        complete = all(x["remaining"] == 0 for x in _needed_items(target_id))
+        complete = _resolve_request(target_id)
         incomplete = incomplete or not complete
-        g.db.execute(
-            "UPDATE requests SET status=?, taken_at=COALESCE(taken_at, ?), "
-            "done_at=CASE WHEN ? THEN ? ELSE done_at END WHERE id=?",
-            ("shipped" if complete else "progress", db.now_str(), int(complete),
-             db.now_str(), target_id))
         g.db.execute(
             "UPDATE request_items SET placed=0, collected=NULL "
             "WHERE request_id=? AND source='req'", (target_id,))
@@ -1588,7 +1630,8 @@ def request_delete(req_id):
         abort(404)
     allowed = (role == "director") or (
         role == "proizv" and r["status"] in ("open", "progress") and
-        not _shipment_history(req_id))
+        not _shipment_history(req_id) and
+        not any(i["status"] == "rejected" for i in _load_req_items(req_id)))
     if not allowed:
         abort(403)
     _audit_snapshot("request_delete_snapshot", str(req_id),
