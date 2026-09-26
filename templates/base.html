@@ -49,12 +49,12 @@ a{color:var(--blue);text-decoration:none}
 .side a.nav:not(.on):hover{background:rgba(255,255,255,.08);color:#e6eefb}
 
 /* ---- Основная область ---- */
-.app{flex:1;min-width:0;display:flex;flex-direction:column}
+.app{flex:1;min-width:0;min-height:100vh;display:flex;flex-direction:column}
 .side-user{margin-top:auto;padding:14px 8px 4px;border-top:1px solid rgba(255,255,255,.12);color:#dce7f7}
 .side-user-role{display:block;padding:0 4px 8px;font-size:13px;font-weight:700;color:#fff}
 .side-user-logout{display:flex;align-items:center;justify-content:center;padding:8px 10px;border:1px solid rgba(255,255,255,.25);border-radius:9px;color:#c5d4e8;font-size:13px;font-weight:600}
 .side-user-logout:hover{background:rgba(255,255,255,.1);color:#fff}
-.wrap{max-width:900px;width:100%;margin:0 auto;padding:38px 18px 44px}
+.wrap{max-width:900px;width:100%;flex:1;display:flex;flex-direction:column;justify-content:center;margin:0 auto;padding:38px 18px 44px}
 
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
   padding:18px;margin-bottom:16px;box-shadow:var(--shadow)}
