@@ -16,7 +16,7 @@
     <div class="rn-field rn-field-qty">
       <label>Количество (необязательно)</label>
       <div class="rn-qty-row">
-        <input class="rn-input-qty" name="qty" type="number" min="1" inputmode="numeric" value="{{ row.qty }}">
+        <input class="rn-input-qty" name="qty" type="number" min="0.001" step="0.001" inputmode="decimal" value="{{ row.qty }}">
         <select class="rn-select-unit" name="unit" data-unit-select>
           {% for k, v in UNITS.items() %}<option value="{{ k }}" {{ 'selected' if row.unit == k }}>{{ v }}</option>{% endfor %}
           <option value="other" {{ 'selected' if row.unit == 'other' }}>другое…</option>
@@ -41,6 +41,7 @@
 <form method="post" action="{{ url_for('request_edit', req_id=edit_id) if edit_id else url_for('request_new') }}" class="rn-form" id="rn-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   {% if edit_id %}<div class="rn-edit-hint card small">Заявку можно менять до {{ edit_until }}. После этого времени она появится у склада и станет недоступна для правки.</div>{% endif %}
+  {% if batches %}<div class="card"><label class="biz-field"><span>Для партии</span><select name="batch_id"><option value="">Общая заявка производства</option>{% for b in batches %}<option value="{{ b.id }}" {{ 'selected' if selected_batch==b.id|string }}>№{{ b.id }} · {{ b.customer_name }} · {{ b.model_name }}</option>{% endfor %}</select></label></div>{% endif %}
   <div class="rn-items" id="rn-items">
     {% for row in rows %}{{ item_card(loop.index, row) }}{% endfor %}
   </div>

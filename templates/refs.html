@@ -16,6 +16,7 @@
   <div class="refs-add card">
     <form class="refs-add-form row" method="post" action="{{ url_for('ref_add', table=table) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input class="refs-input-name" name="name" placeholder="{{ placeholder }}">
+      {% if table=='models' %}<select name="customer_id" aria-label="Заказчик модели"><option value="">Выберите заказчика</option>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select>{% endif %}
       <button class="btn" type="submit">Добавить</button>
     </form>
   </div>
@@ -26,6 +27,7 @@
       {% if can_edit %}
       <form class="refs-edit-form row" method="post" action="{{ url_for('ref_edit', table=table, rid=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input class="refs-input-name" name="name" value="{{ r.name }}">
+        {% if table=='models' %}<select name="customer_id" aria-label="Заказчик модели {{ r.name }}"><option value="">Владелец не указан</option>{% for c in customers %}<option value="{{ c.id }}" {{ 'selected' if r.customer_id==c.id }}>{{ c.name }}</option>{% endfor %}</select>{% endif %}
         <button class="btn grey sm refs-save-btn" type="submit">сохранить</button>
         {{ archbtn(table, r) }}
       </form>

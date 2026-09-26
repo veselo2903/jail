@@ -10,9 +10,9 @@
 
 ## Обновление
 
-1. Проверить исходники: `/opt/jail/.venv/bin/python /root/jail/tests/smoke.py`.
+1. Проверить исходники: `/opt/jail/.venv/bin/python /root/jail/tests/smoke.py` и `/opt/jail/.venv/bin/python /root/jail/tests/business.py`.
 2. Создать копию: `systemctl start jail-backup.service`; проверить `systemctl status jail-backup.service`.
-3. Скопировать `app.py`, `db.py`, `VERSION`, `templates/` и `static/` из `/root/jail` в `/opt/jail`. Не копировать `jail.db` и `.venv`.
+3. Скопировать `app.py`, `db.py`, `business.py`, `business_core.py`, `business_schema.py`, `VERSION`, `templates/` и `static/` из `/root/jail` в `/opt/jail`. Не копировать `jail.db` и `.venv`.
 4. Установить для файлов владельца `root:jail`, права `640`, для каталогов шаблонов `750`. Проверить, что ACL не закрывают доступ группе `jail`.
 5. При изменении зависимостей выполнить `/opt/jail/.venv/bin/pip install -r /root/jail/requirements.txt`.
 6. `systemctl restart jail.service`; затем проверить `systemctl status jail.service`, `/jail/login` и журнал `journalctl -u jail.service -n 100`.
@@ -34,3 +34,7 @@
 ## Секреты и доступ
 
 `/etc/jail.env` (права 600) содержит `JAIL_SECRET_KEY`, путь к БД и настройки cookie. Без ключа приложение не стартует. Публичный ZIP-обновитель отключён. Вход по кнопкам ролей остаётся без пароля по решению владельца; до добавления аутентификации любой посетитель публичного адреса может выполнять действия выбранной роли.
+
+## Производственный контур 0.60
+
+Рабочие разделы: `/<роль>/orders`, `/<роль>/batches`, `/<роль>/inventory`, `/<роль>/payroll/ledger`. Партии доступны производству; заказы, материальный склад и расчёты — складу и директору. Инструкция и границы выпуска: [IMPLEMENTATION_060.md](docs/IMPLEMENTATION_060.md). Перенос сохраняет старые данные. До обновления необходимо создать резервную копию. Новые Python-модули обязательно копируются вместе с `app.py` и `db.py`. Файл `jail.db.migration.lock` должен быть доступен пользователю `jail`; он защищает запуск миграций несколькими процессами.

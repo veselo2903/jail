@@ -9,35 +9,25 @@
 <body>
 {% set ep = request.endpoint %}
 {% if role %}
+{% macro menu_link(endpoint,title,icon,active=false) %}<a class="nav {{ 'on' if active }}" href="{{ url_for(endpoint) }}"><svg viewBox="0 0 24 24">{{ icon|safe }}</svg>{{ title }}</a>{% endmacro %}
 <nav class="side">
-  {% if role=='director' %}
-  <a class="nav {{ 'on' if ep=='overview' }}" href="{{ url_for('overview') }}">
-    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>Обзор</a>
-  {% endif %}
-  <a class="nav {{ 'on' if ep in ['documents','doc_view','doc_new','request_new','request_edit','docs_collect','supply_new'] }}" href="{{ url_for('documents') }}">
-    <svg viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6z"/><path d="M14 2v5h5"/><path d="M9 13h6M9 17h4"/></svg>Заявки{% if role=='sklad' and req_open %}<span class="b">{{ req_open }}</span>{% endif %}</a>
-  {% if role in ['sklad','proizv'] %}
-  <a class="nav {{ 'on' if ep=='acceptance' }}" href="{{ url_for('acceptance') }}">
-    <svg viewBox="0 0 24 24"><path d="M4 13l2 6h12l2-6"/><path d="M4 13h5l1 2h4l1-2h5"/><path d="M12 3v7m0 0l-3-3m3 3l3-3"/></svg>Приёмка{% if pending_accept %}<span class="b">{{ pending_accept }}</span>{% endif %}</a>
-  {% endif %}
-  {% if role in ['sklad','proizv','director'] %}
-  <a class="nav {{ 'on' if ep=='discrepancies' }}" href="{{ url_for('discrepancies') }}">
-    <svg viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>Расхождения</a>
-  {% endif %}
-  <a class="nav {{ 'on' if ep=='refs' }}" href="{{ url_for('refs') }}">
-    <svg viewBox="0 0 24 24"><path d="M5 4a1 1 0 0 1 1-1h13v18H6a1 1 0 0 1-1-1z"/><path d="M9 3v18"/></svg>Справочники</a>
-  {% if role in ['proizv','director'] %}
-  <a class="nav {{ 'on' if ep and ep.startswith('payroll') }}" href="{{ url_for('payroll') }}">
-    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M15 14h3"/></svg>Сдельная ЗП</a>
-  {% endif %}
-  {% if role=='director' and enable_web_updates %}
-  <a class="nav {{ 'on' if ep=='update' }}" href="{{ url_for('update') }}">
-    <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 4v4h-4"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20v-4h4"/></svg>Обновление</a>
-  {% endif %}
-  <div class="side-user sklad-side-user">
-    <span class="side-user-role">{{ role_name }}</span>
-    <a class="btn ghost sm block side-user-logout" href="{{ url_for('logout') }}">выйти</a>
-  </div>
+  {% if role in ['sklad','director'] %}{{ menu_link('business.orders','Заказы','<path d="M5 3h14v18H5zM8 8h8M8 12h8M8 16h5"/>',ep and ep.startswith('business.order')) }}{% endif %}
+  {{ menu_link('business.batches','Производство','<path d="M3 21V9l6 3V8l6 3V3h6v18zM6 17h2m4 0h2m4 0h2"/>',ep in ['business.batches','business.batch_detail']) }}
+  <a class="nav {{ 'on' if ep in ['documents','doc_view','doc_new','request_new','request_edit','docs_collect','supply_new'] }}" href="{{ url_for('documents') }}"><svg viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6zM14 2v5h5M9 13h6M9 17h4"/></svg>Заявки{% if role=='sklad' and req_open %}<span class="b">{{ req_open }}</span>{% endif %}</a>
+  {% if role=='proizv' %}<a class="nav {{ 'on' if ep=='acceptance' }}" href="{{ url_for('acceptance') }}"><svg viewBox="0 0 24 24"><path d="M4 13l2 6h12l2-6M4 13h5l1 2h4l1-2h5M12 3v7m0 0l-3-3m3 3l3-3"/></svg>Приёмка{% if pending_accept %}<span class="b">{{ pending_accept }}</span>{% endif %}</a>{% endif %}
+  <details class="side-more" open>
+    <summary class="nav {{ 'on' if ep in ['business.inventory','business.payroll','business.worker','refs','discrepancies'] or (ep=='acceptance' and role=='sklad') }}"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>Ещё</summary>
+    <div class="side-more-panel">
+      {% if role in ['sklad','director'] %}
+      {{ menu_link('business.inventory','Материалы','<path d="M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 5 9-5M12 12v9"/>',ep=='business.inventory') }}
+      {{ menu_link('business.payroll','Расчёты','<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M15 14h3"/>',ep in ['business.payroll','business.worker']) }}
+      {% endif %}
+      {% if role=='sklad' %}{{ menu_link('acceptance','Приёмка','<path d="M4 13l2 6h12l2-6M12 3v7m0 0l-3-3m3 3l3-3"/>',ep=='acceptance') }}{% endif %}
+      {{ menu_link('discrepancies','Расхождения','<path d="M12 4l9 16H3zM12 10v4M12 17h.01"/>',ep=='discrepancies') }}
+      {{ menu_link('refs','Справочники','<path d="M5 4a1 1 0 0 1 1-1h13v18H6a1 1 0 0 1-1-1zM9 3v18"/>',ep=='refs') }}
+    </div>
+  </details>
+  <div class="side-user sklad-side-user"><span class="side-user-role">{{ role_name }}</span><a class="btn ghost sm block side-user-logout" href="{{ url_for('logout') }}">выйти</a></div>
 </nav>
 {% endif %}
 <div class="app">
@@ -51,6 +41,12 @@
 <script>
 /* Подогреваем внутренние страницы до клика, чтобы переход из меню ощущался мгновенным. */
 (function(){
+  const more=document.querySelector('.side-more'),wide=matchMedia('(min-width:721px)');
+  if(more){
+    const sync=function(){more.open=wide.matches};sync();wide.addEventListener('change',sync);
+    document.addEventListener('pointerdown',function(event){if(!wide.matches&&!more.contains(event.target))more.open=false});
+    document.addEventListener('keydown',function(event){if(event.key==='Escape'&&!wide.matches)more.open=false});
+  }
   const warmed=new Set();
   function prefetch(link){
     if(!link||warmed.has(link.href)||link.origin!==location.origin||link.href===location.href||

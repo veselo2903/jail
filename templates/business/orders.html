@@ -1,0 +1,10 @@
+{% extends 'base.html' %}{% from 'business/_macros.html' import batchlink with context %}
+{% block title %}Заказы — jail{% endblock %}
+{% block content %}
+<div class="biz-page">
+<header class="biz-header"><div><h2>Заказы</h2><span class="small">Заказчики, модели и условия производства</span></div><a class="btn" href="{{ url_for('business.order_new') }}">+ Новый заказ</a></header>
+{% if orders %}<div class="card flush biz-list"><div class="biz-section-head">Заказы заказчиков</div>{% for o in orders %}
+<a class="biz-list-row" href="{{ url_for('business.order_detail',oid=o.id) }}"><div><b>№{{ o.id }} · {{ o.customer_name }}</b><span class="small">{{ o.positions }} поз. {% if o.due_date %}· срок {{ o.due_date }}{% endif %}</span></div><span class="biz-status">{{ batch_statuses.get(o.status,o.status) }}</span><div class="biz-number"><strong>{{ o.total|money }}</strong><span class="small">Оплачено {{ o.paid|money }}</span></div><span class="biz-arrow">›</span></a>
+{% endfor %}</div>{% else %}<div class="card biz-start"><h3>Начните с заказа</h3><p>Выберите заказчика, модели и количество. Система создаст партии, для которых можно запланировать материалы и работу.</p><a class="btn grey" href="{{ url_for('refs') }}">Заказчики и модели</a></div>{% endif %}
+</div>
+{% endblock %}

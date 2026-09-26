@@ -1,5 +1,6 @@
 {# Только сведения по заявке; отправка оформляется на отдельной странице поставки. #}
 {% set d = x.detail %}
+{% if d.batch_id %}<a class="btn grey sm mb-sm" href="{{ url_for('business.batch_detail',bid=d.batch_id) }}">Партия №{{ d.batch_id }}</a>{% endif %}
 <div class="dq-items">
   {% for i in d.need %}
   <div class="dq-item">

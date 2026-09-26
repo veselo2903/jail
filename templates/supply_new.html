@@ -8,8 +8,8 @@
 </div>
 <form id="supply-form" class="sklad-supply-form" method="post" action="{{ url_for('supply_new') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <input type="hidden" name="send_token" value="{{ new_send_token() }}">
-  {% include '_shipment_extra_fields.html' %}
+  <input type="hidden" name="send_token" value="{{ new_send_token() }}"><input type="hidden" name="inventory_tracking" value="1">
+  {% include '_shipment_extra_fields.html' %}{% if not batches or not materials %}<div class="biz-toolbar">{% if not batches %}<a class="btn grey sm" href="{{ url_for('business.order_new') }}">Создать заказ с партиями</a>{% endif %}{% if not materials %}<a class="btn grey sm" href="{{ url_for('business.inventory') }}">Добавить материалы и остатки</a>{% endif %}</div>{% endif %}
   {% if incoming %}
   <details class="sklad-incoming-spoiler">
   <summary class="sklad-incoming-summary">Заявки производства <span class="sklad-incoming-count">{{ incoming|length }}</span></summary>
@@ -17,7 +17,7 @@
   {% for entry in incoming %}
   {% set r = entry.r %}
   <section class="card supply-request sklad-supply-request" data-request-id="{{ r.id }}">
-    <div class="supply-request-head sklad-supply-request-head"><b>Заявка №{{ r.id }}</b>{% if r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}<span class="tag rq-completed sklad-supply-request-resolution" hidden>Обработана</span><span class="small sklad-supply-request-date">{{ r.created_at }}</span></div>
+    <div class="supply-request-head sklad-supply-request-head"><b>Заявка №{{ r.id }}</b>{% if r.batch_id %}<a class="btn grey sm" href="{{ url_for('business.batch_detail',bid=r.batch_id) }}">Партия №{{ r.batch_id }}</a>{% endif %}{% if r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}<span class="tag rq-completed sklad-supply-request-resolution" hidden>Обработана</span><span class="small sklad-supply-request-date">{{ r.created_at }}</span></div>
     {% if r.note %}<div class="small sklad-supply-request-note">{{ r.note }}</div>{% endif %}
     {% for e in entry.need %}
     {% set i = e.row %}
@@ -25,6 +25,7 @@
       <div class="sklad-supply-item-text">
         <b class="sklad-supply-item-name">{{ i.item }}</b>{% if i.urgent %} <span class="tag urgent item-urgent-tag">Срочно</span>{% endif %}
         {% if i.note %}<div class="sklad-supply-item-note">{{ i.note }}</div>{% endif %}
+        <div class="biz-grid mt-sm"><label class="biz-field"><span>Материал для списания со склада</span><select name="inventory_material_{{ i.id }}"><option value="">Выберите при отправке</option>{% for m in materials %}<option value="{{ m.id }}" {{ 'selected' if m.name==i.item and m.unit==i.unit }}>{{ m.name }} · {{ UNITS.get(m.unit,m.unit) }}</option>{% endfor %}</select></label><label class="biz-field"><span>Владелец</span><select name="inventory_owner_{{ i.id }}"><option value="">Предприятие</option>{% for b in batches %}{% if b.id==r.batch_id %}<option value="{{ b.customer_id }}">{{ b.customer_name }}</option>{% endif %}{% endfor %}{% if not r.batch_id %}{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}{% endif %}</select></label></div>
         <div class="sklad-supply-item-meta">
           {% if i.qty is not none %}<span>Запрошено {{ i.qty }} {{ UNITS.get(i.unit, i.unit or '') }}</span>{% endif %}
           {% if e.sent %}<span>Отправлено {{ e.sent }} {{ UNITS.get(i.unit, i.unit or '') }}</span>{% endif %}
@@ -34,7 +35,7 @@
       <div class="sklad-supply-item-actions">
         <div class="sklad-supply-quantity-field">
           <label for="supply-qty-{{ i.id }}">В поставку{% if i.unit %}, {{ UNITS.get(i.unit, i.unit) }}{% endif %}</label>
-          <input class="sklad-supply-quantity" id="supply-qty-{{ i.id }}" name="qty_{{ i.id }}" type="number" min="1" max="1000000" inputmode="numeric" value="{{ i.collected if i.placed and i.collected is not none else '' }}" placeholder="Не кладу" aria-label="Количество в поставку: {{ i.item }}{% if i.unit %}, {{ UNITS.get(i.unit, i.unit) }}{% endif %}">
+          <input class="sklad-supply-quantity" id="supply-qty-{{ i.id }}" name="qty_{{ i.id }}" type="number" min="0.001" step="0.001" max="1000000" inputmode="decimal" value="{{ i.collected if i.placed and i.collected is not none else '' }}" placeholder="Не кладу" aria-label="Количество в поставку: {{ i.item }}{% if i.unit %}, {{ UNITS.get(i.unit, i.unit) }}{% endif %}">
         </div>
         {% if e.remaining is not none and e.remaining > 0 %}<button class="btn grey sm sklad-supply-fill-btn" type="button" data-quantity-all="{{ e.remaining }}" aria-label="Положить весь остаток: {{ i.item }}">Положить всё</button>{% endif %}
         <button class="btn danger sm sklad-supply-reject-btn" type="button" data-reject-url="{{ url_for('request_item_reject', req_id=r.id, item_id=i.id) }}" aria-label="Отклонить позицию: {{ i.item }}">Отклонить</button>
@@ -51,12 +52,12 @@
     <summary>Дополнительные материалы вне партии</summary>
     <div class="sklad-unassigned-content">
       <div class="shipment-material-rows sklad-unassigned-material-list">
-        <div class="shipment-extra-row sklad-unassigned-material-row">
-          <div><label>Материал</label><input name="material_name" placeholder="Название"></div>
-          <div><label>Количество</label><input name="material_qty" type="number" min="1" max="1000000" inputmode="numeric"></div>
-          <div><label>Ед.</label><select name="material_unit">{% for key, title in UNITS.items() %}<option value="{{ key }}">{{ title }}</option>{% endfor %}</select></div>
-          <button class="btn danger icon shipment-remove" type="button" title="Очистить материал">×</button>
-        </div>
+  <div class="shipment-extra-row sklad-unassigned-material-row biz-catalog-material-row">
+    <label class="biz-field"><span>Материал</span><select name="extra_material_id"><option value="">Выберите материал</option>{% for m in materials %}<option value="{{ m.id }}">{{ m.name }} · {{ UNITS.get(m.unit,m.unit) }}</option>{% endfor %}</select></label>
+    <label class="biz-field"><span>Количество</span><input name="extra_material_qty" inputmode="decimal"></label>
+    <label class="biz-field"><span>Владелец</span><select name="extra_material_owner"><option value="">Предприятие</option>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+    <button class="btn danger icon shipment-remove" type="button" title="Убрать материал">×</button>
+  </div>
       </div>
       <button class="btn grey sm sklad-add-material-btn block dashed" type="button" data-add-material>+ Материал</button>
     </div>
@@ -70,39 +71,29 @@
   <section class="card shipment-party sklad-party-card">
     <input type="hidden" name="party_id" value="INDEX">
     <div class="sklad-party-head"><b>Партия <span class="sklad-party-number"></span></b><button class="btn danger icon shipment-remove" type="button" title="Убрать партию">×</button></div>
-    <div class="sklad-party-fields">
-      <div><label>Заказчик</label><select name="party_customer_INDEX">{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
-      <div><label>Модель</label><select name="party_model_INDEX">{% for m in models %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
-      <div><label>Пар</label><input name="party_qty_INDEX" type="number" min="1" max="1000000" inputmode="numeric" placeholder="Количество"></div>
+    <div class="sklad-party-fields biz-linked-party-fields">
+      <label class="biz-field"><span>Партия из заказа</span><select name="party_batch_INDEX" data-linked-batch required><option value="">Выберите партию</option>{% for b in batches %}<option value="{{ b.id }}" data-customer="{{ b.customer_id }}" data-pairs="{{ b.qty_pairs }}">№{{ b.id }} · {{ b.customer_name }} · {{ b.model_name }} · {{ b.qty_pairs }} пар</option>{% endfor %}</select></label>
+      <label class="biz-field"><span>Заготовки, пар (если передаёте)</span><input name="party_qty_INDEX" type="number" min="1" max="1000000" placeholder="Только материалы" inputmode="numeric"></label>
     </div>
+    <div class="biz-note mt-md">Операции и расценки заданы в плане партии. Эта поставка добавляет материалы к той же работе.</div>
     <div class="sklad-party-materials"><b>Материалы партии</b><div class="shipment-party-material-rows sklad-party-material-list"></div>
-      <button class="btn grey sm sklad-add-party-material-btn" type="button" data-add-party-material>+ Материал в партию</button>
+      <button class="btn grey sm block dashed sklad-add-party-material-btn" type="button" data-add-party-material>+ Материал в партию</button>
     </div>
-    <fieldset class="operations sklad-party-operations"><legend>Операции для этой партии</legend><div class="sklad-operation-list">
-      <div class="sklad-operation-columns"><span>Операция</span><span>Цена за пару, ₽</span></div>
-      {% for key, title in OPERATIONS.items() %}
-      <div class="sklad-operation-row">
-        <input class="sklad-operation-checkbox" id="party_op_INDEX_{{ key }}" type="checkbox" name="party_operations_INDEX" value="{{ key }}" aria-label="Выбрать операцию {{ title }}">
-        <label class="sklad-operation-name" for="party_op_INDEX_{{ key }}">{{ title }}</label>
-        <input class="sklad-operation-price" name="party_price_INDEX_{{ key }}" type="text" inputmode="decimal" autocomplete="off" maxlength="15" aria-label="Цена операции {{ title }} за пару" disabled>
-      </div>
-      {% endfor %}
-    </div></fieldset>
   </section>
 </template>
 <template id="shipment-party-material-template">
-  <div class="shipment-extra-row sklad-party-material-row">
-    <div><label>Материал</label><input name="party_material_name_INDEX" placeholder="Название"></div>
-    <div><label>Количество</label><input name="party_material_qty_INDEX" type="number" min="1" max="1000000" inputmode="numeric"></div>
-    <div><label>Ед.</label><select name="party_material_unit_INDEX">{% for key, title in UNITS.items() %}<option value="{{ key }}">{{ title }}</option>{% endfor %}</select></div>
+  <div class="shipment-extra-row sklad-party-material-row biz-catalog-material-row">
+    <label class="biz-field"><span>Материал</span><select name="party_material_id_INDEX"><option value="">Выберите материал</option>{% for m in materials %}<option value="{{ m.id }}">{{ m.name }} · {{ UNITS.get(m.unit,m.unit) }}</option>{% endfor %}</select></label>
+    <label class="biz-field"><span>Количество</span><input name="party_material_qty_INDEX" inputmode="decimal"></label>
+    <label class="biz-field"><span>Владелец</span><select name="party_material_owner_INDEX" data-material-owner><option value="">Предприятие</option><option value="" data-customer-material>Заказчик партии</option></select></label>
     <button class="btn danger icon shipment-remove" type="button" title="Убрать материал">×</button>
   </div>
 </template>
 <template id="shipment-material-template">
-  <div class="shipment-extra-row sklad-unassigned-material-row">
-    <div><label>Материал</label><input name="material_name" placeholder="Название"></div>
-    <div><label>Количество</label><input name="material_qty" type="number" min="1" max="1000000" inputmode="numeric"></div>
-    <div><label>Ед.</label><select name="material_unit">{% for key, title in UNITS.items() %}<option value="{{ key }}">{{ title }}</option>{% endfor %}</select></div>
+  <div class="shipment-extra-row sklad-unassigned-material-row biz-catalog-material-row">
+    <label class="biz-field"><span>Материал</span><select name="extra_material_id"><option value="">Выберите материал</option>{% for m in materials %}<option value="{{ m.id }}">{{ m.name }} · {{ UNITS.get(m.unit,m.unit) }}</option>{% endfor %}</select></label>
+    <label class="biz-field"><span>Количество</span><input name="extra_material_qty" inputmode="decimal"></label>
+    <label class="biz-field"><span>Владелец</span><select name="extra_material_owner"><option value="">Предприятие</option>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
     <button class="btn danger icon shipment-remove" type="button" title="Убрать материал">×</button>
   </div>
 </template>
@@ -140,11 +131,22 @@
    node.querySelector('[name="party_id"]').value=id;
    node.querySelector('.sklad-party-number').textContent=String(form.querySelectorAll('.shipment-party').length+1);
    form.querySelector('.shipment-party-rows').appendChild(node);
+   const party=form.querySelector('.shipment-party-rows').lastElementChild;
+   const preselected={{ selected_batch|tojson }};
+   if(preselected && form.querySelectorAll('.shipment-party').length===1)party.querySelector('[data-linked-batch]').value=preselected;
+   party.querySelector('[data-add-party-material]').click();
+   syncParty(party);
  });
+ function syncParty(party){
+   const opt=party.querySelector('[data-linked-batch]').selectedOptions[0];
+   party.querySelectorAll('[data-customer-material]').forEach(el=>{el.value=opt?.dataset.customer||'';el.disabled=!el.value});
+ }
+
  form.querySelector('[data-add-material]').addEventListener('click',function(){
    form.querySelector('.shipment-material-rows').appendChild(materialTemplate.content.cloneNode(true));
  });
  form.addEventListener('change',function(e){
+   if(e.target.matches('[data-linked-batch]'))syncParty(e.target.closest('.shipment-party'));
    if(e.target.classList.contains('sklad-operation-checkbox')){
      e.target.closest('.sklad-operation-row').querySelector('.sklad-operation-price').disabled=!e.target.checked;
    }
@@ -206,13 +208,14 @@
      const node=partyMaterialTemplate.content.cloneNode(true);
      node.querySelectorAll('[name]').forEach(function(input){input.name=input.name.replace('INDEX',id)});
      party.querySelector('.shipment-party-material-rows').appendChild(node);
+     syncParty(party);
    }
    if(e.target.classList.contains('shipment-remove')){
      const row=e.target.closest('.shipment-extra-row')||e.target.closest('.shipment-party');
      if(row&&row.classList.contains('sklad-unassigned-material-row')&&
         row.parentElement.querySelectorAll('.sklad-unassigned-material-row').length===1){
        row.querySelectorAll('input').forEach(function(input){input.value=''});
-       row.querySelector('select').selectedIndex=0;
+       row.querySelectorAll('select').forEach(function(select){select.selectedIndex=0});
      }else if(row)row.remove();
      form.querySelectorAll('.sklad-party-number').forEach(function(label,index){label.textContent=String(index+1)});
    }
@@ -220,18 +223,12 @@
  form.addEventListener('submit',function(e){
    if(pendingRejections){e.preventDefault();return}
    const requested=Array.from(form.querySelectorAll('.sklad-supply-quantity')).some(function(input){return Number(input.value)>0});
-   const unassigned=Array.from(form.querySelectorAll('[name="material_name"]')).some(function(x){return x.value.trim()});
-   const party=Array.from(form.querySelectorAll('.shipment-party')).some(function(row){
-     return row.querySelector('[name^="party_qty_"]').value.trim()||row.querySelector('.sklad-operation-checkbox:checked')||
-       Array.from(row.querySelectorAll('[name^="party_material_name_"]')).some(function(x){return x.value.trim()});
-   });
+   const unassigned=Array.from(form.querySelectorAll('[name="extra_material_qty"]')).some(function(x){return x.value.trim()});
+   const party=Array.from(form.querySelectorAll('.shipment-party')).some(function(row){return row.querySelector('[data-linked-batch]').value});
    if(!requested&&!unassigned&&!party){e.preventDefault();alert('Укажите количество в поставку или добавьте партию либо материал.');return}
-   const missing=Array.from(form.querySelectorAll('.shipment-party')).find(function(row){
-     return row.querySelector('[name^="party_qty_"]').value.trim()&&!row.querySelector('.sklad-operation-checkbox:checked');
-   });
-   if(missing){e.preventDefault();alert('Выберите операции для каждой партии.');return}
    form.querySelector('button[type="submit"]').disabled=true;
  });
+ if({{ selected_batch|tojson }})form.querySelector('[data-add-party]').click();
 })();
 </script>
 {% endblock %}

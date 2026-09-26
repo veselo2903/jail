@@ -17,8 +17,10 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # и как раздел /jail внутри основной системы (from jail.app import app).
 if __package__:
     from . import db
+    from . import business_core as business_core
 else:
     import db
+    import business_core as business_core
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("JAIL_SECRET_KEY")
@@ -366,7 +368,7 @@ def _request_detail(r, role):
     # что склад положил и сколько — видно складу и директору сразу, производству после отправки
     show_result = shipped or bool(shipments) or role in ("sklad", "director")
     return dict(
-        note=r["note"], ship_note=r["ship_note"] if shipped else None, shipped=shipped,
+        note=r["note"], batch_id=r["batch_id"], ship_note=r["ship_note"] if shipped else None, shipped=shipped,
         visible_at=_clock(r["created_ts"] + EDIT_WINDOW) if (role == "proizv" and _req_editable(r)) else None,
         need=[i for i in items if i["source"] == "req"],
         added=[i for i in items if i["source"] == "sklad"] if show_result and not shipments else [],
@@ -504,7 +506,12 @@ def supply_new():
             incoming.append(dict(r=r, need=need))
     customers = g.db.execute("SELECT * FROM customers WHERE archived=0 ORDER BY name").fetchall()
     models = g.db.execute("SELECT * FROM models WHERE archived=0 ORDER BY name").fetchall()
-    return render_template("supply_new.html", incoming=incoming, customers=customers, models=models)
+    batches = g.db.execute("""SELECT b.*,c.name customer_name,m.name model_name FROM production_batches b
+        JOIN customers c ON c.id=b.customer_id JOIN models m ON m.id=b.model_id
+        WHERE b.status NOT IN ('closed','canceled') ORDER BY b.id DESC""").fetchall()
+    materials = g.db.execute("SELECT * FROM materials WHERE archived=0 ORDER BY name").fetchall()
+    return render_template("supply_new.html", incoming=incoming, customers=customers, models=models,
+        batches=batches, materials=materials, selected_batch=request.args.get("batch", ""))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/collect/save", methods=["POST"])
@@ -799,7 +806,13 @@ def ref_add(table):
     else:
         name = (request.form.get("name") or "").strip()
         if name:
-            g.db.execute(f"INSERT INTO {table} (name) VALUES (?)", (name,))
+            if table == "models":
+                cid = request.form.get("customer_id") or None
+                if cid and not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone():
+                    abort(400)
+                g.db.execute("INSERT INTO models(name,customer_id) VALUES (?,?)", (name,cid))
+            else:
+                g.db.execute(f"INSERT INTO {table} (name) VALUES (?)", (name,))
     g.db.commit()
     return redirect(url_for("refs", arch=request.args.get("arch"), _anchor="refs-" + table))
 
@@ -838,7 +851,17 @@ def ref_edit(table, rid):
     else:
         name = (request.form.get("name") or "").strip()
         if name:
-            g.db.execute(f"UPDATE {table} SET name=? WHERE id=?", (name, rid))
+            if table == "models" and "customer_id" in request.form:
+                cid = request.form.get("customer_id") or None
+                model = g.db.execute("SELECT * FROM models WHERE id=?",(rid,)).fetchone()
+                if not model: abort(404)
+                if cid and not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone(): abort(400)
+                if str(model["customer_id"] or "") != str(cid or "") and g.db.execute("SELECT 1 FROM order_items WHERE model_id=?",(rid,)).fetchone():
+                    flash("Модель уже связана с заказами. Для другого заказчика создайте отдельную модель.")
+                    return redirect(url_for("refs"))
+                g.db.execute("UPDATE models SET name=?,customer_id=? WHERE id=?",(name,cid,rid))
+            else:
+                g.db.execute(f"UPDATE {table} SET name=? WHERE id=?", (name, rid))
     g.db.commit()
     return redirect(url_for("refs", arch=request.args.get("arch"), _anchor="refs-" + table))
 
@@ -944,86 +967,7 @@ def acceptance():
 def overview():
     if session["role"] != "director":
         abort(403)
-
-    def sum_lines(where, params, field):
-        q = (f"SELECT COALESCE(SUM(l.{field}),0) s FROM lines l "
-             f"JOIN documents d ON d.id=l.document_id WHERE {where}")
-        return g.db.execute(q, params).fetchone()["s"]
-
-    # В пути
-    to_prod = sum_lines("d.kind='OUT' AND d.status='sent'", [], "pairs_sent")
-    to_sklad = sum_lines("d.kind='RETURN' AND d.status='sent'", [], "pairs_sent")
-
-    # По моделям: принято производством (A/B accepted recv) и возвращено (RETURN accepted recv)
-    prod_in = g.db.execute(
-        """SELECT m.id mid, m.name model, COALESCE(SUM(l.pairs_recv),0) p
-           FROM lines l JOIN documents d ON d.id=l.document_id
-           JOIN models m ON m.id=l.model_id
-           WHERE d.kind='OUT' AND d.status='accepted' AND l.pairs_recv IS NOT NULL
-           GROUP BY m.id""").fetchall()
-    prod_out = g.db.execute(
-        """SELECT m.id mid, m.name model, COALESCE(SUM(l.pairs_recv),0) p
-           FROM lines l JOIN documents d ON d.id=l.document_id
-           JOIN models m ON m.id=l.model_id
-           WHERE d.kind='RETURN' AND d.status='accepted' AND l.pairs_recv IS NOT NULL
-           GROUP BY m.id""").fetchall()
-    # В пути по моделям
-    sent_prod = g.db.execute(
-        """SELECT m.id mid, m.name model, COALESCE(SUM(l.pairs_sent),0) p
-           FROM lines l JOIN documents d ON d.id=l.document_id
-           JOIN models m ON m.id=l.model_id
-           WHERE d.kind='OUT' AND d.status='sent'
-           GROUP BY m.id""").fetchall()
-    sent_back = g.db.execute(
-        """SELECT m.id mid, m.name model, COALESCE(SUM(l.pairs_sent),0) p
-           FROM lines l JOIN documents d ON d.id=l.document_id
-           JOIN models m ON m.id=l.model_id
-           WHERE d.kind='RETURN' AND d.status='sent'
-           GROUP BY m.id""").fetchall()
-
-    agg = {}
-    def acc(rows, key):
-        for r in rows:
-            e = agg.setdefault(r["model"], {"at_prod": 0, "to_prod": 0, "to_sklad": 0})
-            if key == "in":
-                e["at_prod"] += r["p"]
-            elif key == "out":
-                e["at_prod"] -= r["p"]
-            elif key == "sent_prod":
-                e["to_prod"] += r["p"]
-            elif key == "sent_back":
-                e["to_sklad"] += r["p"]
-    acc(prod_in, "in"); acc(prod_out, "out")
-    acc(sent_prod, "sent_prod"); acc(sent_back, "sent_back")
-
-    by_model = []
-    at_prod_total = 0
-    for model, v in agg.items():
-        at_prod_total += v["at_prod"]
-        if v["at_prod"] or v["to_prod"] or v["to_sklad"]:
-            by_model.append(dict(model=model, **v))
-    by_model.sort(key=lambda x: (-x["at_prod"], x["model"]))
-
-    # Последние документы
-    recent = []
-    for d in g.db.execute(
-            "SELECT * FROM documents WHERE EXISTS "
-            "(SELECT 1 FROM lines WHERE document_id=documents.id) "
-            "ORDER BY id DESC LIMIT 8").fetchall():
-        sent, recv, diff, has_recv = _doc_totals(d["id"])
-        recent.append(dict(d=d, sent=sent, recv=recv, diff=diff, has_recv=has_recv))
-
-    # Счётчики документов
-    cnt = {"sent": 0, "accepted": 0}
-    for r in g.db.execute(
-            "SELECT status, COUNT(*) c FROM documents WHERE EXISTS "
-            "(SELECT 1 FROM lines WHERE document_id=documents.id) GROUP BY status"):
-        cnt[r["status"]] = r["c"]
-
-    return render_template("overview.html",
-                           to_prod=to_prod, to_sklad=to_sklad,
-                           at_prod_total=at_prod_total, by_model=by_model,
-                           recent=recent, cnt=cnt)
+    return redirect(url_for("business.orders"))
 
 
 # ---------- Заявки «чего не хватает» ----------
@@ -1153,6 +1097,19 @@ def _parse_extra_shipment_items():
         result.append(dict(kind="material", item=name, qty=qty, unit=unit,
                            item_type="material", customer_id=None, model_id=None, operation=None,
                            request_item_id=None))
+    mids = request.form.getlist("extra_material_id")
+    quantities = request.form.getlist("extra_material_qty")
+    owners = request.form.getlist("extra_material_owner")
+    for n,mid in enumerate(mids):
+        raw=quantities[n].strip() if n<len(quantities) else ""
+        if not mid and not raw: continue
+        try:
+            m=business_core.require(g.db,"materials",business_core.integer(mid,"Материал"),True)
+            qty=business_core.scaled(raw,1000,"Количество",True)/1000
+            owner=business_core.owner_from(g.db,None,owners[n] if n<len(owners) else "")
+        except business_core.RuleError as exc: return None,str(exc)
+        result.append(dict(kind="material",item=m["name"],qty=qty,unit=m["unit"],item_type="material",customer_id=None,model_id=None,
+            operation=None,request_item_id=None,material_id=m["id"],owner_customer_id=owner))
     customers = request.form.getlist("pair_customer_id")
     models = request.form.getlist("pair_model_id")
     counts = request.form.getlist("pair_qty")
@@ -1190,6 +1147,37 @@ def _parse_party_shipment_items():
     for position, key in enumerate(party_ids, 1):
         if not key.isascii() or not key.isdigit() or len(key) > 6:
             return None, "Проверьте список партий."
+        linked = request.form.get("party_batch_" + key)
+        if linked:
+            try:
+                b = business_core.editable_batch(g.db, business_core.integer(linked))
+                raw_pairs = request.form.get("party_qty_"+key, "").strip()
+                if not raw_pairs and not any(x.strip() for x in request.form.getlist("party_material_qty_"+key)):
+                    continue
+                pairs = business_core.integer(raw_pairs) if raw_pairs else b["qty_pairs"]
+                if pairs>b["qty_pairs"]: raise business_core.RuleError("Количество заготовок превышает размер партии.")
+                tasks = business_core.task_rows(g.db,b["id"])
+                ops = [op for op,title in OPERATIONS.items() if any(t["name"]==title and t["mode"] not in ("skip","ready") for t in tasks)]
+                prices = {op:t["rate_cents"] for op,title in OPERATIONS.items() for t in tasks if t["name"]==title and t["rate_cents"] is not None and op in ops and t["parent_id"] is None}
+                items.append(dict(kind="pair",item="",qty=pairs,unit="pary",item_type=None,customer_id=b["customer_id"],model_id=b["model_id"],
+                    operation=json.dumps(ops),operation_prices=json.dumps(prices),request_item_id=None,party_index=key,batch_id=b["id"],batch_reference=not bool(raw_pairs)))
+                mids=request.form.getlist("party_material_id_"+key)
+                qtys=request.form.getlist("party_material_qty_"+key)
+                owners=request.form.getlist("party_material_owner_"+key)
+                for n,mid in enumerate(mids):
+                    raw=qtys[n].strip() if n<len(qtys) else ""
+                    if not mid and not raw: continue
+                    m=business_core.require(g.db,"materials",business_core.integer(mid,"Материал"),True)
+                    milli=business_core.scaled(raw,1000,"Количество материала",True)
+                    owner=business_core.owner_from(g.db,b["id"],owners[n] if n<len(owners) else "")
+                    items.append(dict(kind="material",item=m["name"],qty=milli/1000,unit=m["unit"],item_type="material",customer_id=None,model_id=None,
+                        operation=None,request_item_id=None,party_index=key,batch_id=b["id"],material_id=m["id"],owner_customer_id=owner))
+            except business_core.RuleError as exc:
+                return None,"Партия %d: %s" % (position,str(exc))
+            continue
+        if "party_batch_"+key in request.form:
+            if not any(request.form.getlist("party_material_qty_"+key)) and not request.form.get("party_qty_"+key): continue
+            return None,"Выберите существующую партию из заказа."
         raw_qty = (request.form.get("party_qty_" + key) or "").strip()
         names = request.form.getlist("party_material_name_" + key)
         qtys = request.form.getlist("party_material_qty_" + key)
@@ -1282,8 +1270,9 @@ def _send_shipment(req_id=None, multi=False):
             if not request.form.get("ship_%d" % i["id"]) and not (multi and raw):
                 continue
             try:
-                qty = int(raw) if raw else remaining
-            except ValueError:
+                qty = business_core.scaled(raw,1000,"Количество",True)/1000 if raw else remaining
+                if i["unit"] in ("sht","pary") and qty != int(qty): raise ValueError
+            except (ValueError,business_core.RuleError):
                 qty = None
             if qty is None or not 0 < qty <= 1_000_000:
                 flash("Для отмеченной позиции укажите положительное количество.")
@@ -1294,7 +1283,9 @@ def _send_shipment(req_id=None, multi=False):
             items.append(dict(kind="need", item=i["item"], qty=qty, unit=i["unit"],
                               item_type=i["item_type"], customer_id=None, model_id=None,
                               operation=None, request_item_id=i["id"],
-                              request_number=target_id))
+                              request_number=target_id, batch_id=target["batch_id"],
+                              material_id=request.form.get("inventory_material_%d" % i["id"]) or None,
+                              owner_customer_id=request.form.get("inventory_owner_%d" % i["id"]) or None))
             affected.add(target_id)
     if req_id is not None and not multi:
         for old in _load_req_items(req_id):
@@ -1326,20 +1317,40 @@ def _send_shipment(req_id=None, multi=False):
         if g.db.execute("SELECT 1 FROM shipments WHERE client_token=?", (token,)).fetchone():
             return redirect(url_for("documents"))
         raise
-    party_items = {}
-    for i in items:
-        party_index = i.get("party_index")
-        inserted = g.db.execute(
-            "INSERT INTO shipment_items "
-            "(shipment_id, request_item_id, request_number, line_kind, item, qty, unit, item_type, "
-            "customer_id, model_id, operation, operation_prices, party_item_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (cur.lastrowid, i["request_item_id"], i.get("request_number"),
-             i["kind"], i["item"], i["qty"], i["unit"], i["item_type"],
-             i["customer_id"], i["model_id"], i["operation"], i.get("operation_prices"),
-             party_items.get(party_index) if i["kind"] == "material" else None))
-        if i["kind"] == "pair" and party_index is not None:
-            party_items[party_index] = inserted.lastrowid
+    try:
+        party_items = {}
+        for i in items:
+            if request.form.get("inventory_tracking") and i["kind"] != "pair" and not i.get("material_id"):
+                raise business_core.RuleError("Выберите материал для списания со склада: "+i["item"])
+            if i.get("material_id"):
+                material=business_core.require(g.db,"materials",business_core.integer(i["material_id"]),True)
+                if not i["unit"]: i["unit"]=material["unit"]
+            party_index = i.get("party_index")
+            inserted = g.db.execute(
+                "INSERT INTO shipment_items "
+                "(shipment_id, request_item_id, request_number, line_kind, item, qty, unit, item_type, "
+                "customer_id, model_id, operation, operation_prices, party_item_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (cur.lastrowid, i["request_item_id"], i.get("request_number"),
+                 i["kind"], i["item"], i["qty"], i["unit"], i["item_type"],
+                 i["customer_id"], i["model_id"], i["operation"], i.get("operation_prices"),
+                 party_items.get(party_index) if i["kind"] == "material" else None))
+            g.db.execute("UPDATE shipment_items SET batch_id=?,material_id=?,owner_customer_id=?,batch_reference=? WHERE id=?",
+                         (i.get("batch_id"),i.get("material_id"),i.get("owner_customer_id"),int(i.get("batch_reference",0)),inserted.lastrowid))
+            if i.get("material_id"):
+                m = business_core.require(g.db,"materials",business_core.integer(i["material_id"]),True)
+                if i["unit"] != m["unit"]: raise business_core.RuleError("Единица отправляемого материала не совпадает со справочником.")
+                business_core.inventory_move(g.db,dict(kind="issue",material_id=m["id"],batch_id=i.get("batch_id"),
+                    owner_customer_id=i.get("owner_customer_id"),qty=str(i["qty"]),token="shipment:"+token+":"+str(inserted.lastrowid),
+                    note="Поставка №"+str(cur.lastrowid)),session["role"],inserted.lastrowid)
+            elif i.get("batch_id") and i["kind"] != "pair":
+                raise business_core.RuleError("Для материала партии выберите материал из справочника.")
+            if i["kind"] == "pair" and party_index is not None:
+                party_items[party_index] = inserted.lastrowid
+    except (business_core.RuleError,sqlite3.IntegrityError) as exc:
+        g.db.rollback()
+        flash(str(exc) if isinstance(exc,business_core.RuleError) else "Проверьте материал и его владельца.")
+        return redirect(back)
     incomplete = False
     for target_id in affected:
         complete = _resolve_request(target_id)
@@ -1380,7 +1391,11 @@ def _request_page(rows, note, edit=None):
     return render_template(
         "request_new.html", rows=rows or [REQUEST_BLANK_ROW], blank=REQUEST_BLANK_ROW, note=note,
         edit_id=edit["id"] if edit else None,
-        edit_until=_clock(edit["created_ts"] + EDIT_WINDOW) if edit else None)
+        edit_until=_clock(edit["created_ts"] + EDIT_WINDOW) if edit else None,
+        batches=g.db.execute("""SELECT b.id,m.name model_name,c.name customer_name FROM production_batches b
+            JOIN models m ON m.id=b.model_id JOIN customers c ON c.id=b.customer_id
+            WHERE b.status NOT IN ('closed','canceled') ORDER BY b.id DESC""").fetchall(),
+        selected_batch=request.form.get("batch_id", str(edit["batch_id"] or "") if edit else request.args.get("batch", "")))
 
 
 def _read_request_form():
@@ -1396,8 +1411,10 @@ def _read_request_form():
         qty = None
         if row["qty"]:
             try:
-                qty = int(row["qty"])
-            except ValueError:
+                qty_milli = business_core.scaled(row["qty"],1000,"Количество",True)
+                if row["unit"] in ("sht","pary") and qty_milli%1000: raise ValueError
+                qty = qty_milli/1000
+            except (ValueError,business_core.RuleError):
                 qty = 0
             if qty <= 0:
                 return rows, note, None, "Позиция %d: количество должно быть больше нуля." % n
@@ -1433,12 +1450,18 @@ def request_new():
     if error:
         flash(error)
         return _request_page(rows, note)
+    batch_id = request.form.get("batch_id") or None
+    if batch_id:
+        try: business_core.editable_batch(g.db, business_core.integer(batch_id))
+        except business_core.RuleError as exc:
+            flash(str(exc)); return _request_page(rows,note)
     now = db.now_str()
     cur = g.db.execute(
         "INSERT INTO requests (status, urgent, created_role, created_at, created_ts, sent_at, note) "
         "VALUES ('open', ?, ?, ?, ?, ?, ?)",
         (1 if any(p[4] for p in parsed) else 0, "proizv", now, int(time.time()), now, note))  # срочность заявки = есть срочная позиция
     _insert_request_items(cur.lastrowid, parsed)
+    g.db.execute("UPDATE requests SET batch_id=? WHERE id=?",(batch_id,cur.lastrowid))
     g.db.commit()
     flash("Заявка №%d создана. Склад увидит её через %s, до этого её можно изменить."
           % (cur.lastrowid, _window_label()))
@@ -1470,6 +1493,12 @@ def request_edit(req_id):
     if error:
         flash(error)
         return _request_page(rows, note, edit=r)
+    batch_id=request.form.get("batch_id", str(r["batch_id"] or "")) or None
+    if batch_id:
+        try: business_core.editable_batch(g.db,business_core.integer(batch_id))
+        except business_core.RuleError as exc:
+            flash(str(exc)); return _request_page(rows,note,edit=r)
+    g.db.execute("UPDATE requests SET batch_id=? WHERE id=?",(batch_id,req_id))
     _audit_snapshot("request_edit_snapshot", str(req_id),
                     {"request": dict(r), "items": [dict(x) for x in _load_req_items(req_id)]})
     g.db.execute("DELETE FROM request_items WHERE request_id=?", (req_id,))
@@ -1667,46 +1696,7 @@ def _rubles(kopeks):
 @app.route("/<any(sklad,proizv,director):role_url>/payroll")
 @login_required
 def payroll():
-    role = session["role"]
-    if role not in ("proizv", "director"):
-        abort(403)
-    today = db.datetime.now(db.TZ).date()
-    start = request.args.get("start", today.replace(day=1).isoformat())
-    end = request.args.get("end", today.isoformat())
-    try:
-        date.fromisoformat(start)
-        date.fromisoformat(end)
-        if start > end:
-            raise ValueError
-    except ValueError:
-        abort(400, description="Неверный период отчёта.")
-
-    workers = g.db.execute("SELECT * FROM workers WHERE archived=0 ORDER BY number+0, number").fetchall()
-    models = g.db.execute("SELECT * FROM models WHERE archived=0 ORDER BY name").fetchall()
-    operations = g.db.execute("SELECT * FROM operations ORDER BY ord, id").fetchall()
-    rates = g.db.execute("SELECT * FROM prices").fetchall()
-    rate_map = {(r["model_id"], r["operation_id"]): r["rate_kopeks"] for r in rates}
-    records = g.db.execute(
-        """SELECT wr.*, w.number AS worker_number, w.name AS worker_name,
-                  m.name AS model_name, o.name AS operation_name
-           FROM work_records wr
-           JOIN workers w ON w.id=wr.worker_id
-           JOIN models m ON m.id=wr.model_id
-           JOIN operations o ON o.id=wr.operation_id
-           WHERE wr.work_date BETWEEN ? AND ?
-           ORDER BY wr.work_date DESC, wr.id DESC""", (start, end),
-    ).fetchall()
-    totals = {}
-    for r in records:
-        item = totals.setdefault(r["worker_id"], dict(number=r["worker_number"],
-                              name=r["worker_name"], pairs=0, amount_kopeks=0))
-        item["pairs"] += r["pairs"]
-        item["amount_kopeks"] += r["amount_kopeks"]
-    return render_template("payroll.html", workers=workers, models=models,
-                           operations=operations, rate_map=rate_map,
-                           records=records, totals=sorted(totals.values(), key=lambda x: x["number"]),
-                           total_kopeks=sum(x["amount_kopeks"] for x in records),
-                           start=start, end=end, today=today.isoformat())
+    return redirect(url_for("business.payroll" if session["role"] in ("sklad","director") else "business.batches"))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/payroll/rates", methods=["POST"])
@@ -1730,6 +1720,8 @@ def payroll_rate_set():
              rate=excluded.rate, rate_kopeks=excluded.rate_kopeks""",
         (model_id, operation_id, kopeks / 100, kopeks),
     )
+    g.db.execute("""INSERT INTO model_operation_templates(model_id,operation_id,rate_cents) VALUES (?,?,?)
+        ON CONFLICT(model_id,operation_id) DO UPDATE SET rate_cents=excluded.rate_cents""",(model_id,operation_id,kopeks))
     g.db.commit()
     flash("Ставка сохранена. Уже внесённые начисления не изменились.")
     return redirect(url_for("payroll"))
@@ -1738,39 +1730,10 @@ def payroll_rate_set():
 @app.route("/<any(sklad,proizv,director):role_url>/payroll/records", methods=["POST"])
 @login_required
 def payroll_record_add():
-    if session["role"] not in ("proizv", "director"):
+    if session["role"] not in ("proizv", "director", "sklad"):
         abort(403)
-    try:
-        worker_id = int(request.form["worker_id"])
-        model_id = int(request.form["model_id"])
-        operation_id = int(request.form["operation_id"])
-        pairs = int(request.form["pairs"])
-        work_date = date.fromisoformat(request.form["work_date"]).isoformat()
-        if pairs <= 0 or pairs > 1_000_000:
-            raise ValueError
-    except (KeyError, ValueError):
-        flash("Укажите работника, модель, операцию, дату и положительное число пар.")
-        return redirect(url_for("payroll"))
-    if not g.db.execute("SELECT 1 FROM workers WHERE id=? AND archived=0", (worker_id,)).fetchone() or \
-       not g.db.execute("SELECT 1 FROM models WHERE id=? AND archived=0", (model_id,)).fetchone() or \
-       not g.db.execute("SELECT 1 FROM operations WHERE id=?", (operation_id,)).fetchone():
-        abort(400)
-    rate = g.db.execute("SELECT rate_kopeks FROM prices WHERE model_id=? AND operation_id=?",
-                        (model_id, operation_id)).fetchone()
-    if not rate or rate["rate_kopeks"] <= 0:
-        flash("Для модели и операции сначала нужно задать положительную ставку.")
-        return redirect(url_for("payroll"))
-    kopeks = rate["rate_kopeks"]
-    g.db.execute(
-        """INSERT INTO work_records(worker_id,operation_id,model_id,pairs,created_at,
-                                    work_date,rate_kopeks,amount_kopeks)
-           VALUES (?,?,?,?,?,?,?,?)""",
-        (worker_id, operation_id, model_id, pairs, db.now_str(), work_date,
-         kopeks, pairs * kopeks),
-    )
-    g.db.commit()
-    flash("Выработка внесена.")
-    return redirect(url_for("payroll", start=work_date[:7] + "-01", end=work_date))
+    flash("Выберите партию и её операцию, чтобы внести выработку.")
+    return redirect(url_for("business.batches"))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/payroll/records/<int:record_id>/delete", methods=["POST"])
@@ -1782,9 +1745,15 @@ def payroll_record_delete(record_id):
     if not record:
         abort(404)
     _audit_snapshot("payroll_record_delete_snapshot", str(record_id), dict(record))
-    g.db.execute("DELETE FROM work_records WHERE id=?", (record_id,))
+    accrual=g.db.execute("SELECT * FROM payroll_accruals WHERE legacy_work_id=?",(record_id,)).fetchone()
+    if accrual and not g.db.execute("SELECT 1 FROM payroll_accruals WHERE original_id=?",(accrual["id"],)).fetchone():
+        try: posted=business_core.posting_day(g.db,business_core.day())
+        except business_core.RuleError as exc:
+            g.db.rollback(); flash(str(exc)); return redirect(url_for("payroll"))
+        g.db.execute("""INSERT INTO payroll_accruals(worker_id,original_id,kind,amount_cents,posted_on,created_at,note,actor)
+            VALUES (?,?,'reversal',?,?,?,?,?)""",(record["worker_id"],accrual["id"],-accrual["amount_cents"],posted,db.now_str(),"Отмена прежней выработки",session["role"]))
     g.db.commit()
-    flash("Запись выработки удалена; копия сохранена в журнале изменений.")
+    flash("Начисление отменено; исходная запись сохранена в истории.")
     return redirect(url_for("payroll"))
 
 
@@ -1899,6 +1868,13 @@ def legacy_without_role(rest):
     if request.method != "GET" or rest.split("/")[0] in ROLES:
         abort(404)
     return _redirect_with_role(rest)
+
+
+if __package__:
+    from .business import register as register_business
+else:
+    from business import register as register_business
+register_business(app)
 
 
 if __name__ == "__main__":

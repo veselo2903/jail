@@ -1,4 +1,5 @@
 import sqlite3
+import fcntl
 import os
 from datetime import datetime, timezone, timedelta
 
@@ -369,13 +370,18 @@ def _migrate_shipments(conn):
                  i["customer_id"], i["model_id"], i["operation"]))
 
 
-def init_db():
+def _init_db_locked():
     conn = get_db()
     conn.executescript(SCHEMA)
     _migrate(conn)
     _migrate_constraints(conn)
     _migrate_payroll(conn)
     _migrate_shipments(conn)
+    if __package__:
+        from .business_schema import migrate
+    else:
+        from business_schema import migrate
+    migrate(conn)
 
     # 6 операций (названия временные, правятся позже)
     cur = conn.execute("SELECT COUNT(*) AS c FROM operations")
@@ -404,6 +410,16 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+
+def init_db():
+    # Gunicorn workers may start together; serialize schema changes across processes.
+    with open(DB_PATH + ".migration.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            _init_db_locked()
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 if __name__ == "__main__":

@@ -109,7 +109,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert 'class="btn block sklad-add-party-btn dashed"' in supply_page
     assert supply_page.index('data-add-party') < supply_page.index('sklad-incoming-spoiler')
     assert "Дополнительные материалы вне партии" in supply_page
-    assert "Цена за пару, ₽" in supply_page
+    assert "Партия из заказа" in supply_page and "Операции и расценки заданы в плане партии" in supply_page
 
     # Первая отправка частичная. Остаток остаётся виден; повторная отправка закрывает заявку.
     partial = post("/requests/supply/new", {
@@ -282,7 +282,7 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     assert post("/payroll/records", {"worker_id": "1", "model_id": "1",
                                      "operation_id": "1", "pairs": "10",
                                      "work_date": "2026-09-25"}).status_code == 302
-    assert one("SELECT amount_kopeks FROM work_records")[0] == 1250
+    assert one("SELECT COUNT(*) FROM work_records")[0] == 0  # new work requires a persistent batch
     with sqlite3.connect(db.DB_PATH) as conn:
         conn.execute("PRAGMA foreign_keys=ON")
         try:
