@@ -23,7 +23,7 @@
     {% set i = e.row %}
     <div class="supply-item sklad-supply-item" data-item-id="{{ i.id }}">
       <div class="sklad-supply-item-text">
-        <b class="sklad-supply-item-name">{{ i.item }}</b>
+        <b class="sklad-supply-item-name">{{ i.item }}</b>{% if i.urgent %} <span class="tag urgent item-urgent-tag">Срочно</span>{% endif %}
         {% if i.note %}<div class="sklad-supply-item-note">{{ i.note }}</div>{% endif %}
         <div class="sklad-supply-item-meta">
           {% if i.qty is not none %}<span>Запрошено {{ i.qty }} {{ UNITS.get(i.unit, i.unit or '') }}</span>{% endif %}

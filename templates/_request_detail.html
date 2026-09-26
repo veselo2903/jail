@@ -4,7 +4,7 @@
   {% for i in d.need %}
   <div class="dq-item">
     <div class="dq-item-main">
-      <span class="dq-item-name">{{ i.item }}</span>
+      <span class="dq-item-name">{{ i.item }}{% if i.urgent %} <span class="tag urgent item-urgent-tag">Срочно</span>{% endif %}</span>
       {% if i.note %}<span class="small dq-item-note">{{ i.note }}</span>{% endif %}
       {% if i.qty is not none %}<span class="dq-item-qty">{{ i.qty }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span>{% endif %}
     </div>
