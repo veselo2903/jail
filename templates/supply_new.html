@@ -117,7 +117,8 @@
 .sklad-add-party-btn:hover{background:var(--blue-bg);color:var(--blue-d);border-color:var(--blue)}
 .shipment-party{padding:14px;margin:10px 0;box-shadow:none;border-left:3px solid var(--blue)}
 .sklad-party-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
-.sklad-party-head .shipment-remove{padding:5px 12px}
+.shipment-remove{display:inline-flex;align-items:center;justify-content:center;flex:none;width:48px;height:48px;padding:0;border:1px solid #e5c8c5;border-radius:10px;background:#fff7f6;color:#a64b4b;font-size:25px;line-height:1}
+.shipment-remove:hover{background:#fcebea;border-color:#d9aaa5;color:#913f3f}
 .sklad-party-fields{display:grid;grid-template-columns:1fr 1fr 130px;gap:9px}
 .sklad-party-fields label,.shipment-extra-row label{margin-bottom:4px}
 .sklad-party-fields input,.sklad-party-fields select{width:100%}
@@ -126,8 +127,7 @@
 .sklad-add-party-material-btn{margin-top:7px}
 .sklad-unassigned-materials{margin:0 0 14px;box-shadow:none}
 .sklad-unassigned-content{padding:4px 14px 14px}
-.shipment-extra-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) 90px 40px;gap:8px;align-items:end;margin:10px 0}
-.shipment-extra-row .shipment-remove{padding:9px 0}
+.shipment-extra-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) 90px 48px;gap:8px;align-items:end;margin:10px 0}
 .operations{border:0;padding:0;margin:0}.operations legend{font-size:13px;color:var(--muted);font-weight:650;margin-bottom:7px}
 .sklad-party-operations{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
 .sklad-operation-columns,.sklad-operation-row{display:grid;grid-template-columns:24px minmax(0,1fr) 118px;align-items:center;gap:10px}
@@ -145,9 +145,9 @@
  .supply-item{grid-template-columns:minmax(0,1fr) 86px;gap:6px}.sklad-supply-quantity{width:86px}
  .supply-request{padding:8px}.sklad-incoming-content{padding:3px 6px 7px}
  .sklad-party-fields{grid-template-columns:1fr 1fr}.sklad-party-fields>div:last-child{grid-column:1 / -1}
- .shipment-extra-row{grid-template-columns:minmax(0,1fr) 78px 38px}
+ .shipment-extra-row{grid-template-columns:minmax(0,1fr) 78px 48px}
  .shipment-extra-row>div:first-child{grid-column:1 / -1}
- .shipment-extra-row .shipment-remove{grid-column:3;justify-self:end;width:38px}
+ .shipment-extra-row .shipment-remove{grid-column:3;justify-self:end}
  .sklad-operation-columns,.sklad-operation-row{grid-template-columns:21px minmax(0,1fr) 86px;gap:6px}
  .sklad-operation-name{font-size:12px;line-height:1.25}
  .sklad-operation-price{padding:7px 6px;font-size:13px}
