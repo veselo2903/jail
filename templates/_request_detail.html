@@ -54,6 +54,6 @@
 </div>
 {% endfor %}
 {% endif %}
-{% if d.note %}<div class="dq-note small">Примечание к заявке: {{ d.note }}</div>{% endif %}
+{% if d.note %}<div class="dq-note small"><div class="dq-note-label">Примечание к заявке</div><div class="dq-note-text">{{ d.note }}</div></div>{% endif %}
 {% if d.shipped and d.ship_note %}<div class="dq-ship-note small">Сообщение склада: {{ d.ship_note }}</div>{% endif %}
 {% if d.visible_at %}<div class="dq-visible-hint small">Склад увидит заявку в {{ d.visible_at }}. До этого её можно изменить.</div>{% endif %}
