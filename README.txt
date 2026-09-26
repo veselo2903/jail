@@ -12,7 +12,7 @@ jail — учёт передачи заготовок/обуви между ск
 операцией или статусом товара остаются читаемыми.
 
 Установка как раздел /jail внутри основной системы (тот же аккаунт ivnest):
-1. Загрузить папку jail в /home/ivnest/jail (внутри: app.py, db.py, __init__.py, templates).
+1. Загрузить папку jail в /home/ivnest/jail (внутри: app.py, db.py, __init__.py, templates, static).
 2. В WSGI-файле web-app подключить оба приложения через DispatcherMiddleware:
 
    import sys

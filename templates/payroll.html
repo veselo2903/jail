@@ -9,7 +9,7 @@
   <h3>Ставки</h3>
   <form method="post" action="{{ url_for('payroll_rate_set') }}" class="grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="grid" style="grid-template-columns:1fr 1fr">
+    <div class="grid grid-two">
       <div><label>Модель</label><select name="model_id" required>{% for m in models %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
       <div><label>Операция</label><select name="operation_id" required>{% for o in operations %}<option value="{{ o.id }}">{{ o.name }}</option>{% endfor %}</select></div>
     </div>
@@ -17,7 +17,7 @@
     <button class="btn" type="submit">Сохранить ставку</button>
   </form>
   {% if rate_map %}
-  <table style="margin-top:16px">
+  <table class="mt-lg">
     <tr><th>Модель</th><th>Операция</th><th class="num">Ставка, ₽/пара</th></tr>
     {% for m in models %}{% for o in operations %}
       {% set kopeks = rate_map.get((m.id, o.id)) %}
@@ -32,7 +32,7 @@
   <h3>Внести выработку</h3>
   <form method="post" action="{{ url_for('payroll_record_add') }}" class="grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <div class="grid" style="grid-template-columns:1fr 1fr">
+    <div class="grid grid-two">
       <div><label>Работник</label><select name="worker_id" required>{% for w in workers %}<option value="{{ w.id }}">№{{ w.number }} · {{ w.name }}</option>{% endfor %}</select></div>
       <div><label>Дата работы</label><input type="date" name="work_date" value="{{ today }}" required></div>
       <div><label>Модель</label><select name="model_id" required>{% for m in models %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
@@ -45,7 +45,7 @@
 
 <div class="card">
   <h3>Начисления за период</h3>
-  <form method="get" action="{{ url_for('payroll') }}" class="row" style="margin-bottom:16px">
+  <form method="get" action="{{ url_for('payroll') }}" class="row mb-lg">
     <label>С <input type="date" name="start" value="{{ start }}" required></label>
     <label>По <input type="date" name="end" value="{{ end }}" required></label>
     <button class="btn grey" type="submit">Показать</button>
@@ -62,7 +62,7 @@
 {% if records %}
 <div class="card">
   <h3>Записи выработки</h3>
-  <div style="overflow-x:auto">
+  <div class="scroll-x">
     <table>
       <tr><th>Дата</th><th>Работник</th><th>Модель / операция</th><th class="num">Пар</th><th class="num">Ставка, ₽</th><th class="num">Сумма, ₽</th>{% if role=='director' %}<th></th>{% endif %}</tr>
       {% for r in records %}

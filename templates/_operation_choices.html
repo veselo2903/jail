@@ -9,15 +9,3 @@
     {% endfor %}
   </div>
 </fieldset>
-<style>
-.operations{border:0;padding:0;margin:0;min-width:0}
-.operations legend{font-size:13px;font-weight:600;color:var(--muted);margin-bottom:8px}
-.operation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.operation-choice{display:flex;align-items:center;gap:10px;margin:0;padding:10px 12px;
-  border:1px solid var(--line2);border-radius:10px;background:#fff;color:var(--ink);
-  font-size:14px;font-weight:600;cursor:pointer}
-.operation-choice input{width:19px;height:19px;flex:none;margin:0;accent-color:var(--blue)}
-.operation-choice:has(input:checked){border-color:var(--blue);background:var(--blue-bg)}
-.operation-choice:hover{border-color:var(--blue)}
-@media(max-width:560px){.operation-grid{grid-template-columns:1fr}}
-</style>

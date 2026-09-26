@@ -2,7 +2,7 @@
 {% block title %}Передача без заявки — jail{% endblock %}
 {% block content %}
 <div class="card">
-  <h3 style="margin-top:0">Добавить пары</h3>
+  <h3>Добавить пары</h3>
   <form method="post" action="{{ url_for('docs_collect_blank') }}" class="grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="line_kind" value="pair">
@@ -14,7 +14,7 @@
   </form>
 </div>
 <div class="card">
-  <h3 style="margin-top:0">Добавить материал</h3>
+  <h3>Добавить материал</h3>
   <form method="post" action="{{ url_for('docs_collect_blank') }}" class="grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="line_kind" value="material">

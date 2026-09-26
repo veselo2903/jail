@@ -6,7 +6,7 @@
 <div class="dn-line card" data-line-card>
   <div class="dn-line-head">
     <h3 class="dn-line-title">Строка <span class="dn-line-num" data-line-num>{{ n }}</span></h3>
-    <button type="button" class="dn-line-remove btn grey" data-line-remove>Удалить</button>
+    <button type="button" class="dn-line-remove btn grey sm" data-line-remove>Удалить</button>
   </div>
   <div class="dn-line-fields">
     <div class="dn-field dn-field-customer">
@@ -58,19 +58,6 @@
 
 <a class="dn-back btn grey" href="{{ url_for('documents') }}">Назад</a>
 
-<style>
-.dn-form [hidden]{display:none!important}
-.dir-badge{display:inline-flex;align-items:center;gap:8px;font-weight:650;font-size:15px;
-  background:var(--blue-bg);color:var(--blue-d);padding:9px 16px;border-radius:10px}
-.dn-direction{padding:12px 18px}
-.dn-lines{display:grid;gap:12px}
-.dn-line-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
-.dn-line-title{margin:0}
-.dn-line-remove{padding:6px 12px;font-size:13px}
-.dn-line-fields{display:grid;gap:12px}
-.dn-add-line{margin:12px 0}
-.dn-common{display:grid;gap:14px}
-</style>
 
 <script>
 (function(){

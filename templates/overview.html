@@ -34,13 +34,6 @@
   <span>заявок «чего не хватает» в работе у склада</span>
   <span class="go">→</span>
 </a>
-<style>
-.reqline{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--ink);
-  padding:14px 18px}
-.reqline .reqn{font-size:26px;font-weight:800;color:var(--blue-d);font-variant-numeric:tabular-nums}
-.reqline .go{margin-left:auto;color:var(--blue);font-size:20px;font-weight:700}
-.reqline:hover{border-color:var(--line2)}
-</style>
 {% endif %}
 
 {# ---- По моделям ---- #}
@@ -83,7 +76,7 @@
 {# ---- Последние документы ---- #}
 {% if recent %}<details open>
   <summary>Последние заявки</summary>
-  <div class="body" style="padding:0">
+  <div class="body flush">
     <table>
       <tr><th>№</th><th>Тип</th><th class="num">Пар</th><th>Статус</th><th>Дата</th></tr>
       {% for r in recent %}
@@ -103,26 +96,5 @@
 </details>
 {% endif %}
 
-<style>
-.two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
-.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px}
-.mini{display:block;padding:22px 22px;border-left:4px solid var(--line2);
-  text-decoration:none;color:var(--ink);transition:transform .12s var(--ease-out),box-shadow .12s var(--ease-out)}
-a.mini:hover{transform:translateY(-2px);box-shadow:0 10px 26px rgba(16,32,43,.1)}
-.mini.b{border-left-color:var(--blue)}
-.mini.g{border-left-color:var(--green)}
-.mini-n{font-size:42px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-1px}
-.mini.b .mini-n{color:var(--blue-d)}
-.mini.g .mini-n{color:var(--green)}
-.mini-l{color:var(--ink);font-weight:700;margin-top:8px}
-.mini-s{color:var(--muted);font-size:12.5px;margin-top:2px}
-.mini2{text-align:center;padding:16px 10px;text-decoration:none;color:var(--ink)}
-.mini2 .mini-n{font-size:30px}
-.mini2 .mini-l{color:var(--muted);font-weight:600;font-size:13px}
-.mini2:hover{border-color:var(--line2)}
-.up{color:var(--blue-d);font-weight:700}
-.down{color:var(--green);font-weight:700}
-@media(max-width:560px){.mini-n{font-size:32px}}
-</style>
 
 {% endblock %}

@@ -13,7 +13,7 @@
 {% endif %}
 
 {% if report %}
-<div class="card" style="padding:6px 12px">
+<div class="card flush">
 <table>
   <tr><th>Модель</th><th class="num">Отдано</th><th class="num">Вернулось</th><th class="num">Разница</th></tr>
   {% for r in report %}
@@ -33,7 +33,7 @@
   <summary>Расхождения при приёмке ({{ doc_discr|length }})</summary>
   <div class="body">
       {% for x in doc_discr %}
-      <div style="margin-bottom:10px">
+      <div class="mb-sm">
         <div><b>Заявка №{{ x.d.id }}</b> · {{ KIND_SHORT[x.d.kind] }} · {{ x.d.accepted_at }}</div>
         <table>
           <tr><th>Заказчик — модель</th><th class="num">Отдано</th><th class="num">Принято</th><th>Причина</th></tr>

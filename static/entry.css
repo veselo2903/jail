@@ -1,0 +1,45 @@
+/* Страницы без бокового меню используют те же компоненты и цвета. */
+.login-page,.update-result-page{background:#eef2f6;align-items:center;justify-content:center;padding:20px}
+/* login */
+
+.login-page .box{width:380px;max-width:100%}
+.login-page .head{text-align:center;margin-bottom:22px}
+.login-page .sub{color:var(--muted);margin-top:8px;font-size:14px}
+.login-page a.role{display:flex;align-items:center;justify-content:space-between;gap:14px;
+  background:#fff;border:1px solid var(--line);border-radius:13px;padding:15px 17px;
+  margin-bottom:11px;text-decoration:none;
+  box-shadow:0 1px 2px rgba(16,32,43,.05),0 6px 20px rgba(16,32,43,.05);
+  transition:border-color .12s,transform .05s}
+.login-page a.role:hover{border-color:#b9c7d6;transform:translateY(-1px)}
+.login-page a.role:active{transform:translateY(0)}
+.login-page .role .t{display:block;font-size:17px;font-weight:700;color:var(--ink)}
+.login-page .role .d{display:block;font-size:13px;font-weight:400;color:var(--muted);margin-top:3px}
+.login-page .role .go{flex:none;color:var(--blue);font-size:22px;font-weight:700;text-decoration:none}
+.login-page .foot{display:flex;align-items:center;justify-content:space-between;margin-top:16px;
+  color:#94a3b8;font-size:12px}
+.login-page .foot a{color:var(--muted);text-decoration:none;font-weight:600}
+.login-page .foot a:hover{color:var(--blue)}
+
+
+/* update_result */
+
+.update-result-page .box{width:440px;max-width:100%}
+.update-result-page .card{padding:22px;margin-bottom:0}
+.update-result-page .icon{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:28px;margin:0 auto 12px;color:#fff}
+.update-result-page .icon.ok{background:var(--green)}
+.update-result-page .icon.bad{background:var(--warn)}
+.update-result-page h2{text-align:center;margin:0 0 6px;font-size:22px}
+.update-result-page .sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:16px}
+.update-result-page .note{border-radius:10px;padding:12px 14px;font-size:14px;margin-bottom:14px}
+.update-result-page .note.ok{background:var(--green-bg);color:var(--green);border:1px solid #bfe6cd}
+.update-result-page .note.bad{background:var(--warn-bg);color:var(--warn);border:1px solid #f2cccc}
+.update-result-page .files{max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:10px;
+  padding:8px 12px;margin-bottom:14px}
+.update-result-page .files div{font-size:13px;color:var(--muted);padding:2px 0}
+.update-result-page .steps{background:#f7f9fb;border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+  font-size:13.5px;color:var(--ink);margin-bottom:14px;line-height:1.6}
+.update-result-page .steps b{color:var(--ink)}
+
+
+.update-result-page .result-files-summary{cursor:pointer;font-size:13.5px;color:var(--muted);margin-bottom:8px}

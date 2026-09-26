@@ -3,16 +3,16 @@
 {% block content %}
 
 <div class="card">
-  <div class="row" style="justify-content:space-between">
+  <div class="row row-between">
     <div>
       <b>Заявка №{{ d.id }}</b>
       <span class="tag {{ d.status }}">{{ STATUS_LABEL[d.status] }}</span>
     </div>
     <a class="small" href="{{ url_for('documents') }}">к списку</a>
   </div>
-  <div class="small" style="margin-top:6px">{{ KINDS[d.kind][0] }}</div>
+  <div class="small mt-xs">{{ KINDS[d.kind][0] }}</div>
   {% if d.note %}<div class="small">Примечание: {{ d.note }}</div>{% endif %}
-  <div class="small" style="margin-top:6px">
+  <div class="small mt-xs">
     Создан {{ d.created_at }}{% if d.sent_at %} · отправлен {{ d.sent_at }}{% endif %}{% if d.accepted_at %} · принят {{ d.accepted_at }}{% endif %}
   </div>
 </div>
@@ -33,7 +33,7 @@
 {# ================= ПРИЁМКА (приёмщик) ================= #}
 {% if can_accept %}
 <div class="card">
-  <h3 style="margin-top:0">Приёмка</h3>
+  <h3>Приёмка</h3>
   <p class="small">Проверьте построчно. Поле «принято» уже заполнено — исправьте, если пришло другое количество.</p>
   <form method="post" action="{{ url_for('doc_accept', doc_id=d.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <table>
@@ -53,13 +53,13 @@
       </tr>
       {% endfor %}
     </table>
-    <button class="btn green block" type="submit" style="margin-top:12px">Подтвердить приёмку</button>
+    <button class="btn green block mt-md" type="submit">Подтвердить приёмку</button>
   </form>
 </div>
 
 {# ================= ПРОСМОТР (отправлен / принят) ================= #}
 {% else %}
-<div class="card" style="padding:6px 12px">
+<div class="card flush">
   <table>
     <tr>
       <th>Заказчик — модель</th><th class="num">Отдано</th>
@@ -88,11 +88,6 @@
 {% endif %}
 {% endif %}
 
-<style>
-.acc-note-cell{min-width:160px}
-.acc-recv-cell{width:110px}
-@media(max-width:720px){.acc-note-cell{min-width:0}.acc-recv-cell{width:84px}}
-</style>
 {% if can_delete %}
 <div class="card">
   <form method="post" action="{{ url_for('doc_delete', doc_id=d.id) }}"

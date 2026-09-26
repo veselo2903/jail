@@ -37,7 +37,7 @@
           <input class="sklad-supply-quantity" id="supply-qty-{{ i.id }}" name="qty_{{ i.id }}" type="number" min="1" max="1000000" inputmode="numeric" value="{{ i.collected if i.placed and i.collected is not none else '' }}" placeholder="Не кладу" aria-label="Количество в поставку: {{ i.item }}{% if i.unit %}, {{ UNITS.get(i.unit, i.unit) }}{% endif %}">
         </div>
         {% if e.remaining is not none and e.remaining > 0 %}<button class="btn grey sm sklad-supply-fill-btn" type="button" data-quantity-all="{{ e.remaining }}" aria-label="Положить весь остаток: {{ i.item }}">Положить всё</button>{% endif %}
-        <button class="btn grey sm sklad-supply-reject-btn" type="button" data-reject-url="{{ url_for('request_item_reject', req_id=r.id, item_id=i.id) }}" aria-label="Отклонить позицию: {{ i.item }}">Отклонить</button>
+        <button class="btn danger sm sklad-supply-reject-btn" type="button" data-reject-url="{{ url_for('request_item_reject', req_id=r.id, item_id=i.id) }}" aria-label="Отклонить позицию: {{ i.item }}">Отклонить</button>
       </div>
       <div class="sklad-supply-item-error" role="alert" hidden></div>
     </div>
@@ -55,10 +55,10 @@
           <div><label>Материал</label><input name="material_name" placeholder="Название"></div>
           <div><label>Количество</label><input name="material_qty" type="number" min="1" max="1000000" inputmode="numeric"></div>
           <div><label>Ед.</label><select name="material_unit">{% for key, title in UNITS.items() %}<option value="{{ key }}">{{ title }}</option>{% endfor %}</select></div>
-          <button class="btn grey sm shipment-remove" type="button" title="Очистить материал">×</button>
+          <button class="btn danger icon shipment-remove" type="button" title="Очистить материал">×</button>
         </div>
       </div>
-      <button class="btn grey sm sklad-add-material-btn" type="button" data-add-material>+ Материал</button>
+      <button class="btn grey sm sklad-add-material-btn block dashed" type="button" data-add-material>+ Материал</button>
     </div>
   </details>
   <label class="sklad-supply-note-label" for="ship-note">Примечание к поставке</label>
@@ -69,7 +69,7 @@
 <template id="shipment-party-template">
   <section class="card shipment-party sklad-party-card">
     <input type="hidden" name="party_id" value="INDEX">
-    <div class="sklad-party-head"><b>Партия <span class="sklad-party-number"></span></b><button class="btn grey sm shipment-remove" type="button" title="Убрать партию">×</button></div>
+    <div class="sklad-party-head"><b>Партия <span class="sklad-party-number"></span></b><button class="btn danger icon shipment-remove" type="button" title="Убрать партию">×</button></div>
     <div class="sklad-party-fields">
       <div><label>Заказчик</label><select name="party_customer_INDEX">{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
       <div><label>Модель</label><select name="party_model_INDEX">{% for m in models %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
@@ -95,7 +95,7 @@
     <div><label>Материал</label><input name="party_material_name_INDEX" placeholder="Название"></div>
     <div><label>Количество</label><input name="party_material_qty_INDEX" type="number" min="1" max="1000000" inputmode="numeric"></div>
     <div><label>Ед.</label><select name="party_material_unit_INDEX">{% for key, title in UNITS.items() %}<option value="{{ key }}">{{ title }}</option>{% endfor %}</select></div>
-    <button class="btn grey sm shipment-remove" type="button" title="Убрать материал">×</button>
+    <button class="btn danger icon shipment-remove" type="button" title="Убрать материал">×</button>
   </div>
 </template>
 <template id="shipment-material-template">
@@ -103,91 +103,9 @@
     <div><label>Материал</label><input name="material_name" placeholder="Название"></div>
     <div><label>Количество</label><input name="material_qty" type="number" min="1" max="1000000" inputmode="numeric"></div>
     <div><label>Ед.</label><select name="material_unit">{% for key, title in UNITS.items() %}<option value="{{ key }}">{{ title }}</option>{% endfor %}</select></div>
-    <button class="btn grey sm shipment-remove" type="button" title="Убрать материал">×</button>
+    <button class="btn danger icon shipment-remove" type="button" title="Убрать материал">×</button>
   </div>
 </template>
-<style>
-.sklad-supply-header{display:flex;align-items:center;gap:16px;margin-bottom:14px}
-.sklad-supply-title{margin:0}
-.sklad-incoming-spoiler{margin:0 0 10px;box-shadow:none}
-.sklad-incoming-summary{display:flex;align-items:center;gap:8px;padding:12px 14px}
-.sklad-incoming-summary::after{margin-left:auto}
-.sklad-incoming-count{display:inline-flex;align-items:center;justify-content:center;min-width:23px;height:23px;padding:0 6px;border-radius:999px;background:var(--surface2);color:var(--muted);font-size:12px}
-.sklad-incoming-content{padding:4px 10px 9px}
-.supply-request{padding:9px 12px;margin:7px 0;box-shadow:none;border-radius:10px}
-.supply-request-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-9px -12px 0;padding:11px 12px;border-bottom:1px solid var(--line2);border-radius:9px 9px 0 0;background:#edf3fa;font-size:14px}
-.supply-request-head>b{font-size:17px;font-weight:750;color:var(--blue-d)}
-.sklad-supply-request-date{margin-left:auto;font-size:12px;color:var(--muted)}
-.sklad-supply-request-note{margin:8px 0 4px;font-size:12px}
-.supply-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;padding:10px 0;border-top:1px solid var(--line)}
-.supply-request-head+.supply-item{border-top:0}
-.sklad-supply-item-text{min-width:0;overflow-wrap:anywhere}
-.sklad-supply-item-name{font-size:14px;color:var(--ink)}
-.sklad-supply-item-note{margin-top:3px;font-size:12px;color:var(--muted)}
-.sklad-supply-item-meta{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px;font-size:12px;color:var(--muted)}
-.sklad-supply-item-remaining{font-weight:700;color:var(--ink)}
-.sklad-supply-item-actions{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px}
-.sklad-supply-quantity-field{width:132px;min-width:0}
-.sklad-supply-quantity-field label{margin:0 0 4px;font-size:12px;color:var(--ink)}
-.sklad-supply-quantity{width:100%;height:42px;min-width:0;padding:7px 8px;text-align:center;font-size:14px}
-.btn.grey.sklad-supply-fill-btn{height:42px;min-width:119px;padding:7px 10px;font-size:13px;white-space:nowrap}
-.supply-item.is-selected .sklad-supply-quantity{border-color:#7eb492;background:#f0faf3}
-.btn.grey.sklad-supply-fill-btn.is-filled{color:#a64b4b;border-color:#e5c8c5;background:#fff7f6}
-.btn.grey.sklad-supply-fill-btn.is-filled:hover{background:#f6e5e3}
-.btn.grey.sklad-supply-reject-btn{height:42px;padding:7px 10px;font-size:13px;background:#fff7f6;border-color:#e5c8c5;color:#a64b4b}
-.btn.grey.sklad-supply-reject-btn:hover{background:#f6e5e3;border-color:#d8aaa6;color:#913f3f}
-.btn.grey.sklad-supply-reject-btn:disabled{cursor:default;transform:none}
-.supply-item.is-rejected .sklad-supply-quantity-field,.supply-item.is-rejected .sklad-supply-fill-btn,.supply-item.is-rejected .sklad-supply-item-remaining{display:none}
-.sklad-supply-item-error{grid-column:1 / -1;color:#a64b4b;font-size:12px}
-.sklad-supply-item-error[hidden],.sklad-supply-request-resolution[hidden]{display:none}
-.supply-request.is-completed .tag.urgent{display:none}
-.sklad-supply-note-label{margin-top:16px}
-.sklad-send-supply-btn{margin-top:16px;min-height:52px;font-size:16px}
-.sklad-extra-fields{margin-top:10px}
-.sklad-add-party-btn{width:100%;min-height:54px;margin:4px 0 14px;background:#fff;color:var(--blue-d);border:2px dashed #a8c4e8;font-size:16px}
-.sklad-add-party-btn:hover{background:var(--blue-bg);color:var(--blue-d);border-color:var(--blue)}
-.shipment-party{padding:14px;margin:10px 0;box-shadow:none;border-left:3px solid var(--blue)}
-.sklad-party-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
-.btn.grey.shipment-remove{display:inline-flex;align-items:center;justify-content:center;flex:none;width:48px;height:48px;padding:0;border:1px solid #d8aaa6;border-radius:10px;background:#f6e5e3;color:#9b4141;font-size:25px;line-height:1}
-.btn.grey.shipment-remove:hover{background:#edcfcc;border-color:#c47e78;color:#7c2929}
-.sklad-party-fields{display:grid;grid-template-columns:1fr 1fr 130px;gap:9px}
-.sklad-party-fields label,.shipment-extra-row label{margin-bottom:4px}
-.sklad-party-fields input,.sklad-party-fields select{width:100%}
-.sklad-party-materials{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
-.sklad-party-materials>b{font-size:14px}
-.sklad-add-party-material-btn{margin-top:7px}
-.sklad-unassigned-materials{margin:0 0 14px;box-shadow:none}
-.sklad-unassigned-content{padding:4px 14px 14px}
-.btn.grey.sklad-add-material-btn{display:flex;width:100%;min-height:48px;margin-top:8px;padding:9px 14px;background:#fff;color:var(--blue-d);border:2px dashed #a8c4e8;font-size:15px}
-.btn.grey.sklad-add-material-btn:hover{background:var(--blue-bg);color:var(--blue-d);border-color:var(--blue)}
-.shipment-extra-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) 90px 48px;gap:8px;align-items:end;margin:10px 0}
-.operations{border:0;padding:0;margin:0}.operations legend{font-size:13px;color:var(--muted);font-weight:650;margin-bottom:7px}
-.sklad-party-operations{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
-.sklad-operation-columns,.sklad-operation-row{display:grid;grid-template-columns:24px minmax(0,1fr) 118px;align-items:center;gap:10px}
-.sklad-operation-columns{padding:0 8px 5px;color:var(--muted);font-size:12px;font-weight:600}
-.sklad-operation-columns span:first-child{grid-column:1 / 3}
-.sklad-operation-columns span:last-child{text-align:right}
-.sklad-operation-row{min-height:45px;padding:5px 8px;border-top:1px solid var(--line)}
-.sklad-operation-row:has(.sklad-operation-checkbox:checked){background:#f7fcf9}
-.sklad-operation-checkbox{width:19px;height:19px;margin:0;accent-color:var(--green)}
-.sklad-operation-name{margin:0;color:var(--ink);font-size:14px;font-weight:500;cursor:pointer}
-.sklad-operation-price{width:100%;padding:7px 9px;text-align:right;font-size:14px}
-.sklad-operation-price:disabled{background:var(--surface2);opacity:.6}
-@media(max-width:620px){
- .sklad-supply-header{gap:10px;flex-wrap:wrap}.sklad-supply-title{font-size:21px}
- .supply-item{grid-template-columns:minmax(0,1fr);gap:8px}
- .sklad-supply-item-actions{width:100%}.sklad-supply-quantity-field{flex:1;width:auto;min-width:110px}
- .supply-request{padding:8px}.sklad-incoming-content{padding:3px 6px 7px}
- .supply-request-head{margin:-8px -8px 0;padding:10px 8px}
- .sklad-party-fields{grid-template-columns:1fr 1fr}.sklad-party-fields>div:last-child{grid-column:1 / -1}
- .shipment-extra-row{grid-template-columns:minmax(0,1fr) 78px 48px}
- .shipment-extra-row>div:first-child{grid-column:1 / -1}
- .shipment-extra-row .shipment-remove{grid-column:3;justify-self:end}
- .sklad-operation-columns,.sklad-operation-row{grid-template-columns:21px minmax(0,1fr) 86px;gap:6px}
- .sklad-operation-name{font-size:12px;line-height:1.25}
- .sklad-operation-price{padding:7px 6px;font-size:13px}
-}
-</style>
 <script>
 (function(){
  const form=document.getElementById('supply-form');
@@ -203,6 +121,7 @@
    if(!button)return;
    const filled=Number(input.value)===Number(button.dataset.quantityAll);
    button.classList.toggle('is-filled',filled);
+   button.classList.toggle('danger',filled);
    button.textContent=filled?'Убрать':'Положить всё';
    button.setAttribute('aria-label',(filled?'Убрать из поставки: ':'Положить весь остаток: ')+row.querySelector('.sklad-supply-item-name').textContent);
  }

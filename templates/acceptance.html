@@ -29,7 +29,7 @@
 {% if done %}
 <details>
   <summary>Недавно принятые ({{ done|length }})</summary>
-  <div class="body" style="padding:0">
+  <div class="body flush">
     <table>
       <tr><th>№</th><th>Тип</th><th class="num">Отдано → Принято</th><th>Расхождение</th><th>Принят</th></tr>
       {% for r in done %}
