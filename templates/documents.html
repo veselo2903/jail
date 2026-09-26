@@ -23,6 +23,7 @@
 
 {% if rows %}
 <div class="card flush dq-list {{ 'sklad-requests-list' if role == 'sklad' }}">
+{% if role == 'sklad' %}<div class="sklad-requests-heading">Необработанные входящие заявки от производства</div>{% endif %}
 <table class="dq-table">
   <tr><th>№</th><th>Тип</th><th class="num">Кол-во</th><th>Статус</th><th>Дата</th><th></th></tr>
   {% for x in rows %}
@@ -73,6 +74,7 @@
 
 <style>
 .dq-row{cursor:pointer}
+.sklad-requests-heading{padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface2);color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.02em}
 .dq-date-mobile{display:none}
 .dq-detail[hidden]{display:none}
 .dq-detail-cell{background:var(--surface2);padding:9px 12px}
