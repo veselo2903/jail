@@ -5,10 +5,8 @@
   <div class="dq-item">
     <div class="dq-item-main">
       <span class="dq-item-name">{{ i.item }}</span>
-      {% if i.note %}<div class="small dq-item-note">{{ i.note }}</div>{% endif %}
-    </div>
-    <div class="dq-item-qty">
-      {% if i.qty is not none %}{{ i.qty }}{% if i.unit %} <span class="small">{{ UNITS.get(i.unit, i.unit) }}</span>{% endif %}{% else %}—{% endif %}
+      {% if i.qty is not none %}<span class="dq-item-qty">{{ i.qty }}{% if i.unit %} {{ UNITS.get(i.unit, i.unit) }}{% endif %}</span>{% endif %}
+      {% if i.note %}<span class="small dq-item-note">{{ i.note }}</span>{% endif %}
     </div>
     {% if d.show_result %}
     {% set sent = d.sent_totals.get(i.id, 0) %}
@@ -24,10 +22,10 @@
       {% if i.line_kind == 'pair' %}
       <span class="dq-item-name">{{ i.customer }} — {{ i.model }}</span>
       {% set names = operation_names(i.operation) %}
-      {% if names %}<div class="small dq-item-note">{{ names|join(', ') }}</div>{% endif %}
-      {% else %}<span class="dq-item-name">{{ i.item }}</span>{% endif %}
+      <span class="dq-item-qty">{{ i.collected if i.collected is not none else '—' }} пар</span>
+      {% if names %}<span class="small dq-item-note">{{ names|join(' · ') }}</span>{% endif %}
+      {% else %}<span class="dq-item-name">{{ i.item }}</span><span class="dq-item-qty">{{ i.collected if i.collected is not none else '—' }} {{ UNITS.get(i.unit, i.unit or '') }}</span>{% endif %}
     </div>
-    <div class="dq-item-qty">{{ i.collected if i.collected is not none else '—' }} <span class="small">{{ 'пар' if i.line_kind == 'pair' else UNITS.get(i.unit, i.unit or '') }}</span></div>
   </div>
   {% endfor %}
   {% endif %}
@@ -37,8 +35,8 @@
 {% for entry in d.shipments %}
 <div class="dq-item">
   <div class="dq-item-main">
-    <b>Поставка №{{ entry.s.id }}</b> · {{ entry.s.created_at }}
-    <div class="small">
+    <b>Поставка №{{ entry.s.id }}</b><span class="small">{{ entry.s.created_at }}</span>
+    <span class="small">
       {% for i in entry['items'] %}
         {% if not loop.first %}; {% endif %}
         {% if i.line_kind == 'pair' %}
@@ -49,8 +47,8 @@
           {{ i.item }}: {{ i.qty }} {{ UNITS.get(i.unit, i.unit or '') }}
         {% endif %}
       {% endfor %}
-    </div>
-    {% if entry.s.note %}<div class="small">{{ entry.s.note }}</div>{% endif %}
+    </span>
+    {% if entry.s.note %}<span class="small">{{ entry.s.note }}</span>{% endif %}
   </div>
 </div>
 {% endfor %}

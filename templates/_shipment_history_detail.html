@@ -5,15 +5,16 @@
   <div class="dq-item-main">
     {% if i.line_kind == 'pair' %}
       <span class="dq-item-name">{{ i.customer }} — {{ i.model }}</span>
+      <span class="dq-item-qty">{{ i.qty }} пар</span>
       {% set operations = operation_details(i.operation, i.operation_prices) %}
-      {% if operations %}<div class="small dq-operation-list">
-        {% for op in operations %}<div>{{ op.name }}{% if op.price_kopeks is not none %} — {{ op.price_kopeks|rubles }} ₽/пару{% endif %}</div>{% endfor %}
-      </div>{% endif %}
+      {% if operations %}<span class="small dq-operation-list">
+        {% for op in operations %}<span>{{ op.name }}{% if op.price_kopeks is not none %} — {{ op.price_kopeks|rubles }} ₽/пару{% endif %}</span>{% endfor %}
+      </span>{% endif %}
     {% else %}
       <span class="dq-item-name">{{ i.item }}</span>
+      <span class="dq-item-qty">{{ i.qty }} {{ UNITS.get(i.unit, i.unit or '') }}</span>
     {% endif %}
   </div>
-  <div class="dq-item-qty">{{ i.qty }} {{ 'пар' if i.line_kind == 'pair' else UNITS.get(i.unit, i.unit or '') }}</div>
 </div>
 {% if i.line_kind == 'pair' %}
   {% for material in x.detail['items'] if material.party_item_id == i.id %}
