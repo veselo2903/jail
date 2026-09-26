@@ -113,16 +113,16 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
 
     # Первая отправка частичная. Остаток остаётся виден; повторная отправка закрывает заявку.
     partial = post("/requests/supply/new", {
-        f"ship_{item_ids[0]}": "1", f"qty_{item_ids[0]}": "4"})
+        f"qty_{item_ids[0]}": "4"})
     assert partial.status_code == 302 and "sh-" in partial.location
     assert one("SELECT status FROM requests WHERE id=?", (req_id,))[0] == "progress"
     assert count("shipments") == 1
     assert one("SELECT qty FROM shipment_items WHERE request_item_id=?", (item_ids[0],))[0] == 4
-    assert "осталось 6" in client.get("/requests/supply/new").text
+    assert "Осталось 6" in client.get("/requests/supply/new").text
     assert client.get("/login/proizv").status_code == 302
     assert post(f"/requests/{req_id}/delete").status_code == 403
     assert "Отправлена частично" in client.get("/requests").text
-    assert "отправлено 4" in client.get("/requests").text
+    assert "Отправлено 4" in client.get("/requests").text
     assert post("/requests/new", {"item": ["Подкладка"], "qty": ["2"],
                                   "unit": ["sht"], "unit_custom": [""],
                                   "item_note": [""]}).status_code == 302

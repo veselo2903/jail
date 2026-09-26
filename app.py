@@ -1231,9 +1231,9 @@ def _send_shipment(req_id=None, multi=False):
         target_id = target["id"]
         for entry in _needed_items(target_id):
             i, remaining = entry["row"], entry["remaining"]
-            if not request.form.get("ship_%d" % i["id"]):
-                continue
             raw = (request.form.get("qty_%d" % i["id"]) or "").strip()
+            if not request.form.get("ship_%d" % i["id"]) and not (multi and raw):
+                continue
             try:
                 qty = int(raw) if raw else remaining
             except ValueError:

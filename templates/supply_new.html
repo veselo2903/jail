@@ -22,8 +22,22 @@
     {% for e in entry.need %}
     {% set i = e.row %}
     <div class="supply-item sklad-supply-item" data-item-id="{{ i.id }}">
-      <label class="supply-choice sklad-supply-choice"><input class="sklad-supply-checkbox" type="checkbox" name="ship_{{ i.id }}" value="1" {{ 'checked' if i.placed }}><span class="sklad-supply-item-text"><b>{{ i.item }}</b>{% if i.urgent %} <span class="tag urgent">Срочно</span>{% endif %}{% if i.note %}<small>{{ i.note }}</small>{% endif %}<small class="sklad-supply-item-meta">{% if i.qty is not none %}Запрошено {{ i.qty }} {{ UNITS.get(i.unit, i.unit or '') }}{% endif %}{% if e.sent %} · отправлено {{ e.sent }}{% endif %}{% if e.remaining is not none and e.remaining > 0 %} · осталось {{ e.remaining }}{% endif %}</small></span></label>
-      <input class="sklad-supply-quantity" name="qty_{{ i.id }}" type="number" min="1" max="1000000" inputmode="numeric" value="{{ i.collected if i.placed and i.collected is not none else '' }}" placeholder="Кладу">
+      <div class="sklad-supply-item-text">
+        <b class="sklad-supply-item-name">{{ i.item }}</b>
+        {% if i.note %}<div class="sklad-supply-item-note">{{ i.note }}</div>{% endif %}
+        <div class="sklad-supply-item-meta">
+          {% if i.qty is not none %}<span>Запрошено {{ i.qty }} {{ UNITS.get(i.unit, i.unit or '') }}</span>{% endif %}
+          {% if e.sent %}<span>Отправлено {{ e.sent }} {{ UNITS.get(i.unit, i.unit or '') }}</span>{% endif %}
+          {% if e.sent and e.remaining is not none and e.remaining > 0 %}<span class="sklad-supply-item-remaining">Осталось {{ e.remaining }} {{ UNITS.get(i.unit, i.unit or '') }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="sklad-supply-item-actions">
+        <div class="sklad-supply-quantity-field">
+          <label for="supply-qty-{{ i.id }}">В поставку{% if i.unit %}, {{ UNITS.get(i.unit, i.unit) }}{% endif %}</label>
+          <input class="sklad-supply-quantity" id="supply-qty-{{ i.id }}" name="qty_{{ i.id }}" type="number" min="1" max="1000000" inputmode="numeric" value="{{ i.collected if i.placed and i.collected is not none else '' }}" placeholder="Не кладу" aria-label="Количество в поставку: {{ i.item }}{% if i.unit %}, {{ UNITS.get(i.unit, i.unit) }}{% endif %}">
+        </div>
+        {% if e.remaining is not none and e.remaining > 0 %}<button class="btn grey sm sklad-supply-fill-btn" type="button" data-quantity-all="{{ e.remaining }}" aria-label="Положить весь остаток: {{ i.item }}">Положить всё</button>{% endif %}
+      </div>
     </div>
     {% endfor %}
   </section>
@@ -102,14 +116,21 @@
 .supply-request-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px}
 .supply-request-date{margin-left:auto;font-size:12px}
 .sklad-supply-request-note{margin:2px 0 4px;font-size:12px}
-.supply-item{display:grid;grid-template-columns:minmax(0,1fr) 104px;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
+.supply-item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;padding:10px 0;border-top:1px solid var(--line)}
 .supply-request-head+.supply-item{margin-top:6px}
-.supply-choice{display:flex;align-items:flex-start;gap:9px;min-width:0;cursor:pointer;margin:0;color:var(--ink);font-size:14px}
-.supply-choice input{width:18px;height:18px;accent-color:var(--green);flex:none;margin:2px 0 0}
-.sklad-supply-item-text{min-width:0}
-.supply-choice small{display:block;color:var(--muted);font-weight:400;font-size:12px;line-height:1.3}
-.supply-choice .tag{vertical-align:middle}
-.sklad-supply-quantity{width:104px;min-width:0;padding:7px 8px;text-align:center}
+.sklad-supply-item-text{min-width:0;overflow-wrap:anywhere}
+.sklad-supply-item-name{font-size:14px;color:var(--ink)}
+.sklad-supply-item-note{margin-top:3px;font-size:12px;color:var(--muted)}
+.sklad-supply-item-meta{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px;font-size:12px;color:var(--muted)}
+.sklad-supply-item-remaining{font-weight:700;color:var(--ink)}
+.sklad-supply-item-actions{display:flex;align-items:flex-end;gap:8px}
+.sklad-supply-quantity-field{width:132px;min-width:0}
+.sklad-supply-quantity-field label{margin:0 0 4px;font-size:12px;color:var(--ink)}
+.sklad-supply-quantity{width:100%;height:42px;min-width:0;padding:7px 8px;text-align:center;font-size:14px}
+.btn.grey.sklad-supply-fill-btn{height:42px;min-width:119px;padding:7px 10px;font-size:13px;white-space:nowrap}
+.supply-item.is-selected .sklad-supply-quantity{border-color:#7eb492;background:#f0faf3}
+.btn.grey.sklad-supply-fill-btn.is-filled{color:#a64b4b;border-color:#e5c8c5;background:#fff7f6}
+.btn.grey.sklad-supply-fill-btn.is-filled:hover{background:#f6e5e3}
 .sklad-supply-note-label{margin-top:16px}
 .sklad-send-supply-btn{margin-top:16px;min-height:52px;font-size:16px}
 .sklad-extra-fields{margin-top:10px}
@@ -144,7 +165,8 @@
 .sklad-operation-price:disabled{background:var(--surface2);opacity:.6}
 @media(max-width:620px){
  .sklad-supply-header{gap:10px;flex-wrap:wrap}.sklad-supply-title{font-size:21px}
- .supply-item{grid-template-columns:minmax(0,1fr) 86px;gap:6px}.sklad-supply-quantity{width:86px}
+ .supply-item{grid-template-columns:minmax(0,1fr);gap:8px}
+ .sklad-supply-item-actions{width:100%}.sklad-supply-quantity-field{flex:1;width:auto}
  .supply-request{padding:8px}.sklad-incoming-content{padding:3px 6px 7px}
  .sklad-party-fields{grid-template-columns:1fr 1fr}.sklad-party-fields>div:last-child{grid-column:1 / -1}
  .shipment-extra-row{grid-template-columns:minmax(0,1fr) 78px 48px}
@@ -162,6 +184,20 @@
  const partyMaterialTemplate=document.getElementById('shipment-party-material-template');
  const materialTemplate=document.getElementById('shipment-material-template');
  let nextParty=0;
+ function syncRequestedRow(row){
+   const input=row.querySelector('.sklad-supply-quantity');
+   row.classList.toggle('is-selected',Number(input.value)>0);
+   const button=row.querySelector('[data-quantity-all]');
+   if(!button)return;
+   const filled=Number(input.value)===Number(button.dataset.quantityAll);
+   button.classList.toggle('is-filled',filled);
+   button.textContent=filled?'Убрать':'Положить всё';
+   button.setAttribute('aria-label',(filled?'Убрать из поставки: ':'Положить весь остаток: ')+row.querySelector('.sklad-supply-item-name').textContent);
+ }
+ form.querySelectorAll('.sklad-supply-item').forEach(syncRequestedRow);
+ form.addEventListener('input',function(e){
+   if(e.target.classList.contains('sklad-supply-quantity'))syncRequestedRow(e.target.closest('.sklad-supply-item'));
+ });
  form.querySelector('[data-add-party]').addEventListener('click',function(){
    const id=String(nextParty++),node=partyTemplate.content.cloneNode(true);
    node.querySelectorAll('[name],[id],[for]').forEach(function(element){
@@ -183,6 +219,12 @@
    }
  });
  form.addEventListener('click',function(e){
+   const fillButton=e.target.closest('[data-quantity-all]');
+   if(fillButton){
+     const row=fillButton.closest('.sklad-supply-item'),input=row.querySelector('.sklad-supply-quantity');
+     input.value=Number(input.value)===Number(fillButton.dataset.quantityAll)?'':fillButton.dataset.quantityAll;
+     syncRequestedRow(row);
+   }
    if(e.target.matches('[data-add-party-material]')){
      const party=e.target.closest('.shipment-party'),id=party.querySelector('[name="party_id"]').value;
      const node=partyMaterialTemplate.content.cloneNode(true);
@@ -200,13 +242,13 @@
    }
  });
  form.addEventListener('submit',function(e){
-   const requested=form.querySelector('.supply-choice input:checked');
+   const requested=Array.from(form.querySelectorAll('.sklad-supply-quantity')).some(function(input){return Number(input.value)>0});
    const unassigned=Array.from(form.querySelectorAll('[name="material_name"]')).some(function(x){return x.value.trim()});
    const party=Array.from(form.querySelectorAll('.shipment-party')).some(function(row){
      return row.querySelector('[name^="party_qty_"]').value.trim()||row.querySelector('.sklad-operation-checkbox:checked')||
        Array.from(row.querySelectorAll('[name^="party_material_name_"]')).some(function(x){return x.value.trim()});
    });
-   if(!requested&&!unassigned&&!party){e.preventDefault();alert('Отметьте позицию заявки или добавьте партию либо материал.');return}
+   if(!requested&&!unassigned&&!party){e.preventDefault();alert('Укажите количество в поставку или добавьте партию либо материал.');return}
    const missing=Array.from(form.querySelectorAll('.shipment-party')).find(function(row){
      return row.querySelector('[name^="party_qty_"]').value.trim()&&!row.querySelector('.sklad-operation-checkbox:checked');
    });
