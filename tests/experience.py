@@ -13,6 +13,8 @@ with tempfile.TemporaryDirectory(prefix='jail-experience-') as folder:
     os.environ['JAIL_DB_PATH']=str(Path(folder)/'test.db')
     os.environ['JAIL_SECRET_KEY']='experience-isolated'
     from jail.app import app,db
+    from fixtures import reference_data
+    reference_data(db)
     app.testing=True
     client=app.test_client()
     assert client.get('/login/proizv').location.endswith('/proizv/batches')

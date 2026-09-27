@@ -789,6 +789,7 @@ def refs():
         "refs.html", show_arch=show_arch,
         customers=load("customers"), models=load("models"),
         workers=load("workers"), can_edit=can_edit_refs(),
+        has_archived=any(g.db.execute("SELECT 1 FROM "+table+" WHERE archived=1 LIMIT 1").fetchone() for table in ("customers","models","workers")),
     )
 
 

@@ -8,9 +8,11 @@
           {% if r.archived %}name="restore" value="1"{% endif %}>{{ 'вернуть' if r.archived else 'в архив' }}</button>
 {% endmacro %}
 
+<header class="biz-header"><h2>Справочники</h2></header>
+
 {# Заказчики и модели: одинаковые блоки, отличаются названием справочника #}
 {% macro name_section(table, title, placeholder, items) %}
-<section class="refs-section refs-{{ table }}" id="refs-{{ table }}">
+{% if items or can_edit %}<section class="refs-section refs-{{ table }}" id="refs-{{ table }}">
   <h3 class="refs-title">{{ title }}</h3>
   {% if can_edit %}
   <div class="refs-add card">
@@ -36,13 +38,13 @@
     </div>
     {% endfor %}
   </div>{% endif %}
-</section>
+</section>{% endif %}
 {% endmacro %}
 
 {{ name_section('customers', 'Заказчики', 'Новый заказчик', customers) }}
 {{ name_section('models', 'Модели', 'Новая модель', models) }}
 
-<section class="refs-section refs-workers" id="refs-workers">
+{% if workers or can_edit %}<section class="refs-section refs-workers" id="refs-workers">
   <h3 class="refs-title">Работники</h3>
   {% if can_edit %}
   <div class="refs-add card">
@@ -68,15 +70,15 @@
     </div>
     {% endfor %}
   </div>{% endif %}
-</section>
+</section>{% endif %}
 
-<div class="refs-archive-toggle row">
+{% if has_archived %}<div class="refs-archive-toggle row">
   {% if show_arch %}
     <a class="btn grey sm" href="{{ url_for('refs') }}">Скрыть архив</a>
   {% else %}
     <a class="btn grey sm" href="{{ url_for('refs', arch='1') }}">Показать архив</a>
   {% endif %}
-</div>
+</div>{% endif %}
 
 
 {% endblock %}

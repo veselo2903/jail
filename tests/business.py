@@ -12,6 +12,8 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     os.environ['JAIL_DB_PATH']=str(Path(folder)/'test.db')
     os.environ['JAIL_SECRET_KEY']='test-only-business'
     from jail.app import app,db
+    from fixtures import reference_data
+    reference_data(db)
     from jail import business_core as core
     app.testing=True
     client=app.test_client()

@@ -13,6 +13,8 @@ with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
     os.environ["JAIL_DB_PATH"] = str(pathlib.Path(temporary) / "jail.db")
     os.environ["JAIL_SECRET_KEY"] = "local-tests-only-secret"
     from jail.app import app, db
+    from fixtures import reference_data
+    reference_data(db)
 
     class RoleClient:
         ROLES = ("sklad", "proizv", "director")

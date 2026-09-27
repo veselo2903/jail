@@ -383,31 +383,6 @@ def _init_db_locked():
         from business_schema import migrate
     migrate(conn)
 
-    # 6 операций (названия временные, правятся позже)
-    cur = conn.execute("SELECT COUNT(*) AS c FROM operations")
-    if cur.fetchone()["c"] == 0:
-        for i in range(1, 7):
-            conn.execute(
-                "INSERT INTO operations (ord, name) VALUES (?, ?)",
-                (i, f"Операция {i}"),
-            )
-
-    # Стартовые заглушки (правятся/архивируются через интерфейс)
-    cur = conn.execute("SELECT COUNT(*) AS c FROM customers")
-    if cur.fetchone()["c"] == 0:
-        for n in ("Заказчик 1", "Заказчик 2", "Заказчик 3"):
-            conn.execute("INSERT INTO customers (name) VALUES (?)", (n,))
-
-    cur = conn.execute("SELECT COUNT(*) AS c FROM models")
-    if cur.fetchone()["c"] == 0:
-        for n in ("Модель 1", "Модель 2", "Модель 3"):
-            conn.execute("INSERT INTO models (name) VALUES (?)", (n,))
-
-    cur = conn.execute("SELECT COUNT(*) AS c FROM workers")
-    if cur.fetchone()["c"] == 0:
-        conn.execute("INSERT INTO workers (number, name) VALUES (?, ?)", ("1", "Работник 1"))
-        conn.execute("INSERT INTO workers (number, name) VALUES (?, ?)", ("2", "Работник 2"))
-
     conn.commit()
     conn.close()
 
