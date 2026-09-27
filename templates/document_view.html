@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Заявка №{{ d.id }} — jail{% endblock %}
+{% block title %}Передача №{{ d.id }} — jail{% endblock %}
 {% block content %}
 
 <div class="card">
   <div class="row row-between">
     <div>
-      <b>Заявка №{{ d.id }}</b>
+      <b>Передача №{{ d.id }}</b>
       <span class="tag {{ d.status }}">{{ STATUS_LABEL[d.status] }}</span>
     </div>
-    <a class="small" href="{{ url_for('documents') }}">к списку</a>
+    <a class="btn grey" href="{{ url_for('documents') }}">к списку</a>
   </div>
   <div class="small mt-xs">{{ KINDS[d.kind][0] }}</div>
   {% if d.note %}<div class="small">Примечание: {{ d.note }}</div>{% endif %}
@@ -26,7 +26,7 @@
 {% else %}
 <div class="card hero">
   <div class="big">{{ sent }}</div>
-  <div class="lbl">пар в заявке</div>
+  <div class="lbl">пар в передаче</div>
 </div>
 {% endif %}
 
@@ -84,15 +84,15 @@
   </table>
 </div>
 {% if d.status=='sent' %}
-<div class="card small">Заявка отправлена. Ожидает приёмки другой стороной.</div>
+<div class="card small">Передача отправлена. Ожидает приёмки другой стороной.</div>
 {% endif %}
 {% endif %}
 
 {% if can_delete %}
 <div class="card">
   <form method="post" action="{{ url_for('doc_delete', doc_id=d.id) }}"
-        onsubmit="return confirm('Удалить заявку №{{ d.id }} безвозвратно?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="btn danger" type="submit">Удалить заявку</button>
+        onsubmit="return confirm('Удалить передачу №{{ d.id }} безвозвратно?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn danger" type="submit">Удалить передачу</button>
   </form>
 </div>
 {% endif %}

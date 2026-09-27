@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}jail{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=VERSION) }}">
+<script>
+/* Быстрый повторный переход может отменить браузерную анимацию. */
+['pageswap','pagereveal'].forEach(function(name){addEventListener(name,function(event){
+  if(event.viewTransition)event.viewTransition.ready.catch(function(){});
+})});
+</script>
 </head>
 <body>
 {% set ep = request.endpoint %}
@@ -12,7 +18,7 @@
 {% macro menu_link(endpoint,title,icon,active=false) %}<a class="nav {{ 'on' if active }}" href="{{ url_for(endpoint) }}"><svg viewBox="0 0 24 24">{{ icon|safe }}</svg>{{ title }}</a>{% endmacro %}
 <nav class="side">
   {% if role in ['sklad','director'] %}{{ menu_link('business.orders','Заказы','<path d="M5 3h14v18H5zM8 8h8M8 12h8M8 16h5"/>',ep and ep.startswith('business.order')) }}{% endif %}
-  {{ menu_link('business.batches','Производство','<path d="M3 21V9l6 3V8l6 3V3h6v18zM6 17h2m4 0h2m4 0h2"/>',ep in ['business.batches','business.batch_detail']) }}
+  {{ menu_link('business.batches','Партии','<path d="M3 21V9l6 3V8l6 3V3h6v18zM6 17h2m4 0h2m4 0h2"/>',ep in ['business.batches','business.batch_detail']) }}
   <a class="nav {{ 'on' if ep in ['documents','doc_view','doc_new','request_new','request_edit','docs_collect','supply_new'] }}" href="{{ url_for('documents') }}"><svg viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6zM14 2v5h5M9 13h6M9 17h4"/></svg>Заявки{% if role=='sklad' and req_open %}<span class="b">{{ req_open }}</span>{% endif %}</a>
   {% if role=='proizv' %}<a class="nav {{ 'on' if ep=='acceptance' }}" href="{{ url_for('acceptance') }}"><svg viewBox="0 0 24 24"><path d="M4 13l2 6h12l2-6M4 13h5l1 2h4l1-2h5M12 3v7m0 0l-3-3m3 3l3-3"/></svg>Приёмка{% if pending_accept %}<span class="b">{{ pending_accept }}</span>{% endif %}</a>{% endif %}
   <details class="side-more" open>
@@ -20,7 +26,7 @@
     <div class="side-more-panel">
       {% if role in ['sklad','director'] %}
       {{ menu_link('business.inventory','Материалы','<path d="M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 5 9-5M12 12v9"/>',ep=='business.inventory') }}
-      {{ menu_link('business.payroll','Расчёты','<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M15 14h3"/>',ep in ['business.payroll','business.worker']) }}
+      {{ menu_link('business.payroll','Зарплата','<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M15 14h3"/>',ep in ['business.payroll','business.worker']) }}
       {% endif %}
       {% if role=='sklad' %}{{ menu_link('acceptance','Приёмка','<path d="M4 13l2 6h12l2-6M12 3v7m0 0l-3-3m3 3l3-3"/>',ep=='acceptance') }}{% endif %}
       {{ menu_link('discrepancies','Расхождения','<path d="M12 4l9 16H3zM12 10v4M12 17h.01"/>',ep=='discrepancies') }}
@@ -32,8 +38,8 @@
 {% endif %}
 <div class="app">
   <div class="wrap">
-    {% with msgs = get_flashed_messages() %}
-      {% for m in msgs %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for category,m in msgs %}<div class="flash {{ 'flash-error' if category=='error' }}" role="{{ 'alert' if category=='error' else 'status' }}">{{ m }}</div>{% endfor %}
     {% endwith %}
     {% block content %}{% endblock %}
   </div>
@@ -49,7 +55,7 @@
   }
   const warmed=new Set();
   function prefetch(link){
-    if(!link||warmed.has(link.href)||link.origin!==location.origin||link.href===location.href||
+    if(!link||warmed.has(link.href)||link.origin!==location.origin||(link.pathname===location.pathname&&link.search===location.search)||
        link.target==='_blank'||link.hasAttribute('download')||link.closest('form')||
        link.classList.contains('side-user-logout')) return;
     warmed.add(link.href);
@@ -66,5 +72,9 @@
   }
 })();
 </script>
+{% if ep and (ep.startswith('business.') or ep=='supply_new') %}
+{% if retry_fields %}<script type="application/json" id="biz-retry-fields">{{ retry_fields|tojson }}</script>{% endif %}
+<script src="{{ url_for('static',filename='business.js',v=VERSION) }}" defer></script>
+{% endif %}
 </body>
 </html>

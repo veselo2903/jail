@@ -18,9 +18,11 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 if __package__:
     from . import db
     from . import business_core as business_core
+    from . import experience as experience
 else:
     import db
     import business_core as business_core
+    import experience as experience
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("JAIL_SECRET_KEY")
@@ -289,7 +291,7 @@ def can_see_discrepancies():
 @app.route("/login")
 def login():
     if session.get("role") in ROLES:
-        return redirect(url_for("documents"))
+        return redirect(url_for("index"))
     return render_template("login.html")
 
 
@@ -299,6 +301,8 @@ def login_as(role):
         session["role"] = role
         if role == "director":
             return redirect(url_for("overview"))
+        if role == "proizv":
+            return redirect(url_for("business.batches"))
     return redirect(url_for("documents"))
 
 
@@ -313,6 +317,8 @@ def logout():
 def index():
     if session["role"] == "director":
         return redirect(url_for("overview"))
+    if session["role"] == "proizv":
+        return redirect(url_for("business.batches"))
     return redirect(url_for("documents"))
 
 
@@ -492,7 +498,7 @@ def docs_collect():
 def supply_new():
     if session["role"] != "sklad":
         abort(403)
-    if request.method == "POST":
+    if request.method == "POST" and not getattr(g,"render_failed_form",False):
         return _send_shipment(multi=True)
     cond, args = _sklad_visible_sql()
     reqs = g.db.execute(
@@ -1238,10 +1244,16 @@ def _send_shipment(req_id=None, multi=False):
     if session.get("role") != "sklad":
         abort(403)
     back = url_for("supply_new") if multi else _req_row(req_id) if req_id else url_for("documents")
+    def fail(message):
+        g.db.rollback()
+        flash(message, 'error')
+        if multi and not experience.remember_form():
+            g.render_failed_form=True
+            return supply_new()
+        return redirect(back)
     token = (request.form.get("send_token") or "").strip()
     if not token or len(token) > 128:
-        flash("Обновите страницу и повторите отправку.")
-        return redirect(back)
+        return fail("Обновите страницу и повторите отправку.")
     g.db.execute("BEGIN IMMEDIATE")
     existing = g.db.execute(
         "SELECT id FROM shipments WHERE client_token=?", (token,)).fetchone()
@@ -1275,11 +1287,9 @@ def _send_shipment(req_id=None, multi=False):
             except (ValueError,business_core.RuleError):
                 qty = None
             if qty is None or not 0 < qty <= 1_000_000:
-                flash("Для отмеченной позиции укажите положительное количество.")
-                return redirect(back)
+                return fail("Для отмеченной позиции укажите положительное количество.")
             if remaining == 0:
-                flash("Эта позиция уже обработана.")
-                return redirect(back)
+                return fail("Эта позиция уже обработана.")
             items.append(dict(kind="need", item=i["item"], qty=qty, unit=i["unit"],
                               item_type=i["item_type"], customer_id=None, model_id=None,
                               operation=None, request_item_id=i["id"],
@@ -1300,12 +1310,10 @@ def _send_shipment(req_id=None, multi=False):
             affected.add(req_id)
     extras, error = _parse_party_shipment_items() if multi else _parse_extra_shipment_items()
     if error:
-        flash(error)
-        return redirect(back)
+        return fail(error)
     items.extend(extras)
     if not items:
-        flash("Добавьте хотя бы одну позицию для отправки.")
-        return redirect(back)
+        return fail("Добавьте хотя бы одну позицию для отправки.")
     note = (request.form.get("ship_note") or "").strip() or None
     parent_req_id = req_id if not multi else None
     try:
@@ -1349,8 +1357,7 @@ def _send_shipment(req_id=None, multi=False):
                 party_items[party_index] = inserted.lastrowid
     except (business_core.RuleError,sqlite3.IntegrityError) as exc:
         g.db.rollback()
-        flash(str(exc) if isinstance(exc,business_core.RuleError) else "Проверьте материал и его владельца.")
-        return redirect(back)
+        return fail(str(exc) if isinstance(exc,business_core.RuleError) else "Проверьте материал и его владельца.")
     incomplete = False
     for target_id in affected:
         complete = _resolve_request(target_id)

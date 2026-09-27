@@ -5,11 +5,13 @@ from decimal import Decimal
 import json
 import secrets
 import sqlite3
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, current_app, flash, g, redirect, render_template, request, session, url_for
 if __package__:
     from . import business_core as core
+    from . import experience as ux
 else:
     import business_core as core
+    import experience as ux
 
 bp=Blueprint('business',__name__)
 PREFIX='/<any(sklad,proizv,director):role_url>'
@@ -40,9 +42,15 @@ def mutate(action, target, success='Сохранено.'):
         if isinstance(result,str): target=result
         flash(success)
     except core.RuleError as exc:
-        g.db.rollback(); flash(str(exc))
+        g.db.rollback(); flash(str(exc), 'error')
+        if not ux.remember_form():
+            g.render_failed_form=True
+            return current_app.view_functions[request.endpoint](**request.view_args)
     except sqlite3.IntegrityError:
-        g.db.rollback(); flash('Такая запись уже существует или связана с другими данными.')
+        g.db.rollback(); flash('Такая запись уже существует или связана с другими данными.', 'error')
+        if not ux.remember_form():
+            g.render_failed_form=True
+            return current_app.view_functions[request.endpoint](**request.view_args)
     return redirect(target)
 
 
@@ -78,7 +86,7 @@ def quantity(value):
 @bp.app_context_processor
 def context():
     return dict(manager=session.get('role') in MANAGERS, business_token=lambda:secrets.token_urlsafe(24),
-                business_today=core.today().isoformat(), operation_modes=MODES, batch_statuses=STATUSES, movement_names=MOVES)
+                business_today=core.today().isoformat(), retry_fields=ux.retry_form(), operation_modes=MODES, batch_statuses=STATUSES, movement_names=MOVES)
 
 
 @bp.route(PREFIX+'/orders')
@@ -94,22 +102,23 @@ def orders():
 @bp.route(PREFIX+'/orders/new',methods=['GET','POST'])
 @access(True)
 def order_new():
-    if request.method=='POST':
+    if request.method=='POST' and not getattr(g,'render_failed_form',False):
         try:
             g.db.execute('BEGIN IMMEDIATE')
             oid=core.create_order(g.db,request.form,session['role'])
             g.db.commit(); flash('Заказ создан. Для каждой модели подготовлена партия.')
-            return redirect(url_for('business.order_detail',oid=oid))
+            batches=rows('SELECT id FROM production_batches WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=?)',(oid,))
+            return redirect(url_for('business.batch_detail',bid=batches[0]['id'])) if len(batches)==1 else redirect(url_for('business.order_detail',oid=oid))
         except (core.RuleError,sqlite3.IntegrityError) as exc:
-            g.db.rollback(); flash(str(exc) if isinstance(exc,core.RuleError) else 'Проверьте модель и заказчика.')
-    return render_template('business/order_new.html',customers=choices('customers'),models=choices('models'),form=request.form)
+            g.db.rollback(); flash(str(exc) if isinstance(exc,core.RuleError) else 'Проверьте модель и заказчика.', 'error')
+    return render_template('business/order_new.html',customers=choices('customers'),models=choices('models'),form=request.form, position_rows=[{key:request.form.getlist(key)[n] if n<len(request.form.getlist(key)) else '' for key in ('qty','model_id','new_model','price','quantity_unit','price_kind','price_unit','settlement','specification')} for n in range(len(request.form.getlist('qty')))])
 
 
 @bp.route(PREFIX+'/orders/<int:oid>',methods=['GET','POST'])
 @access(True)
 def order_detail(oid):
     order=core.require(g.db,'orders',oid)
-    if request.method=='POST':
+    if request.method=='POST' and not getattr(g,'render_failed_form',False):
         def change():
             action=request.form.get('action')
             token=request.form.get('token','')
@@ -152,14 +161,21 @@ def batches():
     show=request.args.get('archive')=='1'
     condition=" WHERE b.status IN ('closed','canceled')" if show else " WHERE b.status NOT IN ('closed','canceled')"
     data=rows(batch_title_query()+condition+' ORDER BY b.due_date IS NULL,b.due_date,b.id DESC')
-    return render_template('business/batches.html',batches=data,archive=show)
+    overview=[]
+    for row in data:
+        entry=dict(row);tasks=core.task_rows(g.db,row['id'])
+        entry['tasks_total']=len([t for t in tasks if t['mode']!='skip'])
+        entry['tasks_done']=len([t for t in tasks if t['mode']!='skip' and t['done']>=t['qty_pairs']])
+        entry['next_label']='Настроить задания' if not tasks and session['role'] in MANAGERS else 'Ожидает заданий склада' if not tasks else 'Задания выполнены' if entry['tasks_done']==entry['tasks_total'] else str(entry['tasks_done'])+' из '+str(entry['tasks_total'])+' операций выполнено'
+        overview.append(entry)
+    return render_template('business/batches.html',batches=overview,archive=show)
 
 
 @bp.route(PREFIX+'/batches/<int:bid>',methods=['GET','POST'])
 @access()
 def batch_detail(bid):
     b=core.require(g.db,'production_batches',bid)
-    if request.method=='POST':
+    if request.method=='POST' and not getattr(g,'render_failed_form',False):
         action=request.form.get('action')
         if action not in ('work','output','material_move') and session['role'] not in MANAGERS: abort(403)
         if action=='material_move' and session['role'] not in MANAGERS and request.form.get('kind') not in ('consume','return','loss'): abort(403)
@@ -172,13 +188,17 @@ def batch_detail(bid):
                 if not selected: raise core.RuleError('Выберите хотя бы одну операцию.')
                 for opid in selected:
                     core.add_operation(g.db,bid,dict(operation_id=opid,rate=f.get('rate_'+opid,''),minutes=f.get('minutes_'+opid,''),mode=f.get('mode_'+opid,'internal')),actor)
-            elif action=='operation_edit': core.update_operation(g.db,bid,core.integer(f.get('task_id')),f,actor)
+            elif action=='operation_edit':
+                task=core.require(g.db,'batch_operations',core.integer(f.get('task_id')))
+                fields=f.to_dict()
+                if task['rate_cents'] is None and fields.get('rate') and not fields.get('reason'): fields['reason']='Первичная расценка'
+                core.update_operation(g.db,bid,task['id'],fields,actor)
             elif action=='template': core.save_template(g.db,bid)
             elif action=='split':
                 newbid=core.split_batch(g.db,bid,f,actor)
                 flash('Создана партия №'+str(newbid)+'. Назначения для обеих партий задайте заново.')
                 return url_for('business.batch_detail',bid=newbid)
-            elif action=='material': core.plan_material(g.db,bid,f)
+            elif action=='material': ux.plan(g.db,bid,f)
             elif action=='no_materials':
                 g.db.execute('UPDATE production_batches SET no_materials=1 WHERE id=?',(bid,))
                 core.audit(g.db,actor,'no_materials',bid,{'reason':'Материалы для партии не требуются'})
@@ -187,9 +207,8 @@ def batch_detail(bid):
                 g.db.execute('DELETE FROM batch_material_plan WHERE id=? AND batch_id=?',(core.integer(f.get('plan_id')),bid))
             elif action=='unreserve': g.db.execute('UPDATE batch_material_plan SET reserved_milli=0 WHERE id=? AND batch_id=?',(core.integer(f.get('plan_id')),bid))
             elif action=='material_move':
-                form=f.to_dict(); form['batch_id']=str(bid)
-                core.inventory_move(g.db,form,actor)
-            elif action=='work': core.accept_work(g.db,bid,f,actor)
+                ux.receipt(g.db,f,actor,bid)
+            elif action=='work': ux.work(g.db,bid,f,actor)
             elif action=='output': core.record_output(g.db,bid,f,actor)
             elif action=='reverse':
                 a=core.require(g.db,'work_acceptances',core.integer(f.get('acceptance_id')))
@@ -204,7 +223,7 @@ def batch_detail(bid):
                 planned=core.integer(f.get('qty')) if f.get('qty') else None
                 if planned and planned>t['qty_pairs']: raise core.RuleError('Назначение превышает объём операции.')
                 if not f.get('override') and not g.db.execute('SELECT 1 FROM worker_skills WHERE worker_id=? AND operation_id=?',(wid,t['operation_id'])).fetchone():
-                    raise core.RuleError('Для сотрудника не отмечен навык. Укажите навык в «Расчётах» или отметьте назначение без навыка.')
+                    raise core.RuleError('Для сотрудника не отмечен навык. Укажите навык в разделе «Зарплата» или отметьте назначение без навыка.')
                 g.db.execute('''INSERT INTO batch_assignments(batch_operation_id,worker_id,hours_milli,planned_pairs) VALUES (?,?,?,?)
                     ON CONFLICT(batch_operation_id,worker_id) DO UPDATE SET hours_milli=excluded.hours_milli,planned_pairs=excluded.planned_pairs''',(tid,wid,hours,planned))
             elif action=='unassign':
@@ -243,7 +262,7 @@ def batch_detail(bid):
                     g.db.execute("UPDATE orders SET status='completed' WHERE id=?",(oid[0],))
                 core.audit(g.db,actor,'batch_close',bid,fin)
             else: raise core.RuleError('Неизвестное действие.')
-        return mutate(change,url_for('business.batch_detail',bid=bid), 'Изменения сохранены.')
+        return mutate(change,url_for('business.batch_detail',bid=bid),{'work':'Работа записана. Оплата начислена сотрудникам.', 'operations_bulk':'Операции добавлены в задания партии.', 'material':'Материал сохранён в плане партии.', 'material_move':'Движение записано. Остатки обновлены.', 'output':'Выпуск готовой обуви записан.', 'delivery':'Отгрузка записана. Отметьте приёмку после получения обуви заказчиком.', 'delivery_accept':'Приёмка заказчиком записана.', 'close':'Партия закрыта. Итоги сохранены.', 'template':'Настройки сохранены для следующих заказов этой модели.'}.get(action,'Изменения сохранены.'))
     batch=rows(batch_title_query()+' WHERE b.id=?',(bid,))[0]
     tasks=core.task_rows(g.db,bid)
     material_plans=rows('''SELECT p.*,m.name,m.unit,c.name owner_name FROM batch_material_plan p JOIN materials m ON m.id=p.material_id
@@ -255,11 +274,16 @@ def batch_detail(bid):
         JOIN work_shares s ON s.acceptance_id=a.id JOIN workers w ON w.id=s.worker_id WHERE t.batch_id=? GROUP BY a.id ORDER BY a.id DESC''',(bid,))
     movements=rows('''SELECT v.*,m.name,m.unit,c.name owner_name FROM inventory_movements v JOIN materials m ON m.id=v.material_id
         LEFT JOIN customers c ON c.id=v.owner_customer_id WHERE v.batch_id=? ORDER BY v.id DESC''',(bid,))
-    return render_template('business/batch.html',batch=batch,tasks=tasks,materials=choices('materials'),plans=material_plans,
-        stock=production_stock,operations=rows('SELECT * FROM operations ORDER BY ord,id'),workers=choices('workers'),history=history,
+    outputs=rows('SELECT * FROM production_outputs WHERE batch_id=? ORDER BY id DESC',(bid,))
+    deliveries=rows('SELECT * FROM deliveries WHERE batch_id=? ORDER BY id DESC',(bid,))
+    workers=choices('workers')
+    guidance=ux.batch_guidance(batch,tasks,material_plans,production_stock,outputs,deliveries,session['role'] in MANAGERS,len(workers),any(v['kind'] in ('issue','allocate','consume','loss') for v in movements))
+    warehouse_stock=rows('SELECT material_id,owner_customer_id,qty_milli FROM stock_balances WHERE qty_milli>0') if session['role'] in MANAGERS else []
+    stock_data=dict(batch_id=bid,warehouse=[dict(r) for r in warehouse_stock],production=[{key:r[key] for key in ('material_id','owner_customer_id','qty_milli')} for r in production_stock],pool=[dict(r) for r in rows('SELECT material_id,owner_customer_id,qty_milli FROM production_pool WHERE qty_milli>0')])
+    return render_template('business/batch.html',guidance=guidance,stock_data=stock_data,batch=batch,tasks=tasks,materials=choices('materials'),plans=material_plans,
+        stock=production_stock,operations=rows('SELECT * FROM operations ORDER BY ord,id'),workers=workers,history=history,
         finance=core.batch_finance(g.db,bid) if session['role'] in MANAGERS else None,movements=movements,
-        deliveries=rows('SELECT * FROM deliveries WHERE batch_id=? ORDER BY id DESC',(bid,)),
-        outputs=rows('SELECT * FROM production_outputs WHERE batch_id=? ORDER BY id DESC',(bid,)),
+        deliveries=deliveries,outputs=outputs,
         costs=rows('SELECT * FROM batch_costs WHERE batch_id=? ORDER BY id DESC',(bid,)),
         editable=b['status'] not in ('closed','canceled'))
 
@@ -267,20 +291,20 @@ def batch_detail(bid):
 @bp.route(PREFIX+'/inventory',methods=['GET','POST'])
 @access(True)
 def inventory():
-    if request.method=='POST':
+    if request.method=='POST' and not getattr(g,'render_failed_form',False):
         def change():
             if request.form.get('action')=='material':
                 name=request.form.get('name','').strip(); unit=request.form.get('unit','').strip()
                 if not name or unit not in ('sht','pary','m2','kg','l','m'): raise core.RuleError('Укажите название и единицу материала.')
                 g.db.execute('INSERT INTO materials(name,unit) VALUES (?,?)',(name,unit))
-            else: core.inventory_move(g.db,request.form,session['role'])
-        return mutate(change,url_for('business.inventory'))
+            else: ux.receipt(g.db,request.form,session['role'])
+        return mutate(change,url_for('business.inventory'),'Материал добавлен в справочник.' if request.form.get('action')=='material' else 'Движение записано. Остатки материалов обновлены.')
     stock=rows('''SELECT s.*,m.name,m.unit,c.name owner_name,
        COALESCE((SELECT SUM(reserved_milli) FROM batch_material_plan WHERE material_id=s.material_id AND owner_customer_id IS s.owner_customer_id),0) reserved
        FROM stock_balances s JOIN materials m ON m.id=s.material_id LEFT JOIN customers c ON c.id=s.owner_customer_id ORDER BY m.name,c.name''')
     movements=rows('''SELECT v.*,m.name,m.unit,c.name owner_name FROM inventory_movements v JOIN materials m ON m.id=v.material_id
         LEFT JOIN customers c ON c.id=v.owner_customer_id ORDER BY v.id DESC LIMIT 100''')
-    return render_template('business/inventory.html',stock=stock,pool=rows('SELECT p.*,m.name,m.unit,c.name owner_name FROM production_pool p JOIN materials m ON m.id=p.material_id LEFT JOIN customers c ON c.id=p.owner_customer_id WHERE p.qty_milli>0 ORDER BY m.name'),movements=movements,materials=choices('materials'),customers=choices('customers'),
+    return render_template('business/inventory.html',stock_data=dict(warehouse=[dict(r) for r in stock],production=[dict(r) for r in rows('SELECT batch_id,material_id,owner_customer_id,qty_milli FROM production_stock WHERE qty_milli>0')],pool=[dict(r) for r in rows('SELECT material_id,owner_customer_id,qty_milli FROM production_pool WHERE qty_milli>0')]),stock=stock,pool=rows('SELECT p.*,m.name,m.unit,c.name owner_name FROM production_pool p JOIN materials m ON m.id=p.material_id LEFT JOIN customers c ON c.id=p.owner_customer_id WHERE p.qty_milli>0 ORDER BY m.name'),movements=movements,materials=choices('materials'),customers=choices('customers'),
         batches=rows(batch_title_query()+" WHERE b.status NOT IN ('closed','canceled') ORDER BY b.id DESC"))
 
 
@@ -292,7 +316,7 @@ def payroll():
         date.fromisoformat(start); date.fromisoformat(end)
         if start>end: raise ValueError
     except ValueError: abort(400)
-    if request.method=='POST':
+    if request.method=='POST' and not getattr(g,'render_failed_form',False):
         return mutate(lambda:core.close_period(g.db,request.form.get('start'),request.form.get('end'),session['role']),url_for('business.payroll',start=start,end=end),'Период закрыт. Итоги сохранены.')
     workers=[]
     for w in rows('SELECT * FROM workers ORDER BY archived,number+0,number'):
@@ -311,7 +335,7 @@ def payroll():
 @access(True)
 def worker(wid):
     w=core.require(g.db,'workers',wid)
-    if request.method=='POST':
+    if request.method=='POST' and not getattr(g,'render_failed_form',False):
         def change():
             f=request.form; actor=session['role']; action=f.get('action')
             if action=='payment': core.pay_worker(g.db,wid,f,actor)
@@ -324,7 +348,7 @@ def worker(wid):
                 g.db.execute('DELETE FROM worker_skills WHERE worker_id=?',(wid,))
                 g.db.executemany('INSERT INTO worker_skills(worker_id,operation_id) VALUES (?,?)',[(wid,int(op)) for op in selected])
             else: raise core.RuleError('Неизвестное действие.')
-        return mutate(change,url_for('business.worker',wid=wid))
+        return mutate(change,url_for('business.worker',wid=wid),'Выплата записана. Остаток зарплаты обновлён.' if request.form.get('action')=='payment' else 'Изменения сохранены.')
     accruals=rows('''SELECT a.*,wa.qty_pairs,wa.rate_cents,wa.rate_version,o.name operation_name,m.name model_name,s.share_bp
        FROM payroll_accruals a LEFT JOIN work_acceptances wa ON wa.id=a.acceptance_id LEFT JOIN batch_operations t ON t.id=wa.batch_operation_id
        LEFT JOIN operations o ON o.id=t.operation_id LEFT JOIN production_batches b ON b.id=a.batch_id LEFT JOIN models m ON m.id=b.model_id

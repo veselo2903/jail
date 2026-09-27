@@ -10,12 +10,12 @@
 
 ## Обновление
 
-1. Проверить исходники: `/opt/jail/.venv/bin/python /root/jail/tests/smoke.py` и `/opt/jail/.venv/bin/python /root/jail/tests/business.py`.
+1. Проверить исходники: `/opt/jail/.venv/bin/python /root/jail/tests/smoke.py`, `/opt/jail/.venv/bin/python /root/jail/tests/business.py` и `/opt/jail/.venv/bin/python /root/jail/tests/experience.py`.
 2. Создать копию: `systemctl start jail-backup.service`; проверить `systemctl status jail-backup.service`.
-3. Скопировать `app.py`, `db.py`, `business.py`, `business_core.py`, `business_schema.py`, `VERSION`, `templates/` и `static/` из `/root/jail` в `/opt/jail`. Не копировать `jail.db` и `.venv`.
+3. Остановить `jail.service`. Скопировать `app.py`, `db.py`, `business.py`, `business_core.py`, `business_schema.py`, `experience.py`, `VERSION`, `templates/` и `static/` из `/root/jail` в `/opt/jail`. Не копировать `jail.db` и `.venv`.
 4. Установить для файлов владельца `root:jail`, права `640`, для каталогов шаблонов `750`. Проверить, что ACL не закрывают доступ группе `jail`. Копирование через `copy2` переносит ACL исходников; после копирования нужно явно задать базовую ACL группы (`g::r--` для файлов, `g::r-x` для каталогов) и соответствующую маску. Один `chmod` при наличии расширенной ACL меняет маску и может оставить базовую группу без доступа.
 5. При изменении зависимостей выполнить `/opt/jail/.venv/bin/pip install -r /root/jail/requirements.txt`.
-6. `systemctl restart jail.service`; затем проверить `systemctl status jail.service`, `/jail/login` и журнал `journalctl -u jail.service -n 100`.
+6. `systemctl start jail.service`; затем проверить `systemctl status jail.service`, `/jail/login` и журнал `journalctl -u jail.service -n 100`.
 
 Миграции БД запускаются при старте приложения и завершаются с ошибкой, если старые данные нарушают новые ограничения. Перед каждым обновлением требуется копия БД.
 
@@ -38,3 +38,7 @@
 ## Производственный контур 0.60
 
 Рабочие разделы: `/<роль>/orders`, `/<роль>/batches`, `/<роль>/inventory`, `/<роль>/payroll/ledger`. Партии доступны производству; заказы, материальный склад и расчёты — складу и директору. Инструкция и границы выпуска: [IMPLEMENTATION_060.md](docs/IMPLEMENTATION_060.md). Перенос сохраняет старые данные. До обновления необходимо создать резервную копию. Новые Python-модули обязательно копируются вместе с `app.py` и `db.py`. Файл `jail.db.migration.lock` должен быть доступен пользователю `jail`; он защищает запуск миграций несколькими процессами.
+
+## Удобство первого использования 0.61
+
+Разбор сценариев, изменения и проверки: [USABILITY_REVIEW_061.md](docs/USABILITY_REVIEW_061.md). `experience.py` нужен для создания новых справочных записей внутри действия, восстановления ошибочных форм и выбора следующего шага. На телефоне второстепенные разделы меню открываются через «Ещё».

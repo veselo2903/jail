@@ -10,19 +10,19 @@
 <body class="login-page">
 <div class="box">
   <div class="head">
-    <div class="sub">Учёт передачи и приёмки · выберите роль</div>
+    <div class="sub">Обувное производство · выберите свою роль</div>
   </div>
 
   <a class="role" href="{{ url_for('login_as', role='sklad') }}">
-    <span><span class="t">Склад</span><span class="d">Создаёт заявки, ведёт справочники, видит расхождения</span></span>
+    <span><span class="t">Склад</span><span class="d">Отвечает на заявки, передаёт материалы, готовит партии</span></span>
     <span class="go">→</span>
   </a>
   <a class="role" href="{{ url_for('login_as', role='proizv') }}">
-    <span><span class="t">Производство</span><span class="d">Принимает партии, оформляет возврат готовой обуви</span></span>
+    <span><span class="t">Производство</span><span class="d">Видит задания, записывает работу и готовые пары</span></span>
     <span class="go">→</span>
   </a>
   <a class="role" href="{{ url_for('login_as', role='director') }}">
-    <span><span class="t">Директор</span><span class="d">Видит всё: заявки, справочники, расхождения</span></span>
+    <span><span class="t">Директор</span><span class="d">Создаёт заказы, назначает расценки, учитывает зарплату и затраты</span></span>
     <span class="go">→</span>
   </a>
 

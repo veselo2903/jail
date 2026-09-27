@@ -84,8 +84,13 @@ def create_order(conn, form, actor):
     old = conn.execute('SELECT id FROM orders WHERE token=?',(token,)).fetchone()
     if old:
         return old['id']
-    cid = integer(form.get('customer_id'), 'Заказчик')
-    require(conn, 'customers', cid, True)
+    if form.get('customer_id')=='new':
+        name=form.get('new_customer','').strip()
+        if not name: raise RuleError('Введите название нового заказчика.')
+        cid=conn.execute('INSERT INTO customers(name) VALUES (?)',(name,)).lastrowid
+    else:
+        cid = integer(form.get('customer_id'), 'Заказчик')
+        require(conn, 'customers', cid, True)
     due = form.get('due_date') or None
     if due:
         try: date.fromisoformat(due)
@@ -110,7 +115,10 @@ def create_order(conn, form, actor):
         else:
             mid = integer(val('model_id'),'Модель')
             model = require(conn,'models',mid,True)
-            if model['customer_id'] != cid:
+            if model['customer_id'] is None and form.get('claim_model_'+str(n))=='1':
+                conn.execute('UPDATE models SET customer_id=? WHERE id=?',(cid,mid))
+                audit(conn,actor,'model_customer',mid,{'customer_id':cid,'reason':'Подтверждено при создании заказа'})
+            elif model['customer_id'] != cid:
                 raise RuleError('Модель должна принадлежать выбранному заказчику. Укажите владельца в справочнике или создайте новую модель.')
         price = scaled(val('price'),label='Цена')
         total = price if pkind=='total' else price*pairs*(2 if punit=='shoe' else 1)

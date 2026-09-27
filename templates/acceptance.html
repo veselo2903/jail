@@ -2,10 +2,12 @@
 {% block title %}Приёмка — jail{% endblock %}
 {% block content %}
 
+<header class="biz-header"><h2>Приёмка переданной обуви</h2></header>
+{% if not pending and not done %}<p class="small">Передачи появятся здесь после отправки другой стороной. Материалы и задания партии доступны в разделе «Партии».</p>{% endif %}
 {% if pending %}<div class="card hero warn">
   <div class="big">{{ pending|length }}</div>
   <div class="lbl">
-    заявок ждут приёмки · {{ total_pending_pairs }} пар
+    передач ждут приёмки · {{ total_pending_pairs }} пар
   </div>
 </div>
 

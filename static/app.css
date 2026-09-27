@@ -543,3 +543,13 @@ tr.grp a{margin-left:8px;font-weight:600}
 }
 .biz-material-row>form>.btn.icon{width:var(--control-height);flex:0 0 var(--control-height)}
 @media(max-width:700px){.biz-material-row>form>.btn.grey{width:auto;flex:1}}
+/* Общие подсказки и разделы рабочих сценариев. */
+.flash-error{border-color:#d49a9a;background:#fff0ef;color:#8f3535}
+.biz-next-step{display:flex;gap:18px;align-items:center;justify-content:space-between;border-left:4px solid var(--blue)}
+.biz-next-step b{font-size:17px}.biz-next-step p{margin:6px 0 0;font-size:14px;color:var(--muted);line-height:1.5}.biz-next-step>.btn{flex-shrink:0}
+.biz-tabs{display:grid;grid-template-columns:repeat(var(--tab-count,4),minmax(0,1fr));gap:8px;margin-bottom:16px}
+.biz-tabs>.btn{padding-inline:8px}.biz-tabs>.btn.on{background:var(--blue-bg);color:var(--blue-d);border-color:var(--blue)}
+.biz-single-person>.biz-person{grid-template-columns:1fr}
+.biz-list-help{margin:0;padding:12px 4px;color:var(--muted);font-size:14px;line-height:1.5}
+[id^="biz-"]{scroll-margin-top:24px}
+@media(max-width:700px){.biz-next-step{align-items:stretch;flex-direction:column;gap:12px}.biz-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.biz-tabs>.btn{font-size:14px}}

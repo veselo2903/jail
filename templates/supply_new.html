@@ -228,7 +228,22 @@
    if(!requested&&!unassigned&&!party){e.preventDefault();alert('Укажите количество в поставку или добавьте партию либо материал.');return}
    form.querySelector('button[type="submit"]').disabled=true;
  });
- if({{ selected_batch|tojson }})form.querySelector('[data-add-party]').click();
+ const retry={{ retry_fields|tojson }};
+ if(retry){
+   (retry.party_id||[]).forEach(function(id){
+     nextParty=Number(id);form.querySelector('[data-add-party]').click();
+     const party=form.querySelector('.shipment-party-rows').lastElementChild;
+     const select=party.querySelector('[data-linked-batch]');select.value=retry['party_batch_'+id]?.[0]||'';syncParty(party);
+     const count=(retry['party_material_id_'+id]||[]).length;
+     for(let n=1;n<count;n++)party.querySelector('[data-add-party-material]').click();
+   });
+   for(let n=1;n<(retry.extra_material_id||[]).length;n++)form.querySelector('[data-add-material]').click();
+   Object.entries(retry).forEach(function([name,values]){
+     Array.from(form.elements).filter(el=>el.name===name).forEach(function(el,n){el.value=values[n]||''});
+   });
+   form.querySelectorAll('.sklad-supply-item').forEach(function(row){syncRequestedRow(row);if(Number(row.querySelector('.sklad-supply-quantity').value)>0)row.closest('details').open=true});
+   if((retry.extra_material_qty||[]).some(value=>value.trim()))form.querySelector('.sklad-unassigned-materials').open=true;
+ }else if({{ selected_batch|tojson }})form.querySelector('[data-add-party]').click();
 })();
 </script>
 {% endblock %}

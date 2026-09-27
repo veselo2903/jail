@@ -1,25 +1,29 @@
 {% extends 'base.html' %}{% from 'business/_macros.html' import hidden,field with context %}
 {% block title %}Новый заказ — jail{% endblock %}
 {% macro position(n,data={}) %}
-<section class="card biz-order-position" data-order-position><div class="biz-section-head"><b>Модель <span data-position-number>{{ n }}</span></b><button class="btn danger icon" type="button" data-remove title="Убрать модель">×</button></div>
+<section class="card biz-order-position" data-order-position><div class="biz-section-head"><b>Модель <span data-position-number>{{ n }}</span></b><button class="btn danger icon" type="button" data-remove aria-label="Убрать модель">×</button></div>
 <div class="biz-grid">
-<label class="biz-field"><span>Модель заказчика</span><select name="model_id" data-order-model><option value="">Выберите модель</option>{% for m in models %}<option value="{{ m.id }}" data-customer="{{ m.customer_id or '' }}" {{ 'selected' if data.get('model_id')==m.id|string }}>{{ m.name }}{{ ' · владелец не указан' if not m.customer_id }}</option>{% endfor %}</select></label>
-{{ field('new_model','Или новая модель',data.get('new_model',''),'text',false) }}
-{{ field('qty','Количество',data.get('qty',''),'number') }}
+<label class="biz-field"><span>Модель обуви</span><select name="model_id" data-order-model required><option value="">Выберите модель</option>{% for m in models %}<option value="{{ m.id }}" data-customer="{{ m.customer_id or '' }}" {{ 'selected' if data.get('model_id')==m.id|string }}>{{ m.name }}{{ ' · без заказчика' if not m.customer_id }}</option>{% endfor %}<option value="new" {{ 'selected' if data.get('new_model') }}>+ Новая модель</option></select></label>
+<label class="biz-field" data-new-model><span>Название новой модели</span><input name="new_model" value="{{ data.get('new_model','') }}" placeholder="Например, Кроссовки 714"></label>
+{{ field('qty','Количество, пар',data.get('qty',''),'number') }}
+<label class="biz-field"><span>Цена от заказчика, ₽</span><input name="price" inputmode="decimal" value="{{ data.get('price','') }}" required></label>
+<label class="biz-field"><span>За что указана цена</span><select name="price_kind"><option value="unit">За одну пару</option><option value="total" {{ 'selected' if data.get('price_kind')=='total' }}>За всю партию этой модели</option></select></label>
+</div>
+<label class="biz-check" data-claim-model><input type="checkbox" name="claim_model_{{ n-1 }}" value="1" {{ 'checked' if form.get('claim_model_'+(n-1)|string) }}>Эта модель принадлежит выбранному заказчику</label>
+{{ field('specification','Размеры, цвет, особенности',data.get('specification',''),'text',false) }}
+<div class="biz-order-estimate" data-estimate aria-live="polite"></div>
+<details class="biz-subspoiler"><summary>Другие единицы и условия приёмки</summary><div class="biz-grid biz-detail">
 <label class="biz-field"><span>Единица количества</span><select name="quantity_unit"><option value="pair">Пары</option><option value="shoe" {{ 'selected' if data.get('quantity_unit')=='shoe' }}>Ботинки (2 = 1 пара)</option></select></label>
-<label class="biz-field"><span>Цена заказчика</span><input name="price" inputmode="decimal" value="{{ data.get('price','') }}" required></label>
-<label class="biz-field"><span>Способ цены</span><select name="price_kind"><option value="unit">За единицу</option><option value="total" {{ 'selected' if data.get('price_kind')=='total' }}>За всю позицию</option></select></label>
 <label class="biz-field"><span>Единица цены</span><select name="price_unit"><option value="pair">За пару</option><option value="shoe" {{ 'selected' if data.get('price_unit')=='shoe' }}>За ботинок</option></select></label>
-<label class="biz-field"><span>Признание выручки</span><select name="settlement"><option value="proportional">За принятые пары</option><option value="complete" {{ 'selected' if data.get('settlement')=='complete' }}>После приёмки всей позиции</option></select></label>
-</div>{{ field('specification','Описание, размеры, цвет',data.get('specification',''),'text',false) }}
-<div class="biz-order-estimate small" data-estimate></div></section>
+<label class="biz-field"><span>Когда учитывать доход от заказчика</span><select name="settlement"><option value="proportional">По мере приёмки готовых пар</option><option value="complete" {{ 'selected' if data.get('settlement')=='complete' }}>После приёмки всей модели</option></select></label>
+</div></details></section>
 {% endmacro %}
 {% block content %}<div class="biz-page"><header class="biz-header"><h2>Новый заказ</h2><a class="btn grey" href="{{ url_for('business.orders') }}">← К заказам</a></header>
-{% if customers %}<form method="post" class="biz-form" id="biz-order-form">{{ hidden() }}
-<div class="card biz-grid"><label class="biz-field"><span>Заказчик</span><select name="customer_id" id="biz-customer" required><option value="">Выберите заказчика</option>{% for c in customers %}<option value="{{ c.id }}" {{ 'selected' if form.get('customer_id')==c.id|string }}>{{ c.name }}</option>{% endfor %}</select></label>{{ field('due_date','Срок изготовления',form.get('due_date',''),'date',false) }}</div>
-<div id="biz-order-positions">{% if form.getlist('qty') %}{% for qty in form.getlist('qty') %}{{ position(loop.index,dict(qty=qty, model_id=form.getlist('model_id')[loop.index0],new_model=form.getlist('new_model')[loop.index0],price=form.getlist('price')[loop.index0],quantity_unit=form.getlist('quantity_unit')[loop.index0],price_kind=form.getlist('price_kind')[loop.index0],price_unit=form.getlist('price_unit')[loop.index0],settlement=form.getlist('settlement')[loop.index0],specification=form.getlist('specification')[loop.index0])) }}{% endfor %}{% else %}{{ position(1) }}{% endif %}</div>
-<button class="btn block dashed" type="button" id="biz-add-position">+ Добавить модель</button>
-<div class="card">{{ field('note','Примечание к заказу',form.get('note',''),'text',false) }}<button class="btn green block mt-md">Создать заказ и партии</button></div></form>
+<form method="post" class="biz-form" id="biz-order-form">{{ hidden() }}
+<div class="card biz-grid"><label class="biz-field"><span>Кто заказал обувь</span><select name="customer_id" id="biz-customer" required><option value="">Выберите заказчика</option>{% for c in customers %}<option value="{{ c.id }}" {{ 'selected' if form.get('customer_id')==c.id|string }}>{{ c.name }}</option>{% endfor %}<option value="new" {{ 'selected' if form.get('customer_id')=='new' }}>+ Новый заказчик</option></select></label>
+<label class="biz-field" data-new-customer><span>Название заказчика</span><input name="new_customer" value="{{ form.get('new_customer','') }}" placeholder="Название фирмы или имя"></label>{{ field('due_date','Срок изготовления',form.get('due_date',''),'date',false) }}</div>
+<div id="biz-order-positions">{% for data in position_rows %}{{ position(loop.index,data) }}{% else %}{{ position(1) }}{% endfor %}</div>
+<button class="btn block dashed" type="button" id="biz-add-position">+ Добавить ещё модель</button>
+<div class="card">{{ field('note','Примечание к заказу',form.get('note',''),'text',false) }}<p class="small">Для каждой модели будет создана партия. Затем укажите её операции и материалы.</p><button class="btn green block mt-md">Создать заказ и перейти к партиям</button></div></form>
 <template id="biz-position-template">{{ position(0) }}</template>
-{% else %}<div class="card biz-start"><h3>Добавьте заказчика</h3><a class="btn" href="{{ url_for('refs',_anchor='refs-customers') }}">Открыть справочник</a></div>{% endif %}
-</div><script src="{{ url_for('static',filename='business.js',v=VERSION) }}" defer></script>{% endblock %}
+</div>{% endblock %}

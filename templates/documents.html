@@ -9,10 +9,11 @@
 </div>
 {% endif %}
 
+<header class="biz-header"><h2>{{ 'Заявки и поставки' if role=='sklad' else 'Мои заявки и передачи' if role=='proizv' else 'Заявки и передачи' }}</h2></header>
 {# Кнопки создания под роль #}
 <div class="row action-bar mb-md">
   {% if can_request %}
-  <a class="btn green block grow" href="{{ url_for('request_new') }}">+ Заявка «чего не хватает»</a>
+  <a class="btn green block grow" href="{{ url_for('request_new') }}">+ Запросить материалы</a>
   {% endif %}
   {% if role=='sklad' %}
   <a class="btn block sklad-create-supply-btn grow" href="{{ url_for('supply_new') }}">+ Создать поставку</a>
@@ -27,7 +28,7 @@
 <table class="dq-table">
   <tr><th>№</th><th>Тип</th><th class="num">Кол-во</th><th>Статус</th><th>Дата</th><th></th></tr>
   {% for x in rows %}
-  <tr class="linkrow {{ 'dq-row' if x.detail }} {{ 'sklad-request-row' if role == 'sklad' and x.group == 'req' else 'sklad-supply-row' if role == 'sklad' and x.group == 'shipment' else '' }}" {% if x.detail %}data-dq-toggle="{{ x.detail_id }}"{% else %}onclick="location='{{ x.url }}'"{% endif %}>
+  <tr class="linkrow {{ 'dq-row' if x.detail }} {{ 'sklad-request-row' if role == 'sklad' and x.group == 'req' else 'sklad-supply-row' if role == 'sklad' and x.group == 'shipment' else '' }}" {% if x.detail %}data-dq-toggle="{{ x.detail_id }}" tabindex="0" role="button" aria-expanded="false" aria-controls="{{ x.detail_id }}" aria-label="Посмотреть {{ x.title }} №{{ x.id }}"{% else %}onclick="location='{{ x.url }}'"{% endif %}>
     <td>{{ x.id }}</td>
     <td>
       <b>{{ x.title }}</b>
@@ -75,9 +76,10 @@
 
 <script>
 document.querySelectorAll('[data-dq-toggle]').forEach(function(row){
+  row.addEventListener('keydown',function(event){if(event.target===row&&(event.key==='Enter'||event.key===' ')){event.preventDefault();row.click();}});
   row.addEventListener('click',function(){
     var d=document.getElementById(row.dataset.dqToggle);
-    if(d) d.hidden=!d.hidden;
+    if(d){d.hidden=!d.hidden;row.setAttribute('aria-expanded',String(!d.hidden));}
   });
 });
 // после действия склада страница открывается уже с раскрытой заявкой (#dq-<номер>)
