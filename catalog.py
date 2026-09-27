@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 import re
 import secrets
-from flask import abort,g,request,session,url_for,render_template,send_file
+from flask import abort,g,request,session,url_for,render_template,send_file,redirect
 if __package__:
     from . import business_core as core,db
 else:
@@ -200,7 +200,10 @@ def register(bp,access,mutate,rows,choices,prefix):
                 cid=core.integer(request.form.get('customer_id'),'Заказчик');mid=save_model(g.db,cid,request.form,session['role']);g.created_entity=('model',mid)
                 return url_for('business.model_detail',mid=mid)
             return mutate(change,url_for('business.model_new',customer=request.form.get('customer_id')),'Модель сохранена.')
-        return render_template('business/model_new.html',customers=choices('customers'),customer_id=request.args.get('customer',type=int))
+        customers=choices('customers')
+        if request.method=='GET' and not customers:
+            return redirect(url_for('business.customer_new',ctx=request.args.get('ctx')))
+        return render_template('business/model_new.html',customers=customers,customer_id=request.args.get('customer',type=int) or (customers[0]['id'] if len(customers)==1 else None))
 
     @bp.route(prefix+'/models/<int:mid>',methods=['GET','POST'])
     @access(True)

@@ -5,12 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}jail{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=VERSION) }}">
-<script>
-/* Быстрый повторный переход может отменить браузерную анимацию. */
-['pageswap','pagereveal'].forEach(function(name){addEventListener(name,function(event){
-  if(event.viewTransition)event.viewTransition.ready.catch(function(){});
-})});
-</script>
+<script>window.jailPage=new AbortController();</script>
 </head>
 <body data-role-root="{{ request.script_root }}/{{ role }}">
 {% set ep = request.endpoint %}
@@ -56,7 +51,7 @@
 {% endif %}
 <div class="app">
   <div class="wrap" id="biz-page-start">
-    {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% with msgs = [] if request.headers.get('X-Jail-Prefetch')=='1' else get_flashed_messages(with_categories=true) %}
       {% for category,m in msgs %}<div class="flash {{ 'flash-error' if category=='error' }}" role="{{ 'alert' if category=='error' else 'status' }}">{{ m }}</div>{% endfor %}
     {% endwith %}
     <a class="btn grey block mb-md" id="section-return" hidden></a>
@@ -64,30 +59,13 @@
   </div>
 </div>
 <script>
-/* Подогреваем внутренние страницы до клика, чтобы переход из меню ощущался мгновенным. */
+/* Меню и его обработчики живут до следующего перехода. */
 (function(){
   const more=document.querySelector('.side-more'),wide=matchMedia('(min-width:721px)');
   if(more){
-    const sync=function(){more.open=wide.matches&&!more.classList.contains('director-more')};sync();wide.addEventListener('change',sync);
-    document.addEventListener('pointerdown',function(event){if((!wide.matches||more.classList.contains('director-more'))&&!more.contains(event.target))more.open=false});
-    document.addEventListener('keydown',function(event){if(event.key==='Escape'&&(!wide.matches||more.classList.contains('director-more')))more.open=false});
-  }
-  const warmed=new Set();
-  function prefetch(link){
-    if(!link||warmed.has(link.href)||link.origin!==location.origin||(link.pathname===location.pathname&&link.search===location.search)||
-       link.target==='_blank'||link.hasAttribute('download')||link.closest('form')||
-       link.classList.contains('side-user-logout')) return;
-    warmed.add(link.href);
-    const hint=document.createElement('link');
-    hint.rel='prefetch'; hint.as='document'; hint.href=link.href;
-    document.head.appendChild(hint);
-  }
-  document.querySelectorAll('a[href]').forEach(function(link){
-    link.addEventListener('pointerenter',function(){prefetch(link)},{passive:true});
-    link.addEventListener('touchstart',function(){prefetch(link)},{passive:true});
-  });
-  if('requestIdleCallback' in window){
-    requestIdleCallback(function(){document.querySelectorAll('.side a.nav').forEach(prefetch)},{timeout:1200});
+    const sync=function(){more.open=wide.matches&&!more.classList.contains('director-more')};sync();wide.addEventListener('change',sync,{signal:window.jailPage.signal});
+    document.addEventListener('pointerdown',function(event){if((!wide.matches||more.classList.contains('director-more'))&&!more.contains(event.target))more.open=false},{signal:window.jailPage.signal});
+    document.addEventListener('keydown',function(event){if(event.key==='Escape'&&(!wide.matches||more.classList.contains('director-more')))more.open=false},{signal:window.jailPage.signal});
   }
 })();
 </script>
@@ -95,5 +73,6 @@
 <script src="{{ url_for('static',filename='business.js',v=VERSION) }}" defer></script>
 {% if ep=='business.order_new' %}<script src="{{ url_for('static',filename='director_order.js',v=VERSION) }}" defer></script>{% endif %}
 <script src="{{ url_for('static',filename='section_navigation.js',v=VERSION) }}" defer></script>
+<script src="{{ url_for('static',filename='instant_navigation.js',v=VERSION) }}" defer></script>
 </body>
 </html>

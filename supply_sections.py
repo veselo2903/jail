@@ -134,6 +134,10 @@ def register(app,access,mutate,prefix):
             sent=g.db.execute("SELECT COALESCE(SUM(pairs_sent),0) FROM lines l JOIN documents d ON d.id=l.document_id WHERE l.batch_id=? AND d.kind='RETURN'",(row['id'],)).fetchone()[0]
             external=g.db.execute('SELECT COALESCE(SUM(factory_pairs),0) FROM deliveries WHERE batch_id=?',(row['id'],)).fetchone()[0]
             if good>sent+external: available.append(dict(row,available=good-sent-external))
+        if request.method=='GET' and not any(not request.args.get('batch',type=int) or b['id']==request.args.get('batch',type=int) for b in available):
+            if __package__:from .business import start_action,prerequisite_redirect
+            else:from business import start_action,prerequisite_redirect
+            return prerequisite_redirect(start_action('production',batch=request.args.get('batch',type=int)))
         return render_template('supply_return_new.html',batches=available,batch_id=request.args.get('batch',type=int))
 
     @app.route(prefix+'/requests/<int:req_id>/reject',methods=['POST'])

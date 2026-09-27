@@ -22,7 +22,7 @@ try:
         return r['result'].get('value')
     def wait(expression):
         for _ in range(80):
-            if js(expression):return
+            if js("document.body?.dataset.navigationReady!=='0'") and js(expression):return
             time.sleep(.1)
         raise AssertionError((expression,js('location.href'),js('document.body?.innerText.slice(0,500)')))
     def navigate(path):
@@ -38,20 +38,19 @@ try:
             assert js("const button=document.querySelector('.biz-empty-action').getBoundingClientRect(),empty=document.querySelector('.biz-empty').getBoundingClientRect();Math.abs((button.x+button.width/2)-(empty.x+empty.width/2))<1&&Math.abs((button.y+button.height/2)-(empty.y+empty.height/2))<1&&! (document.documentElement.scrollWidth>innerWidth)"),(path,width)
             if path=='inventory':screenshot('empty-materials-'+str(width))
     command('Emulation.setDeviceMetricsOverride',{'width':1440,'height':900,'deviceScaleFactor':1,'mobile':False})
-    navigate('/director/orders/new')
+    navigate('/director/batches')
+    assert js("document.querySelector('.biz-empty-action').textContent.trim()==='Добавить заказчика'")
     js("document.querySelector('.biz-empty-action').click()")
-    wait("location.pathname==='/director/customers/new'&&document.readyState==='complete'")
+    wait("location.pathname==='/director/customers/new'&&document.querySelector('form')&&document.body.dataset.navigationReady!=='0'")
     js("document.querySelector('[name=name]').value='Фирма Север';document.querySelector('form[method=post]').requestSubmit()")
-    wait("location.pathname==='/director/customers/1'&&document.readyState==='complete'&&!document.querySelector('#section-return').hidden")
-    js("document.querySelector('#section-return').click()")
-    wait("location.pathname==='/director/orders/new'&&document.readyState==='complete'&&!!document.querySelector('.biz-empty-action')")
-    js("(document.querySelector('[data-model-create]')||document.querySelector('.biz-empty-action')).click()")
-    wait("location.pathname==='/director/models/new'&&document.readyState==='complete'")
+    wait("location.pathname==='/director/customers/1'&&document.readyState==='complete'")
+    js("document.querySelector('.biz-actions a').click()")
+    wait("location.pathname==='/director/models/new'&&document.querySelector('[name=sale_price]')&&document.body.dataset.navigationReady!=='0'")
     assert js("document.querySelector('[name=customer_id]').value==='1'")
     js("document.querySelector('[name=name]').value='Кроссовки 714';document.querySelector('[name=sale_price]').value='900';document.querySelector('form[method=post]').requestSubmit()")
     wait("location.pathname==='/director/models/1'&&document.readyState==='complete'")
-    js("document.querySelector('#section-return').click()")
-    wait("location.pathname==='/director/orders/new'&&document.readyState==='complete'&&document.querySelector('[data-choose-model]')?.checked")
+    js("document.querySelector('.biz-actions a').click()")
+    wait("location.pathname==='/director/orders/new'&&document.querySelector('[data-choose-model]')?.checked&&document.body.dataset.navigationReady!=='0'")
     js("const row=document.querySelector('[data-model-id=\"1\"]');row.querySelector('[name=qty]').value='80';row.querySelector('[name=price]').value='850';row.querySelector('[name=specification]').value='Размеры 38–42';row.querySelector('[name=qty]').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[data-model-create]').click()")
     wait("location.pathname==='/director/models/new'&&document.readyState==='complete'")
     js("document.querySelector('[name=name]').value='Ботинки 285';document.querySelector('[name=sale_price]').value='1100';document.querySelector('form[method=post]').requestSubmit()")

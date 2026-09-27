@@ -51,11 +51,11 @@
   if(link.dataset.picker){let index=Number(link.dataset.pickerIndex||0);const row=link.closest('.shipment-extra-row,.biz-catalog-material-row,.sklad-party-material-row,.biz-receipt-row');const select=row?.querySelector('select[name="'+CSS.escape(link.dataset.picker)+'"]');if(select&&form)index=Array.from(form.elements).filter(e=>e.name===select.name).indexOf(select);picker={form:Math.max(0,forms().indexOf(form)),name:link.dataset.picker,index}};
   const key=crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2);
   const saved=capture();put('draft:'+pageKey(),saved);put('hop:'+key,{url:location.href,label:document.querySelector('h2')?.textContent||'к форме',forms:saved,picker});target.searchParams.set('ctx',key);link.href=target;
- });
- document.addEventListener('input',e=>{if(e.target.closest('form[method=post]'))put('draft:'+pageKey(),capture())});
- document.addEventListener('change',e=>{if(e.target.closest('form[method=post]'))put('draft:'+pageKey(),capture())});
+ },{signal:window.jailPage.signal});
+ document.addEventListener('input',e=>{if(e.target.closest('form[method=post]'))put('draft:'+pageKey(),capture())},{signal:window.jailPage.signal});
+ document.addEventListener('change',e=>{if(e.target.closest('form[method=post]'))put('draft:'+pageKey(),capture())},{signal:window.jailPage.signal});
  document.addEventListener('submit',e=>{
   if(e.target.dataset.confirm&&!confirm(e.target.dataset.confirm)){e.preventDefault();return}
   if(e.target.method==='post'&&!e.defaultPrevented){put('draft:'+pageKey(),capture());put('pending',pageKey())}
- });
+ },{signal:window.jailPage.signal});
 })();

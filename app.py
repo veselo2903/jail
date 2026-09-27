@@ -487,6 +487,8 @@ def supply_new():
         JOIN customers c ON c.id=b.customer_id JOIN models m ON m.id=b.model_id
         WHERE b.status NOT IN ('closed','canceled') ORDER BY b.id DESC""").fetchall()
     materials = g.db.execute("SELECT * FROM materials WHERE archived=0 ORDER BY name").fetchall()
+    if request.method=="GET" and not incoming and not materials and not batches:
+        return redirect(url_for("business.material_new",ctx=request.args.get("ctx")))
     return render_template("supply_new.html", incoming=incoming, customers=customers, models=models,
         batches=batches, materials=materials, selected_batch=request.args.get("batch", ""), selected_request=request.args.get("request",type=int),selected_material=request.args.get("material",type=int))
 
@@ -1593,6 +1595,11 @@ if __package__:
 else:
     import supply_sections
     from business import access as section_access,mutate as section_mutate,PREFIX as section_prefix
+def _has_incoming_supply():
+    cond,args=_sklad_visible_sql()
+    entries=g.db.execute("SELECT id FROM requests WHERE created_role='proizv' AND status IN ('open','progress','done') AND "+cond,args).fetchall()
+    return any(any(i['remaining']!=0 for i in _needed_items(r['id'])) for r in entries)
+app.jail_has_incoming=_has_incoming_supply
 app.jail_needed_items=_needed_items
 app.jail_resolve_request=_resolve_request
 supply_sections.register(app,section_access,section_mutate,section_prefix)

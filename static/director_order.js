@@ -28,5 +28,5 @@
  }
  form.addEventListener('input',refresh);form.addEventListener('change',refresh);
  form.addEventListener('submit',e=>{if(!Array.from(form.querySelectorAll('[data-director-model]')).some(r=>!r.hidden&&r.querySelector('[data-choose-model]').checked)){e.preventDefault();const hint=form.querySelector('[data-order-total]');hint.textContent='Выберите хотя бы одну модель обуви.';hint.scrollIntoView({block:'center',behavior:'smooth'})}});
- document.addEventListener('section:restore',refresh);refresh();
+ document.addEventListener('section:restore',refresh,{signal:window.jailPage.signal});refresh();
 })();

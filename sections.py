@@ -1,5 +1,5 @@
 """Order receipts and customer deliveries have their own sections and forms."""
-from flask import g,request,session,url_for,render_template
+from flask import g,request,session,url_for,render_template,redirect
 if __package__:
     from . import business_core as core
 else:
@@ -75,7 +75,12 @@ def register(bp,access,mutate,rows,choices,prefix,batch_query):
                     core.audit(g.db,session['role'],'customer_payment',pid,{'order_id':oid,'amount_cents':amount})
                 return url_for('business.customer_payments',order=oid)
             return mutate(change,url_for('business.customer_payment_new',order=request.form.get('order_id')),'Получение денег записано.')
-        return render_template('business/customer_payment_new.html',orders=orders_data(),order_id=request.args.get('order',type=int))
+        data=orders_data()
+        if request.method=='GET' and not data:
+            if __package__:from .business import start_action,prerequisite_redirect
+            else:from business import start_action,prerequisite_redirect
+            return prerequisite_redirect(start_action('order'))
+        return render_template('business/customer_payment_new.html',orders=data,order_id=request.args.get('order',type=int))
 
     @bp.route(prefix+'/deliveries')
     @access(True)
@@ -117,6 +122,10 @@ def register(bp,access,mutate,rows,choices,prefix,batch_query):
         for r in data:
             b=dict(r);b['available']=b['good']-rows('SELECT COALESCE(SUM(qty_pairs),0) n FROM deliveries WHERE batch_id=?',(b['id'],))[0]['n']
             if b['available']>0:parts.append(b)
+        if request.method=='GET' and not any(not oid or b['order_id']==oid for b in parts):
+            if __package__:from .business import start_action,prerequisite_redirect
+            else:from business import start_action,prerequisite_redirect
+            return prerequisite_redirect(start_action('production',order=oid,batch=bid))
         return render_template('business/delivery_new.html',orders=orders_data(),batches=parts,order_id=oid,batch_id=bid)
 
     @bp.route(prefix+'/deliveries/<int:did>',methods=['GET','POST'])

@@ -21,6 +21,7 @@ def remember_form():
 
 
 def retry_form():
+    if request.headers.get('X-Jail-Prefetch')=='1':return None
     if getattr(g,'failed_fields',None): return g.failed_fields
     draft=session.get('retry_form')
     if request.method=='GET' and draft and draft['path']==request.path:

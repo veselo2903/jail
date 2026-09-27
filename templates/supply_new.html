@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Новая поставка — jail{% endblock %}
-{% from 'business/_empty.html' import empty_action with context %}{% block content %}{% if not materials and not batches %}{{ empty_action('Добавить материал',url_for('business.material_new'),hop=true,picker='extra_material_id') }}{% else %}
+{% from 'business/_empty.html' import empty_action with context %}{% block content %}{% if not materials and not batches and not incoming %}{{ empty_action('Добавить материал',url_for('business.material_new'),hop=true,picker='extra_material_id') }}{% else %}
 <div class="sklad-supply-page">
 <div class="sklad-supply-header">
   <a class="btn grey sm sklad-back-to-requests" data-discard-draft href="{{ url_for('supplies') }}">← К поставкам</a>
@@ -167,11 +167,13 @@
      error.hidden=true;
      rejectButton.textContent='Отклоняю…';
      try{
+       window.jailNavigation?.invalidate();
        const response=await fetch(rejectButton.dataset.rejectUrl,{
          method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':form.querySelector('[name="csrf_token"]').value,'Accept':'application/json'}
        });
        const result=await response.json();
        if(!response.ok||result.status!=='rejected')throw new Error(result.error||'Не удалось отклонить позицию. Повторите действие.');
+       window.jailNavigation?.invalidate();
        input.value='';
        row.classList.remove('is-selected');
        row.classList.add('is-rejected');

@@ -135,7 +135,7 @@
    form.addEventListener('input',refresh);refresh();
  });
  document.querySelectorAll('.biz-operation-pick').forEach(row=>{row.addEventListener('input',e=>{if(e.target.type!=='checkbox'&&e.target.value.trim())row.querySelector('input[type="checkbox"]').checked=true})});
- document.addEventListener('click',e=>{const link=e.target.closest('a[href^="#biz-"]');if(link){e.preventDefault();const target=document.getElementById(link.getAttribute('href').slice(1));openTarget(target,true);history.replaceState(null,'',link.getAttribute('href'))}});
+ document.addEventListener('click',e=>{const link=e.target.closest('a[href^="#biz-"]');if(link){e.preventDefault();const target=document.getElementById(link.getAttribute('href').slice(1));openTarget(target,true);history.replaceState(null,'',link.getAttribute('href'))}},{signal:window.jailPage.signal});
  if(location.hash.startsWith('#biz-'))openTarget(document.getElementById(location.hash.slice(1)));
  document.querySelectorAll('form[data-retry]').forEach(form=>{openTarget(form);requestAnimationFrame(()=>{const input=form.querySelector('input:not([type="hidden"]),select');input?.focus({preventScroll:true})})});
 })();

@@ -76,6 +76,53 @@ def rows(sql,args=()): return g.db.execute(sql,args).fetchall()
 def choices(table):
     if table=='models':return rows('SELECT m.* FROM models m JOIN customers c ON c.id=m.customer_id WHERE m.archived=0 AND c.archived=0 ORDER BY m.name')
     return rows('SELECT * FROM '+table+' WHERE archived=0 ORDER BY name')
+def start_action(kind='order',customer=None,order=None,batch=None):
+    """Resolve prerequisites before presenting an action, never through empty lists."""
+    def action(label,endpoint,**params):return dict(label=label,url=url_for(endpoint,**params))
+    if kind=='order':
+        customers=choices('customers');models=choices('models')
+        if not customers:return action('Добавить заказчика','business.customer_new')
+        relevant=[m for m in models if not customer or m['customer_id']==int(customer)]
+        if not relevant:return action('Добавить модель','business.model_new',customer=customer or (customers[0]['id'] if len(customers)==1 else None))
+        return action('Создать заказ','business.order_new',customer=customer)
+    if kind=='production':
+        entries=rows("SELECT b.id FROM production_batches b LEFT JOIN order_items i ON i.id=b.order_item_id WHERE b.status NOT IN ('closed','canceled')"+(' AND i.order_id=?' if order else '')+(' AND b.id=?' if batch else ''),tuple(x for x in (order,batch) if x))
+        if len(entries)==1:return action('Открыть партию','business.batch_detail',bid=entries[0]['id'])
+        if entries:return action('Открыть производство','business.batches',order=order)
+        if session.get('role') not in MANAGERS:return action('Запросить материалы','request_new')
+        return start_action('order')
+    if kind=='delivery':
+        available=rows("""SELECT b.id FROM production_batches b JOIN order_items i ON i.id=b.order_item_id
+            WHERE b.status<>'closed' AND
+            (SELECT COALESCE(SUM(qty_pairs),0) FROM production_outputs WHERE batch_id=b.id AND kind='good')>
+            (SELECT COALESCE(SUM(qty_pairs),0) FROM deliveries WHERE batch_id=b.id)"""+(' AND i.order_id=?' if order else '')+(' AND b.id=?' if batch else ''),tuple(x for x in (order,batch) if x))
+        if available:return action('Создать отгрузку','business.delivery_new',order=order,batch=batch)
+        return start_action('production',order=order,batch=batch)
+    if kind=='payment':
+        if rows('SELECT 1 FROM orders LIMIT 1'):return action('Записать получение денег','business.customer_payment_new',order=order)
+        return start_action('order')
+    if kind=='return':
+        available=rows("""SELECT b.id FROM production_batches b WHERE
+            (SELECT COALESCE(SUM(qty_pairs),0) FROM production_outputs WHERE batch_id=b.id AND kind='good')>
+            (SELECT COALESCE(SUM(l.pairs_sent),0) FROM lines l JOIN documents d ON d.id=l.document_id WHERE l.batch_id=b.id AND d.kind='RETURN')+
+            (SELECT COALESCE(SUM(factory_pairs),0) FROM deliveries WHERE batch_id=b.id)"""+(' AND b.id=?' if batch else ''),(batch,) if batch else ())
+        if available:return action('Передать готовую обувь на склад','supply_return_new',batch=batch)
+        return start_action('production',batch=batch)
+    if kind=='supply':
+        if not choices('materials') and not rows("SELECT 1 FROM production_batches WHERE status NOT IN ('closed','canceled') LIMIT 1") and not current_app.jail_has_incoming():
+            return action('Добавить материал','business.material_new')
+        return action('Создать поставку','supply_new',batch=batch)
+    raise ValueError(kind)
+
+
+def prerequisite_redirect(action):
+    """Keep a form's return context when an old bookmarked URL needs prerequisites."""
+    target=action['url'];parts=urlsplit(target);query=dict(parse_qsl(parts.query))
+    for key in ('ctx','resume','created'):
+        if request.args.get(key):query[key]=request.args[key]
+    return redirect(urlunsplit((parts.scheme,parts.netloc,parts.path,urlencode(query),parts.fragment)))
+
+
 def batch_title_query():
     return '''SELECT b.*,m.name model_name,c.name customer_name,oi.order_id,
         (SELECT COALESCE(SUM(qty_pairs),0) FROM production_outputs p WHERE p.batch_id=b.id AND p.kind='good') good
@@ -105,7 +152,7 @@ def quantity(value):
 
 @bp.app_context_processor
 def context():
-    return dict(manager=session.get('role') in MANAGERS, business_token=lambda:secrets.token_urlsafe(24),
+    return dict(start_action=start_action, manager=session.get('role') in MANAGERS, business_token=lambda:secrets.token_urlsafe(24),
                 business_today=core.today().isoformat(), retry_fields=ux.retry_form(), operation_modes=MODES, batch_statuses=STATUSES, movement_names=MOVES)
 
 
@@ -128,8 +175,8 @@ def orders():
     setup=None
     if not customers:setup=dict(title='Сначала добавьте заказчика',text='Укажите, кто заказывает у вас обувь. Затем добавьте его модели и согласованные цены.',label='Добавить заказчика',url=url_for('business.customer_new'),step=1)
     elif not any(m['customer_id'] in [c['id'] for c in customers] for m in models):
-        target=url_for('business.model_new',customer=customers[0]['id']) if len(customers)==1 else url_for('business.models')
-        setup=dict(title='Теперь добавьте модели заказчика',text='Название или артикул модели и цена за пару. После этого можно принять первый заказ.',label='Добавить модель' if len(customers)==1 else 'Выбрать заказчика',url=target,step=2)
+        target=url_for('business.model_new',customer=customers[0]['id'] if len(customers)==1 else None)
+        setup=dict(title='Теперь добавьте модели заказчика',text='Название или артикул модели и цена за пару. После этого можно принять первый заказ.',label='Добавить модель',url=target,step=2)
     elif not orders:setup=dict(title='Примите следующий заказ' if has_orders else 'Можно принять первый заказ',text='Выберите заказчика и его модели, укажите количество пар и срок. Согласованные цены подставятся сами.',label='Создать заказ',url=url_for('business.order_new'),step=3)
     if session['role'] in MANAGERS:
         overview=[]
@@ -161,6 +208,9 @@ def order_new():
             model=core.require(g.db,'models',mid,True)
             if not model['customer_id'] or (cid and model['customer_id']!=cid):abort(400)
             form['customer_id']=str(model['customer_id']);form.setlist('model_id',[str(mid)]);form.setlist('qty',['']);form.setlist('price',[str(Decimal(model['sale_price_cents'])/100) if model['sale_price_cents'] is not None else ''])
+    if request.method=='GET':
+        next_step=start_action('order',customer=request.args.get('customer',type=int))
+        if urlsplit(next_step['url']).path!=request.script_root+request.path:return prerequisite_redirect(next_step)
     fields=('qty','model_id','new_model','price','quantity_unit','price_kind','price_unit','settlement','specification')
     position_rows=[{key:form.getlist(key)[n] if n<len(form.getlist(key)) else '' for key in fields} for n in range(len(form.getlist('qty')))]
     return render_template('business/director_order_new.html',customers=choices('customers'),models=choices('models'),form=form,position_rows=position_rows)
