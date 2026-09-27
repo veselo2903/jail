@@ -186,6 +186,10 @@ CREATE INDEX IF NOT EXISTS idx_material_movements_batch ON inventory_movements(b
 
 
 def migrate(conn):
+    if __package__:
+        from . import section_schema
+    else:
+        import section_schema
     conn.executescript(SCHEMA)
     additions = {
         'customers': [('contact','TEXT'),('note','TEXT')],
@@ -218,3 +222,5 @@ def migrate(conn):
         conn.execute('''INSERT OR IGNORE INTO model_operation_templates(model_id,operation_id,rate_cents)
             SELECT model_id,operation_id,rate_kopeks FROM prices''')
         conn.execute("INSERT INTO business_migrations(name) VALUES ('legacy_rate_templates')")
+
+    section_schema.migrate(conn)

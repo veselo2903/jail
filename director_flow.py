@@ -1,8 +1,10 @@
 """Director-facing stages derived from the existing manufacturing ledger."""
 if __package__:
     from . import business_core as core
+    from .sections import accepted_pairs
 else:
     import business_core as core
+    from sections import accepted_pairs
 
 STAGES=('Подготовка','Производство','Готовая обувь','Отгрузка','Завершён')
 
@@ -11,13 +13,17 @@ def batch_state(conn,b):
     bid=b['id'];tasks=core.task_rows(conn,bid)
     plans=conn.execute('SELECT * FROM batch_material_plan WHERE batch_id=?',(bid,)).fetchall()
     good=conn.execute("SELECT COALESCE(SUM(qty_pairs),0) FROM production_outputs WHERE batch_id=? AND kind='good'",(bid,)).fetchone()[0]
-    delivery=conn.execute('SELECT COALESCE(SUM(qty_pairs),0),COALESCE(SUM(CASE WHEN accepted_on IS NOT NULL THEN qty_pairs ELSE 0 END),0) FROM deliveries WHERE batch_id=?',(bid,)).fetchone()
+    delivery=(conn.execute('SELECT COALESCE(SUM(qty_pairs),0) FROM deliveries WHERE batch_id=?',(bid,)).fetchone()[0],accepted_pairs(conn,bid))
+    if __package__:
+        from .sections import supply_unresolved
+    else:
+        from sections import supply_unresolved
     outstanding=[t for t in tasks if t['mode']!='skip' and t['done']<t['qty_pairs']]
     missing_rates=[t for t in tasks if t['mode']=='internal' and t['rate_cents'] is None]
     missing_materials=not plans and not b['no_materials']
     missing_estimates=[p for p in plans if not p['owner_customer_id'] and p['estimated_unit_cents'] is None]
     needs_worker=any(t['mode']=='internal' and t['done']<t['qty_pairs'] for t in tasks) and not conn.execute('SELECT 1 FROM workers WHERE archived=0 LIMIT 1').fetchone()
-    prepared=bool(tasks) and not missing_rates and not missing_materials and not missing_estimates and not needs_worker
+    prepared=bool(tasks) and not missing_rates
     started=b['status'] in ('working','completed')
     stage=0;label='Подготовить модель';target='biz-add-operation';title='Выберите операции для этой модели';text='Отметьте нужные операции и сколько мы платим сотруднику за одну пару.'
     if b['status']=='canceled':
@@ -27,12 +33,6 @@ def batch_state(conn,b):
     elif not tasks:pass
     elif missing_rates:
         target='biz-task-'+str(missing_rates[0]['id']);title='Укажите оплату сотрудникам';text='У операции «'+missing_rates[0]['name']+'» ещё нет цены за пару.';label='Указать оплату'
-    elif missing_materials:
-        target='biz-plan-material';title='Укажите необходимые материалы';text='Добавьте материалы на весь объём этой модели или отметьте, что они не требуются.';label='Подготовить материалы'
-    elif missing_estimates:
-        target='biz-plan-material';title='Укажите стоимость материалов предприятия';text='В строке материала нажмите «Изменить» и укажите оценку за единицу.';label='Указать стоимость материалов'
-    elif needs_worker:
-        target='biz-party-worker';title='Добавьте сотрудников производства';text='Чтобы производство могло записывать работу, нужен хотя бы один сотрудник. Добавьте его здесь; остальных можно добавить в разделе «Сотрудники».';label='Добавить сотрудника'
     elif good>=b['qty_pairs'] and delivery[0]<b['qty_pairs']:
         stage=2;target='biz-delivery';title='Обувь готова — запишите отправку заказчику';text='Укажите количество, которое действительно отгружаете.';label='Записать отгрузку'
     elif delivery[0]>=b['qty_pairs']:
@@ -41,6 +41,10 @@ def batch_state(conn,b):
             stock=conn.execute('SELECT 1 FROM production_stock WHERE batch_id=? AND qty_milli>0',(bid,)).fetchone()
             if stock:
                 target='biz-material-move';title='Заказчик принял обувь — закройте остатки материалов';text='Использованное количество нужно списать, оставшееся — вернуть на склад.';label='Разобраться с остатками'
+            elif supply_unresolved(conn,bid):
+                target='biz-supplies';title='Уточните получение материалов';text='Откройте поставки партии и запишите, что произошло с недостачей или излишком.';label='К поставкам партии'
+            elif missing_materials or missing_estimates:
+                target='biz-plan-material';title='Уточните план материалов';text='Укажите материалы и их оценку либо отметьте, что материалы не требуются.';label='К материалам'
             elif outstanding:
                 target='biz-operations';title='Проверьте оставшиеся операции';text='Перед завершением должны быть записаны все выполненные задания.';label='Посмотреть операции'
             else:
@@ -50,7 +54,7 @@ def batch_state(conn,b):
     elif started:
         stage=1;target='biz-operations';title='Модель в производстве';text='Склад передаёт материалы, производство записывает выполненную работу. Здесь видно, сколько уже сделано.';label='Посмотреть выполнение'
     else:
-        target='biz-director-start';title='Модель подготовлена к производству';text='Операции, оплата и материалы указаны. Передайте задание в работу. У модели появится статус «В работе».';label='Передать в производство'
+        target='biz-director-start';title='Модель подготовлена к производству';text='Операции и оплата указаны. Передайте задание в работу. Материалы и исполнителей можно уточнить здесь.';label='Передать в производство'
     return dict(stage=stage,label=label,target=target,title=title,text=text,prepared=prepared,good=good,delivered=delivery[0],accepted=delivery[1],done=len(tasks)-len(outstanding),tasks=len(tasks))
 
 

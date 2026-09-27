@@ -18,11 +18,11 @@ with tempfile.TemporaryDirectory(prefix='jail-empty-') as folder:
     client=app.test_client()
     for role in ('sklad','director','proizv'):
         client.get('/login/'+role)
-        response=client.get('/'+role+'/refs')
+        response=client.get('/'+role+'/refs',follow_redirects=True)
         assert response.status_code==200
         assert 'refs-list card' not in response.text and 'Показать архив' not in response.text
         if role=='proizv':assert 'refs-section' not in response.text
-        else: assert response.text.count('refs-add card')==3
+        else: assert 'refs-add card' not in response.text
     client.get('/login/sklad')
     assert client.get('/sklad/orders/new').status_code==200
     with client.session_transaction() as session:csrf=session['csrf_token']
@@ -30,8 +30,10 @@ with tempfile.TemporaryDirectory(prefix='jail-empty-') as folder:
         assert client.post('/sklad/refs/'+table+'/add',data={'csrf_token':csrf,'name':'   ','number':' '}).status_code==302
     with db.get_db() as conn:
         assert all(conn.execute('SELECT COUNT(*) FROM '+t).fetchone()[0]==0 for t in ('customers','models','workers'))
-    response=client.post('/sklad/orders/new',data=dict(csrf_token=csrf,token='first-real-order',customer_id='new',new_customer='Фирма Север',model_id='new',new_model='Ботинки 714',qty='100',price='900',quantity_unit='pair',price_unit='pair',price_kind='unit',settlement='proportional'))
-    assert response.status_code==302 and '/batches/' in response.location
+    client.post('/sklad/customers/new',data=dict(csrf_token=csrf,token='first-customer',name='Фирма Север'))
+    client.post('/sklad/models/new',data=dict(csrf_token=csrf,token='first-model',customer_id='1',name='Ботинки 714',sale_price='900'))
+    response=client.post('/sklad/orders/new',data=dict(csrf_token=csrf,token='first-real-order',customer_id='1',model_id='1',qty='100',price='',quantity_unit='pair',price_unit='pair',price_kind='unit',settlement='proportional'))
+    assert response.status_code==302 and '/orders/' in response.location
     db.init_db()
     with db.get_db() as conn:
         assert conn.execute('SELECT COUNT(*) FROM customers').fetchone()[0]==1

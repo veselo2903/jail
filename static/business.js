@@ -99,6 +99,7 @@
  document.querySelectorAll('[data-record-task]').forEach(button=>button.addEventListener('click',()=>{const target=document.getElementById('biz-work'),select=target.querySelector('[name="task_id"]');select.value=button.dataset.recordTask;select.dispatchEvent(new Event('change'));openTarget(target,true);target.querySelector('[name="qty"]').focus({preventScroll:true})}));
  document.querySelectorAll('[data-movement-kind]').forEach(select=>{
    const form=select.closest('form'),material=form.querySelector('[name="material_id"]'),owner=form.querySelector('[name="owner_customer_id"]');
+   const initial=new URLSearchParams(location.search).get('material');if(initial&&!form.dataset.retry)material.value=initial;
    function refresh(){
      const receipt=select.value==='receipt',cost=form.querySelector('[data-receipt-cost]'),newOption=material.querySelector('option[value="new"]');
      if(newOption){newOption.hidden=!receipt;newOption.disabled=!receipt;if(!receipt&&material.value==='new')material.value=''}
@@ -120,7 +121,7 @@
  document.querySelectorAll('[data-material-plan]').forEach(form=>{
    const material=form.querySelector('[name="material_id"]');
    function refresh(){
-     const isNew=material.value==='new';form.querySelectorAll('[data-plan-new]').forEach(el=>el.hidden=!isNew);form.querySelector('[name="new_material"]').required=isNew;
+     const isNew=material.value==='new';form.querySelectorAll('[data-plan-new]').forEach(el=>el.hidden=!isNew);if(form.querySelector('[name="new_material"]'))form.querySelector('[name="new_material"]').required=isNew;
      const unit=isNew?form.querySelector('[name="new_unit"]').selectedOptions[0].textContent:material.selectedOptions[0]?.dataset.unit;
      form.querySelector('[name="qty"]').closest('label').querySelector('span').textContent='Всего требуется на партию'+(unit?', '+unit:'');
      const price=form.querySelector('[name="price"]');price.closest('label').hidden=Boolean(form.querySelector('[name="owner_customer_id"]').value);price.closest('label').querySelector('span').textContent='Оценка за '+(unit||'единицу')+', ₽';

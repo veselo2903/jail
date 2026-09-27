@@ -1,297 +1,80 @@
-"""Checks the warehouse supply flow and existing safeguards."""
-import json
-import os
-import pathlib
-import secrets
-import sqlite3
-import sys
-import tempfile
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
-
-with tempfile.TemporaryDirectory(prefix="jail-tests-") as temporary:
-    os.environ["JAIL_DB_PATH"] = str(pathlib.Path(temporary) / "jail.db")
-    os.environ["JAIL_SECRET_KEY"] = "local-tests-only-secret"
-    from jail.app import app, db
-    from fixtures import reference_data
-    reference_data(db)
-
-    class RoleClient:
-        ROLES = ("sklad", "proizv", "director")
-
-        def __init__(self, inner):
-            self.inner, self.role = inner, None
-
-        def __getattr__(self, name):
-            return getattr(self.inner, name)
-
-        def _path(self, path):
-            if self.role and path != "/" and not path.startswith(("/login", "/logout", "/docs")) \
-                    and path.split("/")[1] not in self.ROLES:
-                return "/%s%s" % (self.role, path)
-            return path
-
-        def get(self, path, **kw):
-            response = self.inner.get(self._path(path), **kw)
-            parts = path.split("?")[0].split("/")
-            if len(parts) == 3 and parts[1] == "login" and parts[2] in self.ROLES:
-                self.role = parts[2]
-            return response
-
-        def post(self, path, **kw):
-            return self.inner.post(self._path(path), **kw)
-
-    client = RoleClient(app.test_client())
-    assert "тестовый режим" not in client.get("/login").text
-    with client.session_transaction() as state:
-        token = state["csrf_token"]
-
-    def post(path, data=None):
-        fields = dict(data or {})
-        if path.endswith("/ship") or path.endswith("/supply/new"):
-            fields.setdefault("send_token", secrets.token_urlsafe(24))
-        return client.post(path, data={"csrf_token": token, **fields})
-
-    def one(sql, args=()):
-        with sqlite3.connect(db.DB_PATH) as conn:
-            return conn.execute(sql, args).fetchone()
-
-    def count(table):
-        return one("SELECT COUNT(*) FROM " + table)[0]
-
-    assert client.get("/overview").status_code == 302
-    assert client.get("/login/sklad").status_code == 302
-    assert client.inner.get("/proizv/requests").status_code == 403
-    empty = client.get("/requests")
-    assert empty.status_code == 200
-    assert "Создать поставку" in empty.text
-    assert 'class="tag sent"' not in empty.text
-    assert client.get("/requests/supply/new").status_code == 200
-    assert "Начали собирать" not in empty.text
-    assert "Сохранить сборку" not in empty.text
-    assert client.get("/requests/collect").status_code == 302
-    assert client.get("/requests/collect/blank").status_code == 302
-    assert client.get("/requests/transfer/new").status_code == 302
-    assert client.inner.get("/docs").location.endswith("/sklad/requests")
-    assert client.post("/requests/supply/new").status_code == 400  # CSRF
-    assert post("/requests/supply/new").status_code == 302
-    assert count("shipments") == 0
-    assert post("/requests/supply/new", {"material_name": ["Кожа"],
-                                   "material_qty": ["0"], "material_unit": ["m2"]}).status_code == 302
-    assert count("shipments") == 0
-    assert client.get("/login/proizv").status_code == 302
-    assert post("/requests/supply/new", {"material_name": ["Кожа"],
-                                   "material_qty": ["1"], "material_unit": ["m2"]}).status_code == 403
-
-    # Производство создаёт заявку; склад видит её после окна правки.
-    assert post("/requests/new", {"note": "пусто"}).status_code == 200
-    assert count("requests") == 0
-    created = post("/requests/new", {
-        "item": ["Кожа", "Нитки"], "qty": ["10", "5"],
-        "unit": ["sht", "sht"], "unit_custom": ["", ""],
-        "item_note": ["чёрная", ""], "urgent_1": "1", "note": "на партию"})
-    assert created.status_code == 302
-    req_id = one("SELECT id FROM requests")[0]
-    item_ids = [x[0] for x in sqlite3.connect(db.DB_PATH).execute(
-        "SELECT id FROM request_items WHERE request_id=? ORDER BY id", (req_id,))]
-    assert client.get(f"/requests/{req_id}/edit").status_code == 200
-    assert client.get("/login/sklad").status_code == 302
-    assert "Кожа" not in client.get("/requests/supply/new").text
-    assert post("/requests/supply/new", {f"ship_{item_ids[0]}": "1",
-                                            f"qty_{item_ids[0]}": "4"}).status_code == 302
-    with sqlite3.connect(db.DB_PATH) as conn:
-        conn.execute("UPDATE requests SET created_ts=created_ts-100 WHERE id=?", (req_id,))
-    page = client.get("/requests")
-    assert page.status_code == 200 and "Кожа" in page.text and "Создать поставку" in page.text
-    assert "ship_%s" % item_ids[0] not in page.text
-    supply_page = client.get("/requests/supply/new").text
-    assert "Запрошено 10" in supply_page
-    assert '<details class="sklad-incoming-spoiler">' in supply_page
-    assert 'class="btn grey sm sklad-back-to-requests"' in supply_page
-    assert 'class="btn block sklad-add-party-btn dashed"' in supply_page
-    assert supply_page.index('data-add-party') < supply_page.index('sklad-incoming-spoiler')
-    assert "Дополнительные материалы вне партии" in supply_page
-    assert "Партия из заказа" in supply_page and "Операции и расценки заданы в плане партии" in supply_page
-
-    # Первая отправка частичная. Остаток остаётся виден; повторная отправка закрывает заявку.
-    partial = post("/requests/supply/new", {
-        f"qty_{item_ids[0]}": "4"})
-    assert partial.status_code == 302 and "sh-" in partial.location
-    assert one("SELECT status FROM requests WHERE id=?", (req_id,))[0] == "progress"
-    assert count("shipments") == 1
-    assert one("SELECT qty FROM shipment_items WHERE request_item_id=?", (item_ids[0],))[0] == 4
-    assert "Осталось 6" in client.get("/requests/supply/new").text
-    assert client.get("/login/proizv").status_code == 302
-    assert post(f"/requests/{req_id}/delete").status_code == 403
-    assert "Отправлена частично" in client.get("/requests").text
-    assert "Отправлено 4" in client.get("/requests").text
-    assert post("/requests/new", {"item": ["Подкладка"], "qty": ["2"],
-                                  "unit": ["sht"], "unit_custom": [""],
-                                  "item_note": [""]}).status_code == 302
-    second_id = one("SELECT MAX(id) FROM requests")[0]
-    second_item = one("SELECT id FROM request_items WHERE request_id=?", (second_id,))[0]
-    with sqlite3.connect(db.DB_PATH) as conn:
-        conn.execute("UPDATE requests SET created_ts=created_ts-100 WHERE id=?", (second_id,))
-    assert client.get("/login/sklad").status_code == 302
-    complete = post("/requests/supply/new", {
-        f"ship_{item_ids[0]}": "1", f"qty_{item_ids[0]}": "6",
-        f"ship_{item_ids[1]}": "1", f"qty_{item_ids[1]}": "5",
-        f"ship_{second_item}": "1", f"qty_{second_item}": "2",
-        "material_name": ["Клей"], "material_qty": ["2"], "material_unit": ["sht"],
-        "ship_note": "добавили клей"})
-    assert complete.status_code == 302
-    assert one("SELECT status FROM requests WHERE id=?", (req_id,))[0] == "shipped"
-    assert one("SELECT status FROM requests WHERE id=?", (second_id,))[0] == "shipped"
-    assert count("shipments") == 2
-    assert one("SELECT COUNT(DISTINCT request_number) FROM shipment_items WHERE shipment_id=2")[0] == 2
-    assert one("SELECT SUM(qty) FROM shipment_items WHERE request_item_id=?", (item_ids[0],))[0] == 10
-    assert post("/requests/supply/new", {
-        "send_token": one("SELECT client_token FROM shipments ORDER BY id DESC")[0],
-        f"ship_{item_ids[1]}": "1", f"qty_{item_ids[1]}": "5"}).status_code == 302
-    assert count("shipments") == 2  # повторный запрос не дублирует отгрузку
-    assert "Кожа" in client.get("/requests").text
-
-    # Самостоятельная поставка: материалы и цены операций принадлежат конкретным партиям.
-    assert post("/requests/supply/new", {
-        "party_id": ["0"], "party_customer_0": "1", "party_model_0": "1",
-        "party_qty_0": "3", "party_operations_0": ["op1"],
-        "party_price_0_op1": "12,345"}).status_code == 302
-    assert count("shipments") == 2
-    sent = post("/requests/supply/new", {
-        "material_name": ["Подошва"], "material_qty": ["7"], "material_unit": ["pary"],
-        "party_id": ["0", "1"],
-        "party_customer_0": "1", "party_model_0": "1", "party_qty_0": "3",
-        "party_operations_0": ["op1", "op7"],
-        "party_price_0_op1": "12,50",
-        "party_material_name_0": ["Кожа", "Нитка"],
-        "party_material_qty_0": ["4", "2"],
-        "party_material_unit_0": ["m2", "sht"],
-        "party_customer_1": "1", "party_model_1": "2", "party_qty_1": "5",
-        "party_operations_1": ["op3"],
-        "party_price_1_op3": "3.25",
-        "party_material_name_1": ["Клей"],
-        "party_material_qty_1": ["1"], "party_material_unit_1": ["kg"],
-        "ship_note": "вне заявки"})
-    assert sent.status_code == 302
-    ship_id = one("SELECT MAX(id) FROM shipments")[0]
-    assert one("SELECT request_id, note FROM shipments WHERE id=?", (ship_id,)) == (None, "вне заявки")
-    assert one("SELECT COUNT(*) FROM shipment_items WHERE shipment_id=?", (ship_id,))[0] == 6
-    assert one("SELECT COUNT(*) FROM shipment_items WHERE shipment_id=? AND party_item_id IS NOT NULL", (ship_id,))[0] == 3
-    assert one("SELECT COUNT(DISTINCT party_item_id) FROM shipment_items WHERE shipment_id=?", (ship_id,))[0] == 2
-    assert one("SELECT party_item_id FROM shipment_items WHERE shipment_id=? AND item='Подошва'", (ship_id,))[0] is None
-    pair_ops = [json.loads(x[0]) for x in sqlite3.connect(db.DB_PATH).execute(
-        "SELECT operation FROM shipment_items WHERE shipment_id=? AND line_kind='pair' ORDER BY id",
-        (ship_id,))]
-    assert pair_ops == [["op1", "op7"], ["op3"]]
-    party_prices = [json.loads(x[0]) for x in sqlite3.connect(db.DB_PATH).execute(
-        "SELECT operation_prices FROM shipment_items WHERE shipment_id=? AND line_kind='pair' ORDER BY id",
-        (ship_id,))]
-    assert party_prices == [{"op1": 1250}, {"op3": 325}]
-    warehouse = client.get("/requests")
-    assert warehouse.status_code == 200 and "Поставка №" in warehouse.text
-    assert "вне заявки" in warehouse.text
-    assert client.get("/login/proizv").status_code == 302
-    production = client.get("/requests")
-    assert production.status_code == 200
-    assert "Поставка без заявки" in production.text and "Подошва" in production.text
-    assert "Отправки по заявке" in production.text
-    assert "Штробель сапожники" in production.text
-    assert "12.50 ₽/пару" in production.text and "3.25 ₽/пару" in production.text
-
-    # Отказ закрывает позиции без поставки; производство видит результат.
-    with sqlite3.connect(db.DB_PATH) as conn:
-        rejected_req = conn.execute(
-            "INSERT INTO requests(status,created_role,created_at) VALUES ('open','proizv','25.09.2026 10:00')").lastrowid
-        rejected_item = conn.execute(
-            "INSERT INTO request_items(request_id,item,qty,unit) VALUES (?,?,3,'sht')",
-            (rejected_req, "Материал для отказа")).lastrowid
-        unknown_item = conn.execute(
-            "INSERT INTO request_items(request_id,item) VALUES (?,?)",
-            (rejected_req, "Без количества")).lastrowid
-    reject_path = f"/requests/{rejected_req}/items/{rejected_item}/reject"
-    assert post(reject_path).status_code == 403
-    assert client.get("/login/sklad").status_code == 302
-    assert client.post(reject_path).status_code == 400
-    shipment_count = count("shipments")
-    rejected = post(reject_path)
-    assert rejected.status_code == 200 and not rejected.json["complete"]
-    assert one("SELECT status FROM request_items WHERE id=?", (rejected_item,))[0] == "rejected"
-    assert one("SELECT status FROM requests WHERE id=?", (rejected_req,))[0] == "progress"
-    assert "Материал для отказа" not in client.get("/requests/supply/new").text
-    assert "Без количества" in client.get("/requests/supply/new").text
-    assert client.get("/login/proizv").status_code == 302
-    assert "Отклонено складом" in client.get("/requests").text
-    assert post(f"/requests/{rejected_req}/delete").status_code == 403
-    assert client.get("/login/sklad").status_code == 302
-    assert post(f"/requests/{rejected_req}/items/{unknown_item}/reject").json["complete"]
-    assert post(reject_path).json["complete"]  # повторный клик безопасен
-    assert one("SELECT status FROM requests WHERE id=?", (rejected_req,))[0] == "shipped"
-    assert "Отклонена" in client.get("/requests").text
-    assert count("shipments") == shipment_count
-    with sqlite3.connect(db.DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        db._migrate_shipments(conn)
-        conn.commit()
-    assert count("shipments") == shipment_count  # перезапуск не создаёт поставку из отказа
-
-    # Частичную отправку можно закрыть отказом от остатка.
-    with sqlite3.connect(db.DB_PATH) as conn:
-        mixed_req = conn.execute(
-            "INSERT INTO requests(status,created_role,created_at) VALUES ('open','proizv','25.09.2026 11:00')").lastrowid
-        mixed_item = conn.execute(
-            "INSERT INTO request_items(request_id,item,qty,unit) VALUES (?,?,2,'sht')",
-            (mixed_req, "Частичный отказ")).lastrowid
-    assert post("/requests/supply/new", {f"qty_{mixed_item}": "1"}).status_code == 302
-    assert post(f"/requests/{mixed_req}/items/{mixed_item}/reject").json["complete"]
-    assert count("shipments") == shipment_count + 1
-    assert one("SELECT SUM(qty) FROM shipment_items WHERE request_item_id=?", (mixed_item,))[0] == 1
-    assert "Выполнена" in client.get("/requests").text
-    assert "Остаток отклонён складом" in client.get("/requests").text
-    assert post("/requests/supply/new", {f"qty_{mixed_item}": "1"}).status_code == 302
-    assert count("shipments") == shipment_count + 1
-    assert post(f"/requests/{req_id}/items/{item_ids[0]}/reject").status_code == 409
-    assert client.get("/login/proizv").status_code == 302
-
-    # Старую отправленную заявку переносим в журнал один раз.
-    with sqlite3.connect(db.DB_PATH) as conn:
-        old = conn.execute(
-            "INSERT INTO requests(status,urgent,created_role,created_at,done_at) "
-            "VALUES ('shipped',0,'proizv','25.09.2026 09:00','25.09.2026 09:15')").lastrowid
-        old_item = conn.execute(
-            "INSERT INTO request_items(request_id,item,qty,collected,placed) VALUES (?,?,?,?,1)",
-            (old, "Нить", 2, 2)).lastrowid
-        conn.row_factory = sqlite3.Row
-        db._migrate_shipments(conn)
-        db._migrate_shipments(conn)
-        conn.commit()
-    assert one("SELECT COUNT(*) FROM shipments WHERE legacy_request_id=?", (old,))[0] == 1
-    assert one("SELECT qty FROM shipment_items WHERE request_item_id=?", (old_item,))[0] == 2
-
-    # Возврат, приёмка, аудит и зарплата продолжают работать.
-    ret = post("/requests/transfer/new", {
-        "customer_id": ["1"], "model_id": ["1"],
-        "status": ["gotovoe"], "pairs": ["2"]})
-    assert ret.status_code == 302
-    doc_id = one("SELECT MAX(id) FROM documents")[0]
-    line_id = one("SELECT id FROM lines WHERE document_id=?", (doc_id,))[0]
-    assert client.get("/login/sklad").status_code == 302
-    assert post(f"/requests/transfer/{doc_id}/accept", {f"recv_{line_id}": "2"}).status_code == 302
-    assert one("SELECT status FROM documents WHERE id=?", (doc_id,))[0] == "accepted"
-    assert client.get("/login/director").status_code == 302
-    assert post("/payroll/rates", {"model_id": "1", "operation_id": "1",
-                                   "rate": "1.25"}).status_code == 302
-    assert client.get("/login/proizv").status_code == 302
-    assert post("/payroll/records", {"worker_id": "1", "model_id": "1",
-                                     "operation_id": "1", "pairs": "10",
-                                     "work_date": "2026-09-25"}).status_code == 302
-    assert one("SELECT COUNT(*) FROM work_records")[0] == 0  # new work requires a persistent batch
-    with sqlite3.connect(db.DB_PATH) as conn:
-        conn.execute("PRAGMA foreign_keys=ON")
-        try:
-            conn.execute(
-                "INSERT INTO shipment_items(shipment_id,line_kind,item,qty) VALUES (9999,'material','X',1)")
-            raise AssertionError("missing shipment foreign key")
-        except sqlite3.IntegrityError:
-            pass
-    assert one("PRAGMA integrity_check")[0] == "ok"
-    print("PASS: warehouse send, partial remainder, independent send, migration, roles, CSRF, acceptance, payroll, SQLite")
+"""Request viewing, partial supply, urgent positions, rejection and migration."""
+import os,secrets,sqlite3,sys,tempfile
+from pathlib import Path
+from werkzeug.datastructures import MultiDict
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
+with tempfile.TemporaryDirectory(prefix='jail-smoke-') as folder:
+    os.environ['JAIL_DB_PATH']=str(Path(folder)/'test.db');os.environ['JAIL_SECRET_KEY']='smoke-isolated'
+    from jail.app import app,db
+    app.testing=True;client=app.test_client();role='sklad'
+    client.get('/login/sklad',follow_redirects=True)
+    with client.session_transaction() as s:csrf=s['csrf_token']
+    def switch(value):
+        global role
+        role=value;client.get('/login/'+value,follow_redirects=True)
+    def post(path,data=None):
+        f=MultiDict(data or {});f['csrf_token']=csrf;f.setdefault('token',secrets.token_hex(8));f.setdefault('send_token',secrets.token_hex(8))
+        return client.post('/'+role+path,data=f)
+    def one(sql,args=()):
+        with db.get_db() as c:return c.execute(sql,args).fetchone()
+    def count(t):return one('SELECT COUNT(*) FROM '+t)[0]
+    def page(path):return client.get('/'+role+path).text
+    assert client.get('/proizv/requests').status_code==403
+    assert 'тестовый режим' not in page('/requests') and 'class="tag sent"' not in page('/requests')
+    assert client.post('/sklad/supplies/new').status_code==400
+    assert client.get('/sklad/requests/supply/new').location.endswith('/sklad/supplies/new')
+    assert client.get('/sklad/refs').location.endswith('/sklad/customers')
+    assert post('/supplies/new').status_code==302 and count('shipments')==0
+    post('/inventory/new',dict(name='Кожа',unit='m2'))
+    post('/inventory',dict(kind='receipt',material_id='1',qty='100',cost='1000'))
+    switch('proizv')
+    assert post('/requests/new',dict(note='Пусто')).status_code==200 and count('requests')==0
+    r=post('/requests/new',dict(item=['Кожа','Нитки'],qty=['10','5'],unit=['m2','sht'],urgent_1='1',item_note=['Чёрная',''],note='На партию'))
+    assert r.status_code==302
+    rid=one('SELECT id FROM requests')[0]
+    with db.get_db() as c:items=[r[0] for r in c.execute('SELECT id FROM request_items ORDER BY id')]
+    assert client.get('/proizv/requests/'+str(rid)+'/edit').status_code==200
+    switch('sklad');assert 'Заявка №'+str(rid) not in page('/supplies/new')
+    assert post('/supplies/new',{'qty_'+str(items[0]):'4','inventory_material_'+str(items[0]):'1'}).status_code==302
+    assert count('shipments')==0 # pending producer edit window
+    with db.get_db() as c:c.execute('UPDATE requests SET created_ts=created_ts-100 WHERE id=?',(rid,))
+    html=page('/requests');assert 'Кожа' in html and 'ship_'+str(items[0]) not in html
+    assert count('shipments')==0
+    html=page('/supplies/new');assert 'Заявки производства' in html and 'Запрошено 10' in html
+    assert '<details class="sklad-incoming-spoiler" >' in html and 'Дополнительные материалы вне партии' in html
+    r=post('/supplies/new',{'qty_'+str(items[0]):'4','inventory_material_'+str(items[0]):'1','inventory_tracking':'1','send_token':'partial'})
+    assert r.status_code==302 and '/supplies/' in r.location
+    assert one('SELECT status FROM requests')[0]=='progress' and count('shipments')==1
+    assert 'Осталось 6' in page('/supplies/new')
+    post('/supplies/new',{'qty_'+str(items[0]):'4','inventory_material_'+str(items[0]):'1','send_token':'partial'})
+    assert count('shipments')==1
+    # Position urgency remains visible when reading the expanded request.
+    assert page('/requests').count('Срочно')>=1
+    path='/requests/'+str(rid)+'/items/'+str(items[1])+'/reject'
+    assert client.post('/sklad'+path).status_code==400
+    r=post(path,dict(reason='Нитки не требуются'));assert r.status_code==200 and not r.json['complete']
+    post('/supplies/new',{'qty_'+str(items[0]):'6','inventory_material_'+str(items[0]):'1','inventory_tracking':'1','send_token':'rest'})
+    assert count('shipments')==2 and one('SELECT status FROM requests')[0]=='shipped'
+    assert 'Кожа' not in page('/requests') and 'Кожа' in page('/requests?archive=1')
+    assert post(path,dict(reason='Повтор')).json['complete'] and count('shipments')==2
+    assert post('/requests/'+str(rid)+'/items/'+str(items[0])+'/reject').status_code==409
+    switch('proizv')
+    assert post('/requests/'+str(rid)+'/delete').status_code==403
+    assert post('/supplies/new').status_code==403
+    assert 'Нитки не требуются' in page('/requests?archive=1')
+    # Migration of old shipped requests is once-only; rejected requests never create fake shipments.
+    with db.get_db() as c:
+        old=c.execute("INSERT INTO requests(status,created_role,created_at,done_at) VALUES ('shipped','proizv','25.09.2026 09:00','25.09.2026 09:15')").lastrowid
+        c.execute('INSERT INTO request_items(request_id,item,qty,collected,placed) VALUES (?,?,2,2,1)',(old,'Нить'))
+        rejected=c.execute("INSERT INTO requests(status,created_role,created_at) VALUES ('shipped','proizv','25.09.2026 09:00')").lastrowid
+        c.execute("INSERT INTO request_items(request_id,item,qty,status) VALUES (?,? ,3,'rejected')",(rejected,'Отказ'))
+        db._migrate_shipments(c);db._migrate_shipments(c)
+    assert one('SELECT COUNT(*) FROM shipments WHERE legacy_request_id=?',(old,))[0]==1
+    assert one('SELECT COUNT(*) FROM shipments WHERE legacy_request_id=?',(rejected,))[0]==0
+    assert post('/payroll/records',dict(worker_id='1',model_id='1',operation_id='1',pairs='10',work_date='2026-09-25')).status_code==302
+    assert count('work_records')==0
+    with db.get_db() as c:
+        try:c.execute("INSERT INTO shipment_items(shipment_id,line_kind,item,qty) VALUES (9999,'material','X',1)");raise AssertionError('Missing foreign key')
+        except sqlite3.IntegrityError:c.rollback()
+        assert not c.execute('PRAGMA foreign_key_check').fetchone()
+    print('PASS: request window/read-only view, urgency, partial fulfillment, stock, rejection, history, migration, CSRF and roles')

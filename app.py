@@ -395,40 +395,18 @@ def documents():
     role = session["role"]
     rows = []
 
-    # --- Передачи ---
-    kinds = _visible_kinds(role)
-    docs = g.db.execute(
-        "SELECT * FROM documents WHERE kind IN (%s) ORDER BY id DESC"
-        % ",".join("?" * len(kinds)), kinds).fetchall()
-    for d in docs:
-        sent, recv, diff, has_recv = _doc_totals(d["id"])
-        if sent == 0:
-            continue
-        creator, acceptor = _doc_dir(d["kind"])
-        need_accept = (d["status"] == "sent" and role == acceptor)
-        rows.append(dict(
-            group="doc", id=d["id"], created_at=d["created_at"],
-            title="Передача", direction=("Склад → Производство" if d["kind"] == "OUT" else "Производство → Склад"),
-            amount=("%s → %s" % (sent, recv) if has_recv else str(sent)), unit="пар",
-            status=d["status"], status_label=STATUS_LABEL[d["status"]], status_cls=d["status"],
-            diff=(diff if has_recv else 0), has_recv=has_recv, urgent=0,
-            need_action=need_accept, can_del=(role == "director"),
-            del_url=url_for("doc_delete", doc_id=d["id"]),
-            url=url_for("doc_view", doc_id=d["id"]),
-        ))
-
     # --- Заявки ---
     reqs = g.db.execute("SELECT * FROM requests ORDER BY id DESC").fetchall()
     for r in reqs:
         if r["created_role"] == "sklad":
             continue  # старые самостоятельные отправки показываются в журнале отправок
-        if role == "sklad" and _hidden_from_sklad(r):
+        if role in ("sklad","director") and _hidden_from_sklad(r):
             continue
         n = g.db.execute("SELECT COUNT(*) c FROM request_items WHERE request_id=?",
                          (r["id"],)).fetchone()["c"]
         if n == 0:
             continue
-        need = (role == "sklad" and r["status"] in ("open", "progress", "done"))
+        need = (role in ("sklad","director") and r["status"] in ("open", "progress", "done"))
         detail = _request_detail(r, role)
         has_rejected = any(i["status"] == "rejected" for i in detail["need"])
         if has_rejected:
@@ -457,22 +435,9 @@ def documents():
             detail_id="dq-%d" % r["id"],
         ))
 
-    for s in g.db.execute(
-            "SELECT * FROM shipments WHERE request_id IS NULL ORDER BY id DESC"
-        ).fetchall():
-        items = _load_shipment_items(s["id"])
-        linked = sorted({i["request_number"] for i in items if i["request_number"] is not None})
-        rows.append(dict(
-            group="shipment", id=s["id"], created_at=s["created_at"],
-            title="Поставка по заявкам" if linked else "Поставка без заявки",
-            direction="Склад → Производство",
-            amount=str(len(items)), unit="поз.", status="shipped",
-            status_label="Отправлено", status_cls="rq-shipped",
-            diff=0, has_recv=False, urgent=0, need_action=False,
-            can_del=False, can_edit=False, url=None,
-            detail=dict(s=s, items=items, linked=linked), detail_id="sh-%d" % s["id"],
-        ))
-
+    archive=request.args.get("archive")=="1"
+    has_archive=any(not x["need_action"] for x in rows) if role in ("sklad","director") else any(x["status"]=="shipped" for x in rows)
+    rows=[x for x in rows if (not x["need_action"] if archive else x["need_action"]) ] if role in ("sklad","director") else [x for x in rows if (x["status"]=="shipped" if archive else x["status"]!="shipped")]
     rows.sort(key=lambda x: (x["need_action"], _sort_key(x["created_at"])), reverse=True)
 
     to_action = sum(1 for x in rows if x["need_action"])
@@ -481,12 +446,12 @@ def documents():
     can_request = (role == "proizv")
 
     customers = models = []
-    if role == "sklad":
+    if role in ("sklad","director"):
         customers = g.db.execute("SELECT * FROM customers WHERE archived=0 ORDER BY name").fetchall()
         models = g.db.execute("SELECT * FROM models WHERE archived=0 ORDER BY name").fetchall()
     return render_template("documents.html", rows=rows, n_all=len(rows), customers=customers, models=models,
                            to_action=to_action,
-                           can_transfer=can_transfer, can_request=can_request)
+                           can_transfer=False, can_request=can_request,archive=archive,has_archive=has_archive)
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/collect")
@@ -498,10 +463,10 @@ def docs_collect():
     return redirect(url_for("documents"))
 
 
-@app.route("/<any(sklad,proizv,director):role_url>/requests/supply/new", methods=["GET", "POST"])
+@app.route("/<any(sklad,proizv,director):role_url>/supplies/new", methods=["GET", "POST"])
 @login_required
 def supply_new():
-    if session["role"] != "sklad":
+    if session["role"] not in ("sklad","director"):
         abort(403)
     if request.method == "POST" and not getattr(g,"render_failed_form",False):
         return _send_shipment(multi=True)
@@ -515,6 +480,7 @@ def supply_new():
         need = [i for i in _needed_items(r["id"]) if i["remaining"] != 0]
         if need:
             incoming.append(dict(r=r, need=need))
+    if request.args.get("request",type=int):incoming=[e for e in incoming if e["r"]["id"]==request.args.get("request",type=int)]
     customers = g.db.execute("SELECT * FROM customers WHERE archived=0 ORDER BY name").fetchall()
     models = g.db.execute("SELECT * FROM models WHERE archived=0 ORDER BY name").fetchall()
     batches = g.db.execute("""SELECT b.*,c.name customer_name,m.name model_name FROM production_batches b
@@ -522,7 +488,7 @@ def supply_new():
         WHERE b.status NOT IN ('closed','canceled') ORDER BY b.id DESC""").fetchall()
     materials = g.db.execute("SELECT * FROM materials WHERE archived=0 ORDER BY name").fetchall()
     return render_template("supply_new.html", incoming=incoming, customers=customers, models=models,
-        batches=batches, materials=materials, selected_batch=request.args.get("batch", ""))
+        batches=batches, materials=materials, selected_batch=request.args.get("batch", ""), selected_request=request.args.get("request",type=int),selected_material=request.args.get("material",type=int))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/collect/save", methods=["POST"])
@@ -643,62 +609,7 @@ def _redirect_with_role(path):
 @app.route("/<any(sklad,proizv,director):role_url>/requests/transfer/new", methods=["GET", "POST"])
 @login_required
 def doc_new():
-    role = session["role"]
-    if role == "sklad":
-        return redirect(url_for("supply_new"))
-    # какие типы может создавать эта роль
-    creatable = [k for k, v in KINDS.items() if v[1] == role]
-    if not creatable:
-        abort(403)
-
-    # У роли ровно один тип: склад -> OUT, производство -> RETURN.
-    kind = creatable[0]
-    allowed = KIND_LINE_STATUSES[kind]
-    customers = g.db.execute("SELECT * FROM customers WHERE archived=0 ORDER BY name").fetchall()
-    models = g.db.execute("SELECT * FROM models WHERE archived=0 ORDER BY name").fetchall()
-    blank = {"customer_id": "", "model_id": "", "status": allowed[0], "pairs": ""}
-
-    def page(rows, note):
-        return render_template("document_new.html", kind=kind, customers=customers, models=models,
-                               rows=rows or [blank], blank=blank, note=note)
-
-    if request.method == "GET":
-        return page([blank], "")
-    rows = _parse_doc_rows()
-    note = (request.form.get("note") or "").strip()
-
-    def fail(message):
-        flash(message)
-        return page(rows, note)
-
-    parsed = []
-    for n, row in enumerate(rows, 1):
-        if not row["pairs"]:
-            continue  # пустая карточка — пропускаем
-        try:
-            cid, mid, pairs = int(row["customer_id"]), int(row["model_id"]), int(row["pairs"])
-        except ValueError:
-            return fail("Строка %d: заполните заказчика, модель и число пар." % n)
-        if pairs <= 0:
-            return fail("Строка %d: число пар должно быть больше нуля." % n)
-        if (not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone() or
-                not g.db.execute("SELECT 1 FROM models WHERE id=? AND archived=0", (mid,)).fetchone()):
-            return fail("Строка %d: выберите действующих заказчика и модель." % n)
-        status = row["status"] if row["status"] in allowed else allowed[0]
-        parsed.append((cid, mid, status, pairs))
-    if not parsed:
-        return fail("Добавьте хотя бы одну строку с числом пар.")
-    now = db.now_str()
-    cur = g.db.execute(
-        "INSERT INTO documents (kind, status, created_role, created_at, sent_at, note) "
-        "VALUES (?, 'sent', ?, ?, ?, ?)", (kind, role, now, now, note))
-    for cid, mid, status, pairs in parsed:
-        g.db.execute(
-            "INSERT INTO lines (document_id, customer_id, model_id, status, pairs_sent) VALUES (?, ?, ?, ?, ?)",
-            (cur.lastrowid, cid, mid, status, pairs))
-    g.db.commit()
-    flash("Заявка №%d отправлена на приёмку." % cur.lastrowid)
-    return redirect(url_for("documents"))
+    return redirect(url_for("supply_return_new" if session["role"]=="proizv" else "supply_new"),code=307 if request.method=="POST" else 302)
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/transfer/<int:doc_id>")
@@ -712,8 +623,9 @@ def doc_view(doc_id):
     sent, recv, diff, has_recv = _doc_totals(doc_id)
     creator, acceptor = _doc_dir(d["kind"])
 
-    can_accept = (d["status"] == "sent" and role == acceptor)
-    can_delete = (role == "director")
+    later_receipt=d['status']=='accepted' and any(l['batch_id'] and (l['pairs_recv'] or 0)<l['pairs_sent'] for l in lines)
+    can_accept = ((d['status']=='sent' or later_receipt) and (role == acceptor or (role == "director" and acceptor == "sklad")))
+    can_delete = (role == "director" and d["status"] != "accepted" and not any(l["batch_id"] for l in lines))
 
     return render_template(
         "document_view.html", d=d, lines=lines, sent=sent, recv=recv,
@@ -725,12 +637,14 @@ def doc_view(doc_id):
 @app.route("/<any(sklad,proizv,director):role_url>/requests/transfer/<int:doc_id>/accept", methods=["POST"])
 @login_required
 def doc_accept(doc_id):
+    g.db.execute("BEGIN IMMEDIATE")
     role = session["role"]
     d = g.db.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
     if not d:
         abort(404)
     _, acceptor = _doc_dir(d["kind"])
-    if d["status"] != "sent" or role != acceptor:
+    linked=g.db.execute('SELECT 1 FROM lines WHERE document_id=? AND batch_id IS NOT NULL',(doc_id,)).fetchone()
+    if (d['status']!='sent' and not (d['status']=='accepted' and linked)) or (role != acceptor and not (role == "director" and acceptor == "sklad")):
         abort(403)
 
     received = []
@@ -745,7 +659,15 @@ def doc_accept(doc_id):
             flash("Принятое количество не может быть отрицательным.")
             return redirect(url_for("doc_view", doc_id=doc_id))
         note = (request.form.get(f"note_{l['id']}", "") or "").strip()
+        if l['batch_id']:
+            if recv>l['pairs_sent'] or (d['status']=='accepted' and recv<(l['pairs_recv'] or 0)):
+                flash('Укажите общее полученное количество: не меньше ранее полученного и не больше отправленного.','error')
+                return redirect(url_for('doc_view',doc_id=doc_id))
+            if ((d['status']=='sent' and recv!=l['pairs_sent']) or (d['status']=='accepted' and recv!=(l['pairs_recv'] or 0))) and not note:
+                flash('При расхождении или дополнении получения укажите пояснение.','error')
+                return redirect(url_for('doc_view',doc_id=doc_id))
         received.append((recv, note, l["id"]))
+    _audit_snapshot('shoe_receipt_snapshot',str(doc_id),{'document':dict(d),'lines':[dict(l) for l in _load_lines(doc_id)]})
     for recv, note, line_id in received:
         g.db.execute(
             "UPDATE lines SET pairs_recv=?, discrepancy_note=? WHERE id=?",
@@ -768,6 +690,9 @@ def doc_delete(doc_id):
     # Отправленный или принятый документ удаляет только директор
     if role != "director":
         abort(403)
+    if d['status']=='accepted' or g.db.execute('SELECT 1 FROM lines WHERE document_id=? AND batch_id IS NOT NULL',(doc_id,)).fetchone():
+        flash('Передача уже связана с производством или получением. История сохраняется.','error')
+        return redirect(url_for('doc_view',doc_id=doc_id))
     _audit_snapshot("doc_delete_snapshot", str(doc_id),
                     {"document": dict(d), "lines": [dict(x) for x in _load_lines(doc_id)]})
     g.db.execute("DELETE FROM lines WHERE document_id=?", (doc_id,))
@@ -781,21 +706,8 @@ def doc_delete(doc_id):
 @app.route("/<any(sklad,proizv,director):role_url>/refs")
 @login_required
 def refs():
-    show_arch = request.args.get("arch") == "1"
-
-    def load(table):
-        q = f"SELECT * FROM {table}"
-        if not show_arch:
-            q += " WHERE archived=0"
-        q += " ORDER BY " + ("number+0, number" if table == "workers" else "name")
-        return g.db.execute(q).fetchall()
-
-    return render_template(
-        "refs.html", show_arch=show_arch,
-        customers=load("customers"), models=load("models"),
-        workers=load("workers"), can_edit=can_edit_refs(),
-        has_archived=any(g.db.execute("SELECT 1 FROM "+table+" WHERE archived=1 LIMIT 1").fetchone() for table in ("customers","models","workers")),
-    )
+    if session["role"]=="proizv":return redirect(url_for("business.batches"))
+    return redirect(url_for("business.customers"))
 
 
 def _ref_guard(table):
@@ -809,83 +721,28 @@ def _ref_guard(table):
 @login_required
 def ref_add(table):
     _ref_guard(table)
-    if table == "workers":
-        number = (request.form.get("number") or "").strip()
-        name = (request.form.get("name") or "").strip()
-        if number and name:
-            g.db.execute("INSERT INTO workers (number, name) VALUES (?, ?)",
-                         (number, name))
-    else:
-        name = (request.form.get("name") or "").strip()
-        if name:
-            if table == "models":
-                cid = request.form.get("customer_id") or None
-                if cid and not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone():
-                    abort(400)
-                g.db.execute("INSERT INTO models(name,customer_id) VALUES (?,?)", (name,cid))
-            else:
-                g.db.execute(f"INSERT INTO {table} (name) VALUES (?)", (name,))
-    g.db.commit()
-    return redirect(url_for("refs", arch=request.args.get("arch"), _anchor="refs-" + table))
+    return redirect(url_for({"customers":"business.customers","models":"business.models","workers":"business.staff"}[table]))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/refs/<table>/quick_add", methods=["POST"])
 @login_required
 def ref_quick_add(table):
-    """Быстрое добавление заказчика/модели прямо из документа (склад/директор)."""
-    if session.get("role") not in ("sklad", "director"):
-        return {"ok": False, "error": "нет прав"}, 403
-    if table not in ("customers", "models"):
-        return {"ok": False, "error": "неизвестный справочник"}, 404
-    name = (request.form.get("name") or "").strip()
-    if not name:
-        return {"ok": False, "error": "Введите название"}, 400
-    row = g.db.execute(
-        f"SELECT id FROM {table} WHERE lower(name)=lower(?) AND archived=0",
-        (name,)).fetchone()
-    if row:
-        return {"ok": True, "id": row["id"], "name": name, "existed": True}
-    cur = g.db.execute(f"INSERT INTO {table} (name) VALUES (?)", (name,))
-    g.db.commit()
-    return {"ok": True, "id": cur.lastrowid, "name": name, "existed": False}
+    _ref_guard(table)
+    return redirect(url_for({"customers":"business.customers","models":"business.models","workers":"business.staff"}[table]))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/refs/<table>/<int:rid>/edit", methods=["POST"])
 @login_required
 def ref_edit(table, rid):
     _ref_guard(table)
-    if table == "workers":
-        number = (request.form.get("number") or "").strip()
-        name = (request.form.get("name") or "").strip()
-        if number and name:
-            g.db.execute("UPDATE workers SET number=?, name=? WHERE id=?",
-                         (number, name, rid))
-    else:
-        name = (request.form.get("name") or "").strip()
-        if name:
-            if table == "models" and "customer_id" in request.form:
-                cid = request.form.get("customer_id") or None
-                model = g.db.execute("SELECT * FROM models WHERE id=?",(rid,)).fetchone()
-                if not model: abort(404)
-                if cid and not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone(): abort(400)
-                if str(model["customer_id"] or "") != str(cid or "") and g.db.execute("SELECT 1 FROM order_items WHERE model_id=?",(rid,)).fetchone():
-                    flash("Модель уже связана с заказами. Для другого заказчика создайте отдельную модель.")
-                    return redirect(url_for("refs"))
-                g.db.execute("UPDATE models SET name=?,customer_id=? WHERE id=?",(name,cid,rid))
-            else:
-                g.db.execute(f"UPDATE {table} SET name=? WHERE id=?", (name, rid))
-    g.db.commit()
-    return redirect(url_for("refs", arch=request.args.get("arch"), _anchor="refs-" + table))
+    return redirect(url_for({"customers":"business.customers","models":"business.models","workers":"business.staff"}[table]))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/refs/<table>/<int:rid>/arch", methods=["POST"])
 @login_required
 def ref_arch(table, rid):
     _ref_guard(table)
-    val = 0 if request.form.get("restore") else 1
-    g.db.execute(f"UPDATE {table} SET archived=? WHERE id=?", (val, rid))
-    g.db.commit()
-    return redirect(url_for("refs", arch=request.args.get("arch"), _anchor="refs-" + table))
+    return redirect(url_for({"customers":"business.customers","models":"business.models","workers":"business.staff"}[table]))
 
 
 # ---------- Расхождения ----------
@@ -894,83 +751,14 @@ def ref_arch(table, rid):
 def discrepancies():
     if not can_see_discrepancies():
         abort(403)
-
-    # Отдано в производство (A+B, принятые) и вернулось (RETURN, принятые), по моделям
-    out = g.db.execute(
-        """SELECT m.name AS model, SUM(l.pairs_recv) AS pairs
-           FROM lines l
-           JOIN documents d ON d.id = l.document_id
-           JOIN models m ON m.id = l.model_id
-           WHERE d.kind='OUT' AND d.status='accepted'
-             AND l.pairs_recv IS NOT NULL
-           GROUP BY m.id""").fetchall()
-    back = g.db.execute(
-        """SELECT m.name AS model, SUM(l.pairs_recv) AS pairs
-           FROM lines l
-           JOIN documents d ON d.id = l.document_id
-           JOIN models m ON m.id = l.model_id
-           WHERE d.kind='RETURN' AND d.status='accepted'
-             AND l.pairs_recv IS NOT NULL
-           GROUP BY m.id""").fetchall()
-
-    agg = {}
-    for r in out:
-        agg.setdefault(r["model"], {"out": 0, "back": 0})["out"] += r["pairs"] or 0
-    for r in back:
-        agg.setdefault(r["model"], {"out": 0, "back": 0})["back"] += r["pairs"] or 0
-
-    report = []
-    total_diff = 0
-    for model, v in agg.items():
-        diff = v["out"] - v["back"]
-        total_diff += diff
-        report.append(dict(model=model, out=v["out"], back=v["back"], diff=diff))
-    report.sort(key=lambda x: (-x["diff"], x["model"]))
-
-    # Документы с расхождениями при приёмке (факт != отдано)
-    docs = g.db.execute(
-        "SELECT * FROM documents WHERE status='accepted' ORDER BY id DESC").fetchall()
-    doc_discr = []
-    for d in docs:
-        bad = []
-        for l in _load_lines(d["id"]):
-            if l["pairs_recv"] is not None and l["pairs_recv"] != l["pairs_sent"]:
-                bad.append(l)
-        if bad:
-            doc_discr.append(dict(d=d, bad=bad))
-
-    return render_template("discrepancies.html", report=report,
-                           total_diff=total_diff, doc_discr=doc_discr)
+    return redirect(url_for("supplies",issues="1"))
 
 
 # ---------- Приёмка ----------
 @app.route("/<any(sklad,proizv,director):role_url>/acceptance")
 @login_required
 def acceptance():
-    role = session["role"]
-    if role not in ("sklad", "proizv"):
-        abort(403)
-    # типы, которые принимает эта роль
-    kinds = [k for k, v in KINDS.items() if v[2] == role]
-
-    def rows_for(status):
-        if not kinds:
-            return []
-        q = ("SELECT * FROM documents WHERE kind IN (%s) AND status=? "
-             "ORDER BY id DESC" % ",".join("?" * len(kinds)))
-        docs = g.db.execute(q, kinds + [status]).fetchall()
-        out = []
-        for d in docs:
-            sent, recv, diff, has_recv = _doc_totals(d["id"])
-            out.append(dict(d=d, sent=sent, recv=recv, diff=diff, has_recv=has_recv))
-        return out
-
-    pending = rows_for("sent")       # ждут приёмки
-    done = rows_for("accepted")[:15]  # недавно принятые
-    total_pending_pairs = sum(r["sent"] for r in pending)
-
-    return render_template("acceptance.html", pending=pending, done=done,
-                           total_pending_pairs=total_pending_pairs)
+    return redirect(url_for("supplies"))
 
 
 # ---------- Обзор директора ----------
@@ -1067,7 +855,7 @@ def _resolve_request(req_id):
 @app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/items/<int:item_id>/reject", methods=["POST"])
 @login_required
 def request_item_reject(req_id, item_id):
-    if session["role"] != "sklad":
+    if session["role"] not in ("sklad","director"):
         abort(403)
     g.db.execute("BEGIN IMMEDIATE")
     r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
@@ -1083,32 +871,16 @@ def request_item_reject(req_id, item_id):
         g.db.execute(
             "UPDATE request_items SET status='rejected', placed=0, collected=NULL WHERE id=?",
             (item_id,))
+        g.db.execute('UPDATE request_items SET rejection_note=? WHERE id=?',(request.form.get('reason','Отклонено складом'),item_id))
     complete = _resolve_request(req_id)
     g.db.commit()
+    if request.form.get("redirect")=="1":return redirect(url_for("documents",_anchor="dq-"+str(req_id)))
     return jsonify(status="rejected", complete=complete, pending_count=_open_requests_count())
 
 
 def _parse_extra_shipment_items():
     """Разобрать дополнительные материалы и модели в одной форме отправки."""
     result = []
-    names = request.form.getlist("material_name")
-    qtys = request.form.getlist("material_qty")
-    units = request.form.getlist("material_unit")
-    for n in range(max(len(names), len(qtys))):
-        name = (names[n] if n < len(names) else "").strip()
-        raw = (qtys[n] if n < len(qtys) else "").strip()
-        if not name and not raw:
-            continue
-        try:
-            qty = int(raw)
-        except ValueError:
-            qty = 0
-        unit = units[n] if n < len(units) else ""
-        if not name or not 0 < qty <= 1_000_000 or unit not in UNITS:
-            return None, "Материал %d: укажите название, количество и единицу." % (n + 1)
-        result.append(dict(kind="material", item=name, qty=qty, unit=unit,
-                           item_type="material", customer_id=None, model_id=None, operation=None,
-                           request_item_id=None))
     mids = request.form.getlist("extra_material_id")
     quantities = request.form.getlist("extra_material_qty")
     owners = request.form.getlist("extra_material_owner")
@@ -1122,29 +894,6 @@ def _parse_extra_shipment_items():
         except business_core.RuleError as exc: return None,str(exc)
         result.append(dict(kind="material",item=m["name"],qty=qty,unit=m["unit"],item_type="material",customer_id=None,model_id=None,
             operation=None,request_item_id=None,material_id=m["id"],owner_customer_id=owner))
-    customers = request.form.getlist("pair_customer_id")
-    models = request.form.getlist("pair_model_id")
-    counts = request.form.getlist("pair_qty")
-    for n in range(max(len(customers), len(models), len(counts))):
-        raw = (counts[n] if n < len(counts) else "").strip()
-        selected = request.form.getlist("pair_operations_%d" % n)
-        if not raw and not selected:
-            continue
-        try:
-            cid = int(customers[n])
-            mid = int(models[n])
-            qty = int(raw)
-        except (IndexError, ValueError):
-            return None, "Модель %d: заполните заказчика, модель и число пар." % (n + 1)
-        operations = [key for key in OPERATIONS if key in selected]
-        if (not 0 < qty <= 1_000_000 or not selected or
-                len(set(selected)) != len(operations) or
-                not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone() or
-                not g.db.execute("SELECT 1 FROM models WHERE id=? AND archived=0", (mid,)).fetchone()):
-            return None, "Модель %d: проверьте количество и выберите операции." % (n + 1)
-        result.append(dict(kind="pair", item="", qty=qty, unit="pary",
-                           item_type=None, customer_id=cid, model_id=mid,
-                           operation=json.dumps(operations), request_item_id=None))
     return result, None
 
 
@@ -1187,67 +936,14 @@ def _parse_party_shipment_items():
             except business_core.RuleError as exc:
                 return None,"Партия %d: %s" % (position,str(exc))
             continue
-        if "party_batch_"+key in request.form:
-            if not any(request.form.getlist("party_material_qty_"+key)) and not request.form.get("party_qty_"+key): continue
-            return None,"Выберите существующую партию из заказа."
-        raw_qty = (request.form.get("party_qty_" + key) or "").strip()
-        names = request.form.getlist("party_material_name_" + key)
-        qtys = request.form.getlist("party_material_qty_" + key)
-        units = request.form.getlist("party_material_unit_" + key)
-        selected = request.form.getlist("party_operations_" + key)
-        has_material = any(x.strip() for x in names + qtys)
-        if not raw_qty and not selected and not has_material:
-            continue  # пустую карточку не сохраняем
-        try:
-            cid = int(request.form.get("party_customer_" + key) or "")
-            mid = int(request.form.get("party_model_" + key) or "")
-            pairs = int(raw_qty)
-        except ValueError:
-            return None, "Партия %d: укажите заказчика, модель и число пар." % position
-        operations = [op for op in OPERATIONS if op in selected]
-        if (not 0 < pairs <= 1_000_000 or not selected or
-                len(operations) != len(set(selected)) or
-                not g.db.execute("SELECT 1 FROM customers WHERE id=? AND archived=0", (cid,)).fetchone() or
-                not g.db.execute("SELECT 1 FROM models WHERE id=? AND archived=0", (mid,)).fetchone()):
-            return None, "Партия %d: проверьте поля и выберите операции." % position
-        prices = {}
-        for op in OPERATIONS:
-            raw_price = (request.form.get("party_price_%s_%s" % (key, op)) or "").strip()
-            if not raw_price:
-                continue
-            if op not in operations:
-                return None, "Партия %d: отметьте операцию «%s» для её цены." % (position, OPERATIONS[op])
-            try:
-                prices[op] = _parse_kopeks(raw_price)
-            except ValueError:
-                return None, "Партия %d: проверьте цену операции «%s»." % (position, OPERATIONS[op])
-        items.append(dict(kind="pair", item="", qty=pairs, unit="pary",
-                          item_type=None, customer_id=cid, model_id=mid,
-                          operation=json.dumps(operations),
-                          operation_prices=json.dumps(prices) if prices else None,
-                          request_item_id=None,
-                          party_index=key))
-        for n in range(max(len(names), len(qtys))):
-            name = (names[n] if n < len(names) else "").strip()
-            raw = (qtys[n] if n < len(qtys) else "").strip()
-            if not name and not raw:
-                continue
-            try:
-                qty = int(raw)
-            except ValueError:
-                qty = 0
-            unit = units[n] if n < len(units) else ""
-            if not name or not 0 < qty <= 1_000_000 or unit not in UNITS:
-                return None, "Партия %d, материал %d: заполните название, количество и единицу." % (position, n + 1)
-            items.append(dict(kind="material", item=name, qty=qty, unit=unit,
-                              item_type="material", customer_id=None, model_id=None,
-                              operation=None, request_item_id=None, party_index=key))
+        if any(x.strip() for x in request.form.getlist('party_material_qty_'+key)) or request.form.get('party_qty_'+key):
+            return None,'Выберите существующую партию из заказа.'
     return items, None
 
 
 def _send_shipment(req_id=None, multi=False):
     """Одна поставка: позиции из любых входящих заявок и свои позиции склада."""
-    if session.get("role") != "sklad":
+    if session.get("role") not in ("sklad","director"):
         abort(403)
     back = url_for("supply_new") if multi else _req_row(req_id) if req_id else url_for("documents")
     def fail(message):
@@ -1264,7 +960,7 @@ def _send_shipment(req_id=None, multi=False):
     existing = g.db.execute(
         "SELECT id FROM shipments WHERE client_token=?", (token,)).fetchone()
     if existing:
-        return redirect(url_for("documents", _anchor="sh-%d" % existing["id"]))
+        return redirect(url_for("supply_detail",sid=existing["id"]))
     if multi:
         cond, args = _sklad_visible_sql()
         targets = g.db.execute(
@@ -1334,7 +1030,7 @@ def _send_shipment(req_id=None, multi=False):
     try:
         party_items = {}
         for i in items:
-            if request.form.get("inventory_tracking") and i["kind"] != "pair" and not i.get("material_id"):
+            if i["kind"] != "pair" and not i.get("material_id"):
                 raise business_core.RuleError("Выберите материал для списания со склада: "+i["item"])
             if i.get("material_id"):
                 material=business_core.require(g.db,"materials",business_core.integer(i["material_id"]),True)
@@ -1356,7 +1052,7 @@ def _send_shipment(req_id=None, multi=False):
                 if i["unit"] != m["unit"]: raise business_core.RuleError("Единица отправляемого материала не совпадает со справочником.")
                 business_core.inventory_move(g.db,dict(kind="issue",material_id=m["id"],batch_id=i.get("batch_id"),
                     owner_customer_id=i.get("owner_customer_id"),qty=str(i["qty"]),token="shipment:"+token+":"+str(inserted.lastrowid),
-                    note="Поставка №"+str(cur.lastrowid)),session["role"],inserted.lastrowid)
+                    note="Поставка №"+str(cur.lastrowid),hold_for_receipt="1"),session["role"],inserted.lastrowid)
             elif i.get("batch_id") and i["kind"] != "pair":
                 raise business_core.RuleError("Для материала партии выберите материал из справочника.")
             if i["kind"] == "pair" and party_index is not None:
@@ -1364,6 +1060,7 @@ def _send_shipment(req_id=None, multi=False):
     except (business_core.RuleError,sqlite3.IntegrityError) as exc:
         g.db.rollback()
         return fail(str(exc) if isinstance(exc,business_core.RuleError) else "Проверьте материал и его владельца.")
+    g.db.execute("UPDATE shipments SET receipt_required=1 WHERE id=?",(cur.lastrowid,))
     incomplete = False
     for target_id in affected:
         complete = _resolve_request(target_id)
@@ -1378,7 +1075,7 @@ def _send_shipment(req_id=None, multi=False):
     g.db.commit()
     flash("Поставка №%d отправлена.%s" %
           (cur.lastrowid, " Остаток заявки остаётся в работе." if incomplete else ""))
-    return redirect(url_for("documents", _anchor="sh-%d" % cur.lastrowid))
+    return redirect(url_for("supply_detail",sid=cur.lastrowid))
 
 
 def _parse_request_rows():
@@ -1888,6 +1585,17 @@ if __package__:
 else:
     from business import register as register_business
 register_business(app)
+
+
+if __package__:
+    from . import supply_sections
+    from .business import access as section_access,mutate as section_mutate,PREFIX as section_prefix
+else:
+    import supply_sections
+    from business import access as section_access,mutate as section_mutate,PREFIX as section_prefix
+app.jail_needed_items=_needed_items
+app.jail_resolve_request=_resolve_request
+supply_sections.register(app,section_access,section_mutate,section_prefix)
 
 
 if __name__ == "__main__":

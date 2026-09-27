@@ -8,7 +8,7 @@
       <b>Передача №{{ d.id }}</b>
       <span class="tag {{ d.status }}">{{ STATUS_LABEL[d.status] }}</span>
     </div>
-    <a class="btn grey" href="{{ url_for('documents') }}">к списку</a>
+    <a class="btn grey" href="{{ url_for('supplies') }}">к списку</a>
   </div>
   <div class="small mt-xs">{{ KINDS[d.kind][0] }}</div>
   {% if d.note %}<div class="small">Примечание: {{ d.note }}</div>{% endif %}
@@ -33,11 +33,11 @@
 {# ================= ПРИЁМКА (приёмщик) ================= #}
 {% if can_accept %}
 <div class="card">
-  <h3>Приёмка</h3>
+  <h3>{{ 'Дополнить получение обуви' if d.status=='accepted' else 'Приёмка' }}</h3>
   <p class="small">Проверьте построчно. Поле «принято» уже заполнено — исправьте, если пришло другое количество.</p>
   <form method="post" action="{{ url_for('doc_accept', doc_id=d.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <table>
-      <tr><th>Заказчик — модель</th><th class="num">Отдано</th><th class="num">Принято</th><th>Расхождение</th></tr>
+      <tr><th>Заказчик — модель</th><th class="num">Отдано</th><th class="num">Получено всего</th><th>Пояснение</th></tr>
       {% for l in lines %}
       <tr>
         <td>{{ l.customer }} — {{ l.model }}
@@ -53,7 +53,7 @@
       </tr>
       {% endfor %}
     </table>
-    <button class="btn green block mt-md" type="submit">Подтвердить приёмку</button>
+    <button class="btn green block mt-md" type="submit">{{ 'Записать общее полученное количество' if d.status=='accepted' else 'Подтвердить приёмку' }}</button>
   </form>
 </div>
 

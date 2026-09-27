@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Заявки — jail{% endblock %}
 {% block content %}
-<div class="{{ 'sklad-requests-page' if role == 'sklad' else 'requests-page' }}">
+<div class="{{ 'sklad-requests-page' if role in ['sklad','director'] else 'requests-page' }}">
 
 {% if to_action and role != 'sklad' %}<div class="card hero warn">
   <div class="big">{{ to_action }}</div>
@@ -9,26 +9,22 @@
 </div>
 {% endif %}
 
-<header class="biz-header"><h2>{{ 'Заявки и поставки' if role=='sklad' else 'Мои заявки и передачи' if role=='proizv' else 'Заявки и передачи' }}</h2></header>
+<header class="biz-header"><h2>{{ 'Архив заявок' if archive else 'Заявки' }}</h2></header>
 {# Кнопки создания под роль #}
 <div class="row action-bar mb-md">
   {% if can_request %}
   <a class="btn green block grow" href="{{ url_for('request_new') }}">+ Запросить материалы</a>
   {% endif %}
-  {% if role=='sklad' %}
-  <a class="btn block sklad-create-supply-btn grow" href="{{ url_for('supply_new') }}">+ Создать поставку</a>
-  {% elif role=='proizv' %}
-  <a class="btn block grow" href="{{ url_for('doc_new') }}">+ Возврат на склад</a>
-  {% endif %}
+  {% if role in ['sklad','director'] %}<a class="btn block sklad-create-supply-btn grow" href="{{ url_for('supply_new') }}">Создать поставку</a>{% endif %}
 </div>
 
 {% if rows %}
-<div class="card flush dq-list {{ 'sklad-requests-list' if role == 'sklad' }}">
-{% if role == 'sklad' %}<div class="sklad-requests-heading">Необработанные входящие заявки от производства</div>{% endif %}
+<div class="card flush dq-list {{ 'sklad-requests-list' if role in ['sklad','director'] }}">
+{% if role in ['sklad','director'] %}<div class="sklad-requests-heading">Необработанные входящие заявки от производства</div>{% endif %}
 <table class="dq-table">
   <tr><th>№</th><th>Тип</th><th class="num">Кол-во</th><th>Статус</th><th>Дата</th><th></th></tr>
   {% for x in rows %}
-  <tr class="linkrow {{ 'dq-row' if x.detail }} {{ 'sklad-request-row' if role == 'sklad' and x.group == 'req' else 'sklad-supply-row' if role == 'sklad' and x.group == 'shipment' else '' }}" {% if x.detail %}data-dq-toggle="{{ x.detail_id }}" tabindex="0" role="button" aria-expanded="false" aria-controls="{{ x.detail_id }}" aria-label="Посмотреть {{ x.title }} №{{ x.id }}"{% else %}onclick="location='{{ x.url }}'"{% endif %}>
+  <tr class="linkrow {{ 'dq-row' if x.detail }} {{ 'sklad-request-row' if role in ['sklad','director'] and x.group == 'req' else 'sklad-supply-row' if role in ['sklad','director'] and x.group == 'shipment' else '' }}" {% if x.detail %}data-dq-toggle="{{ x.detail_id }}" tabindex="0" role="button" aria-expanded="false" aria-controls="{{ x.detail_id }}" aria-label="Посмотреть {{ x.title }} №{{ x.id }}"{% else %}onclick="location='{{ x.url }}'"{% endif %}>
     <td>{{ x.id }}</td>
     <td>
       <b>{{ x.title }}</b>
@@ -57,7 +53,7 @@
     </td>
   </tr>
   {% if x.detail %}
-  <tr class="dq-detail {{ 'sklad-request-detail' if role == 'sklad' and x.group == 'req' else 'sklad-supply-detail' if role == 'sklad' and x.group == 'shipment' else '' }}" id="{{ x.detail_id }}" hidden>
+  <tr class="dq-detail {{ 'sklad-request-detail' if role in ['sklad','director'] and x.group == 'req' else 'sklad-supply-detail' if role in ['sklad','director'] and x.group == 'shipment' else '' }}" id="{{ x.detail_id }}" hidden>
     <td class="dq-detail-indent" aria-hidden="true"></td>
     <td class="dq-detail-cell" colspan="5">
       {% if x.group == 'shipment' %}
@@ -72,6 +68,7 @@
 </table>
 </div>
 {% endif %}
+{% if not rows %}<p class="biz-list-help">{{ 'Необработанных заявок нет.' if not archive else 'В архиве нет заявок.' }}</p>{% endif %}{% if has_archive or archive %}<a class="btn grey" href="{{ url_for('documents',archive=None if archive else '1') }}">{{ 'К текущим заявкам' if archive else 'Архив заявок' }}</a>{% endif %}
 </div>
 
 <script>

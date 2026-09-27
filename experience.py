@@ -28,50 +28,27 @@ def retry_form():
     return None
 
 
-def material_id(conn,form):
-    name=form.get('new_material','').strip();unit=form.get('new_unit')
-    if not name or unit not in ('sht','pary','m2','kg','l','m'): raise core.RuleError('Укажите название и единицу нового материала.')
-    existing=conn.execute('SELECT id FROM materials WHERE name=? AND unit=? AND archived=0',(name,unit)).fetchone()
-    return existing['id'] if existing else conn.execute('INSERT INTO materials(name,unit) VALUES (?,?)',(name,unit)).lastrowid
-
-
 def plan(conn,bid,form):
-    fields=form.to_dict()
-    if fields.get('material_id')=='new': fields['material_id']=material_id(conn,fields)
-    return core.plan_material(conn,bid,fields)
+    if form.get('material_id')=='new':raise core.RuleError('Добавьте материал в разделе «Материалы».')
+    return core.plan_material(conn,bid,form)
 
 
 def receipt(conn,form,actor,default_batch=None):
     fields=form.to_dict()
-    if default_batch: fields['batch_id']=str(default_batch)
-    if fields.get('material_id')=='new':
-        old=conn.execute('SELECT id FROM inventory_movements WHERE token=?',(fields.get('token'),)).fetchone()
-        if old: return old['id']
-        if fields.get('kind')!='receipt': raise core.RuleError('Новый материал добавляется при поступлении на склад.')
-        fields['material_id']=material_id(conn,fields)
+    if default_batch:fields['batch_id']=str(default_batch)
+    if fields.get('material_id')=='new':raise core.RuleError('Добавьте материал в разделе «Материалы».')
     return core.inventory_move(conn,fields,actor)
 
 
 def work(conn,bid,form,actor):
-    fields=MultiDict(form)
-    if 'new' in fields.getlist('worker_id'):
-        if actor not in ('sklad','director'): raise core.RuleError('Склад или директор должен добавить сотрудника.')
-        prior=conn.execute('SELECT id FROM work_acceptances WHERE token=?',(fields.get('token'),)).fetchone()
-        if prior: return prior['id']
-        name=fields.get('new_worker_name','').strip()
-        if not name: raise core.RuleError('Введите имя нового сотрудника.')
-        number=fields.get('new_worker_number','').strip()
-        if not number: number=str(conn.execute('SELECT COALESCE(MAX(CAST(number AS INTEGER)),0)+1 FROM workers').fetchone()[0])
-        if conn.execute('SELECT 1 FROM workers WHERE number=? AND archived=0',(number,)).fetchone(): raise core.RuleError('Такой табельный номер уже есть. Выберите сотрудника или другой номер.')
-        wid=conn.execute('INSERT INTO workers(number,name) VALUES (?,?)',(number,name)).lastrowid
-        fields.setlist('worker_id',[str(wid) if value=='new' else value for value in fields.getlist('worker_id')])
-    return core.accept_work(conn,bid,fields,actor)
+    if 'new' in form.getlist('worker_id'):raise core.RuleError('Добавьте сотрудника в разделе «Сотрудники».')
+    return core.accept_work(conn,bid,form,actor)
 
 
 def batch_guidance(batch,tasks,plans,stocks,outputs,deliveries,manager,worker_count,material_started=False):
     good=sum(r['qty_pairs'] for r in outputs if r['kind']=='good')
     delivered=sum(r['qty_pairs'] for r in deliveries)
-    accepted=sum(r['qty_pairs'] for r in deliveries if r['accepted_on'])
+    accepted=sum(r['accepted_qty'] if 'accepted_qty' in r.keys() else r['qty_pairs'] if r['accepted_on'] else 0 for r in deliveries)
     remaining=[t for t in tasks if t['mode']=='internal' and t['done']<t['qty_pairs']]
     eligible=[t for t in remaining if t['rate_cents'] is not None]
     rates_missing=[t for t in remaining if t['rate_cents'] is None]
@@ -93,8 +70,10 @@ def batch_guidance(batch,tasks,plans,stocks,outputs,deliveries,manager,worker_co
         pane='materials';title='Подготовьте материалы для производства';text='План заполнен. Передайте материалы со склада в эту партию; работа будет записываться в разделе «Задания».';target='biz-material-move';label='Передать материалы'
     elif eligible and (worker_count or manager):
         title='Можно записывать выполненную работу';text='Выберите операцию, сотрудника и сколько качественных пар он сделал.';target='biz-work';label='Записать работу'
+    elif eligible and not worker_count and not manager:
+        title='Попросите директора добавить сотрудника';text='После добавления сотрудника можно будет записать его работу по операциям.'
     elif remaining and not manager:
-        title='Склад должен задать расценки и сотрудников';text='Пока можно посмотреть задания и запросить недостающие материалы.'
+        title='Склад должен задать расценки';text='Пока можно посмотреть задания и запросить недостающие материалы.'
     elif unfinished:
         title='Завершите оставшиеся задания';text='Откройте операцию: там видно, кто её выполняет и сколько пар осталось.'
     elif good<batch['qty_pairs']:

@@ -14,6 +14,10 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     from jail.app import app,db
     from fixtures import reference_data
     reference_data(db)
+    with db.get_db() as conn:
+        conn.execute('UPDATE models SET customer_id=CASE WHEN id=2 THEN 2 ELSE 1 END')
+        for name in ('Рабочая модель','По ботинкам','Разделяемая'):
+            conn.execute('INSERT INTO models(name,customer_id) VALUES (?,1)',(name,))
     from jail import business_core as core
     app.testing=True
     client=app.test_client()
@@ -33,9 +37,27 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
         global role
         role=new; client.get('/login/'+new)
     def get(path):
-        response=client.get('/'+role+path)
+        response=client.get('/'+role+path,follow_redirects=True)
         assert response.status_code==200,(path,response.status_code)
         return response.text
+    def supply(data):
+        response=post('/supplies/new',data)
+        oldrole=role
+        sid=one('SELECT id FROM shipments WHERE client_token=?',(data['send_token'],))
+        if sid and not one('SELECT id FROM supply_receipts WHERE shipment_id=?',(sid[0],)):
+            switch('proizv')
+            with db.get_db() as conn:
+                received={'action':'receive'}
+                for item in conn.execute('SELECT * FROM shipment_items WHERE shipment_id=?',(sid[0],)):
+                    if not item['batch_reference']:received['qty_'+str(item['id'])]=str(item['qty'])
+            post('/supplies/'+str(sid[0]),received);switch(oldrole)
+        return response
+    def deliver(bid,qty):
+        oid=one('SELECT i.order_id FROM production_batches b JOIN order_items i ON i.id=b.order_item_id WHERE b.id=?',(bid,))[0]
+        return post('/deliveries/new',{'order_id':oid,'qty_'+str(bid):qty,'delivered_on':today})
+    def accept(did):
+        doc=one('SELECT document_id,qty_pairs FROM deliveries WHERE id=?',(did,))
+        return post('/deliveries/'+str(doc[0]),{'qty_'+str(did):str(doc[1]),'accepted_on':today})
     for path in ('/orders','/orders/new','/batches','/inventory','/payroll/ledger','/payroll/workers/1','/refs','/requests/supply/new'):
         get(path)
     assert client.post('/sklad/orders/new').status_code==400
@@ -46,7 +68,7 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     assert post('/orders/new',payload).status_code==200
     assert one('SELECT COUNT(*) c FROM models')['c']==before
     assert one('SELECT COUNT(*) c FROM orders')['c']==0
-    payload={'customer_id':'1','model_id':[''],'new_model':['Рабочая модель'],'qty':['300'],'quantity_unit':['pair'],
+    payload={'customer_id':'1','model_id':['4'],'new_model':[''],'qty':['300'],'quantity_unit':['pair'],
       'price_kind':['total'],'price_unit':['pair'],'price':['1000'],'settlement':['proportional'],'specification':['Чёрная']}
     response=post('/orders/new',payload)
     assert response.status_code==302,response.text
@@ -54,7 +76,7 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     assert one('SELECT total_cents FROM order_items')['total_cents']==100000
     get('/orders/1');get(path)
     # Per-shoe unit price converts explicitly; no odd shoes silently rounded.
-    shoe={**payload,'new_model':['По ботинкам'],'qty':['5'],'quantity_unit':['shoe'],'price_kind':['unit'],'price_unit':['shoe'],'price':['12.50']}
+    shoe={**payload,'model_id':['5'],'new_model':[''],'qty':['5'],'quantity_unit':['shoe'],'price_kind':['unit'],'price_unit':['shoe'],'price':['12.50']}
     assert post('/orders/new',shoe).status_code==200
     shoe['qty']=['6'];assert post('/orders/new',shoe).status_code==302
     assert one('SELECT total_cents,qty_pairs FROM order_items ORDER BY id DESC')['total_cents']==7500
@@ -108,7 +130,7 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     post(path,{'action':'reverse','acceptance_id':aid,'reason':'Повтор'})
     assert one("SELECT COUNT(*) c FROM payroll_accruals WHERE kind='reversal'")['c']==1
     # Fractional materials, ownership, stock valuation and production consumption.
-    post('/inventory',{'action':'material','name':'Кожа','unit':'m2'})
+    post('/inventory/new',{'name':'Кожа','unit':'m2'})
     mid=one('SELECT id FROM materials')['id']
     post('/inventory',{'kind':'receipt','material_id':mid,'qty':'10.125','cost':'1000','occurred_on':today,'token':'receipt-one'})
     post('/inventory',{'kind':'receipt','material_id':mid,'qty':'10.125','cost':'1000','occurred_on':today,'token':'receipt-one'})
@@ -119,7 +141,8 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     pid=one('SELECT id FROM batch_material_plan WHERE batch_id=?',(bid,))['id']
     post(path,{'action':'reserve','plan_id':pid})
     assert one('SELECT reserved_milli FROM batch_material_plan')['reserved_milli']==5000
-    post(path,{'action':'material_move','kind':'issue','material_id':mid,'qty':'2.125','occurred_on':today})
+    with db.get_db() as conn:
+        core.inventory_move(conn,{'kind':'issue','material_id':mid,'batch_id':bid,'qty':'2.125','occurred_on':today,'token':'core-ledger-issue'},'sklad')
     assert one('SELECT qty_milli FROM production_stock WHERE owner_customer_id IS NULL')['qty_milli']==2125
     assert one('SELECT reserved_milli FROM batch_material_plan')['reserved_milli']==2875
     conn=db.get_db();fin=core.batch_finance(conn,bid);conn.close()
@@ -131,26 +154,26 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     tasks_before=one('SELECT COUNT(*) c FROM batch_operations')['c']
     send={'party_id':['0'],'party_batch_0':str(bid),'party_material_id_0':[str(mid)],'party_material_qty_0':['1.5'],
        'party_material_owner_0':[''],'send_token':'linked-once'}
-    post('/requests/supply/new',send);post('/requests/supply/new',send)
+    supply(send);supply(send)
     assert one('SELECT COUNT(*) c FROM shipments')['c']==1
     assert one('SELECT COUNT(*) c FROM batch_operations')['c']==tasks_before
     assert one('SELECT COUNT(*) c FROM inventory_movements WHERE shipment_item_id IS NOT NULL')['c']==1
-    post('/requests/supply/new',{**send,'send_token':'oversend','party_material_qty_0':['1000']})
+    post('/supplies/new',{**send,'send_token':'oversend','party_material_qty_0':['1000']})
     assert one('SELECT COUNT(*) c FROM shipments')['c']==1
     assert one('SELECT qty_milli FROM production_stock WHERE owner_customer_id IS NULL')['qty_milli']==2500
-    post('/requests/supply/new',{'party_id':['0'],'party_batch_0':str(bid),'send_token':'empty-party'})
+    post('/supplies/new',{'party_id':['0'],'party_batch_0':str(bid),'send_token':'empty-party'})
     assert one('SELECT COUNT(*) c FROM shipments')['c']==1
     # Full completion, recognised fixed total exact to the cent.
     done=one('SELECT COALESCE(SUM(qty_pairs),0) done FROM work_acceptances WHERE batch_operation_id=? AND canceled_at IS NULL',(tid,))['done']
     post(path,{'action':'work','task_id':tid,'qty':300-done,'worked_on':today,'worker_id':'1'})
     post(path,{'action':'output','kind':'good','qty':'300','occurred_on':today})
-    post(path,{'action':'delivery','qty':'100','delivered_on':today})
+    deliver(bid,'100')
     did=one('SELECT id FROM deliveries')['id']
-    post(path,{'action':'delivery_accept','delivery_id':did,'accepted_on':today})
+    accept(did)
     conn=db.get_db();assert core.batch_finance(conn,bid)['revenue']==33333;conn.close()
-    post(path,{'action':'delivery','qty':'200','delivered_on':today})
+    deliver(bid,'200')
     did=one('SELECT id FROM deliveries ORDER BY id DESC')['id']
-    post(path,{'action':'delivery_accept','delivery_id':did,'accepted_on':today})
+    accept(did)
     conn=db.get_db();assert core.batch_finance(conn,bid)['revenue']==100000;conn.close()
     post(path,{'action':'close'})
     assert one('SELECT status FROM production_batches WHERE id=?',(bid,))['status']!='closed' # production stock must be resolved
@@ -160,7 +183,7 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     for view in ('/orders','/orders/1',path,'/batches','/batches?archive=1','/inventory','/payroll/ledger','/payroll/workers/1','/requests','/requests/supply/new','/refs'):
         get(view)
     # Split fixed-price positions without rounding the order total; amend with history.
-    payload['new_model']=['Разделяемая'];payload['price']=['1000'];payload['qty']=['300']
+    payload['model_id']=['6'];payload['price']=['1000'];payload['qty']=['300']
     post('/orders/new',payload)
     split_source=one('SELECT id FROM production_batches ORDER BY id DESC')['id']
     split_path='/batches/'+str(split_source)
@@ -177,7 +200,7 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     assert one('SELECT SUM(contract_cents) amount FROM production_batches WHERE order_item_id=?',(order_item,))['amount']==100001
     assert one('SELECT COUNT(*) c FROM order_changes WHERE order_id=?',(split_oid,))['c']==1
     # General supplies retain stock value until allocated to a particular batch.
-    post('/requests/supply/new',{'extra_material_id':[str(mid)],'extra_material_qty':['1.5'],'extra_material_owner':[''],'send_token':'pool-once','inventory_tracking':'1'})
+    supply({'extra_material_id':[str(mid)],'extra_material_qty':['1.5'],'extra_material_owner':[''],'send_token':'pool-once','inventory_tracking':'1'})
     assert one('SELECT qty_milli FROM production_pool')['qty_milli']==1500
     post(split_path,{'action':'material_move','kind':'allocate','material_id':mid,'qty':'0.5','occurred_on':today})
     assert one('SELECT qty_milli FROM production_pool')['qty_milli']==1000

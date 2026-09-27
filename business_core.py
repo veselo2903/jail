@@ -84,13 +84,8 @@ def create_order(conn, form, actor):
     old = conn.execute('SELECT id FROM orders WHERE token=?',(token,)).fetchone()
     if old:
         return old['id']
-    if form.get('customer_id')=='new':
-        name=form.get('new_customer','').strip()
-        if not name: raise RuleError('Введите название нового заказчика.')
-        cid=conn.execute('INSERT INTO customers(name) VALUES (?)',(name,)).lastrowid
-    else:
-        cid = integer(form.get('customer_id'), 'Заказчик')
-        require(conn, 'customers', cid, True)
+    cid = integer(form.get('customer_id'), 'Заказчик')
+    require(conn, 'customers', cid, True)
     due = form.get('due_date') or None
     if due:
         try: date.fromisoformat(due)
@@ -110,24 +105,15 @@ def create_order(conn, form, actor):
         pairs = qty if qunit=='pair' else qty//2
         if pairs>1_000_000:
             raise RuleError('В одной позиции допускается до 1 000 000 пар.')
-        if val('new_model').strip():
-            mid = conn.execute('INSERT INTO models(name,customer_id) VALUES (?,?)', (val('new_model').strip(),cid)).lastrowid
-        else:
-            mid = integer(val('model_id'),'Модель')
-            model = require(conn,'models',mid,True)
-            if model['customer_id'] is None and form.get('claim_model_'+str(n))=='1':
-                conn.execute('UPDATE models SET customer_id=? WHERE id=?',(cid,mid))
-                audit(conn,actor,'model_customer',mid,{'customer_id':cid,'reason':'Подтверждено при создании заказа'})
-            elif model['customer_id'] != cid:
-                raise RuleError('Модель должна принадлежать выбранному заказчику. Укажите владельца в справочнике или создайте новую модель.')
+        if val('new_model').strip():raise RuleError('Добавьте модель в разделе «Модели», затем выберите её в заказе.')
+        mid = integer(val('model_id'),'Модель')
+        model = require(conn,'models',mid,True)
+        if model['customer_id'] != cid:raise RuleError('Выберите модель этого заказчика в разделе «Модели».')
         raw_price=val('price')
         if not raw_price.strip() and pkind=='unit' and punit=='pair':
             model=require(conn,'models',mid,True)
             if model['sale_price_cents'] is not None:raw_price=str(Decimal(model['sale_price_cents'])/100)
         price = scaled(raw_price,label='Цена заказчика')
-        if val('new_model').strip() and pkind=='unit' and punit=='pair':
-            conn.execute('UPDATE models SET sale_price_cents=? WHERE id=?',(price,mid))
-            conn.execute('INSERT INTO model_sale_price_history(model_id,price_cents,at,actor) VALUES (?,?,?,?)',(mid,price,now(),actor))
         total = price if pkind=='total' else price*pairs*(2 if punit=='shoe' else 1)
         settlement = val('settlement','proportional')
         if settlement not in ('proportional','complete'): raise RuleError('Проверьте условие приёмки.')
@@ -227,7 +213,7 @@ def update_operation(conn,bid,tid,form,actor):
 def owner_from(conn,bid,raw):
     owner = integer(raw,'Владелец') if raw else None
     if owner:
-        require(conn,'customers',owner,True)
+        require(conn,'customers',owner,not bool(bid))
         if bid and owner!=require(conn,'production_batches',bid)['customer_id']:
             raise RuleError('Материал заказчика должен принадлежать заказчику этой партии.')
     return owner
@@ -278,7 +264,7 @@ def inventory_move(conn,form,actor,shipment_item_id=None):
     kind=form.get('kind')
     if kind not in ('receipt','issue','return','consume','loss','allocate'): raise RuleError('Выберите движение материала.')
     mid=integer(form.get('material_id'),'Материал')
-    material=require(conn,'materials',mid,True)
+    material=require(conn,'materials',mid,kind=='receipt')
     qty=scaled(form.get('qty'),1000,'Количество материала',True)
     if material['unit'] in ('sht','pary') and qty%1000: raise RuleError('Штуки и пары должны быть целыми.')
     bid=integer(form.get('batch_id')) if form.get('batch_id') else None
@@ -288,7 +274,8 @@ def inventory_move(conn,form,actor,shipment_item_id=None):
     dated=day(form.get('occurred_on'))
     stock=stock_row(conn,'stock_balances',mid,owner)
     prodtable='production_stock' if bid else 'production_pool'
-    prod=stock_row(conn,prodtable,mid,owner,bid) if kind!='receipt' else None
+    hold=kind=='issue' and bool(shipment_item_id) and str(form.get('hold_for_receipt',''))=='1'
+    prod=stock_row(conn,prodtable,mid,owner,bid) if kind!='receipt' and not hold else None
     if kind=='receipt':
         cost=scaled(form.get('cost') or '0') if not owner else 0
         if not owner and not form.get('cost','').strip(): raise RuleError('Укажите стоимость поступления, либо 0 для бесплатного материала.')
@@ -305,7 +292,9 @@ def inventory_move(conn,form,actor,shipment_item_id=None):
             if qty>stock['qty_milli']-other: raise RuleError('Материал зарезервирован для другой партии.')
         cost=source['value_cents'] if qty==source['qty_milli'] else source['value_cents']*qty//source['qty_milli']
         conn.execute('UPDATE '+source_table+' SET qty_milli=qty_milli-?,value_cents=value_cents-? WHERE id=?',(qty,cost,source['id']))
-        if kind in ('issue','return','allocate'):
+        if hold:
+            conn.execute('INSERT INTO supply_pending_stock(shipment_item_id,material_id,owner_customer_id,batch_id,qty_milli,value_cents) VALUES (?,?,?,?,?,?) ON CONFLICT(shipment_item_id) DO UPDATE SET qty_milli=qty_milli+excluded.qty_milli,value_cents=value_cents+excluded.value_cents',(shipment_item_id,mid,owner,bid,qty,cost))
+        elif kind in ('issue','return','allocate'):
             dest,table=(stock,'stock_balances') if kind=='return' else (prod,prodtable)
             conn.execute('UPDATE '+table+' SET qty_milli=qty_milli+?,value_cents=value_cents+? WHERE id=?',(qty,cost,dest['id']))
         if kind in ('issue','allocate') and bid:
@@ -468,7 +457,8 @@ def record_output(conn,bid,form,actor):
 
 
 def add_delivery(conn,bid,form,actor):
-    b=editable_batch(conn,bid)
+    b=require(conn,'production_batches',bid)
+    if b['status']=='closed':raise RuleError('Партия закрыта.')
     token=form.get('token','')
     if not token: raise RuleError('Обновите форму.')
     if conn.execute('SELECT 1 FROM deliveries WHERE token=?',(token,)).fetchone(): return
@@ -476,9 +466,15 @@ def add_delivery(conn,bid,form,actor):
     good=conn.execute("SELECT COALESCE(SUM(qty_pairs),0) FROM production_outputs WHERE batch_id=? AND kind='good'",(bid,)).fetchone()[0]
     sent=conn.execute('SELECT COALESCE(SUM(qty_pairs),0) FROM deliveries WHERE batch_id=?',(bid,)).fetchone()[0]
     if sent+qty>good: raise RuleError('Недостаточно готовых пар для отгрузки.')
+    transfer=conn.execute("SELECT COALESCE(SUM(l.pairs_sent),0),COALESCE(SUM(l.pairs_recv),0) FROM lines l JOIN documents d ON d.id=l.document_id WHERE l.batch_id=? AND d.kind='RETURN'",(bid,)).fetchone()
+    factory_sent=conn.execute('SELECT COALESCE(SUM(factory_pairs),0) FROM deliveries WHERE batch_id=?',(bid,)).fetchone()[0]
+    warehouse_available=max(0,transfer[1]-(sent-factory_sent))
+    factory_available=max(0,good-transfer[0]-factory_sent)
+    if qty>warehouse_available+factory_available:raise RuleError('Обувь ещё передаётся на склад. Сначала отметьте получение в «Поставках».')
+    factory_qty=max(0,qty-warehouse_available)
     dated=day(form.get('delivered_on'))
-    conn.execute('INSERT INTO deliveries(batch_id,qty_pairs,delivered_on,note,actor,token) VALUES (?,?,?,?,?,?)',
-                 (bid,qty,dated,form.get('note',''),actor,token))
+    conn.execute('INSERT INTO deliveries(batch_id,qty_pairs,delivered_on,note,actor,token,factory_pairs) VALUES (?,?,?,?,?,?,?)',
+                 (bid,qty,dated,form.get('note',''),actor,token,factory_qty))
 
 
 def task_rows(conn,bid):
@@ -512,17 +508,21 @@ def batch_finance(conn,bid):
     mat_plan=sum((p['qty_milli']*(p['estimated_unit_cents'] or 0)+500)//1000 for p in plans if not p['owner_customer_id'])
     mat_actual=conn.execute("SELECT COALESCE(SUM(cost_cents),0) FROM inventory_movements WHERE batch_id=? AND kind IN ('consume','loss') AND owner_customer_id IS NULL",(bid,)).fetchone()[0]
     costs=conn.execute('SELECT COALESCE(SUM(planned_cents),0),COALESCE(SUM(actual_cents),0) FROM batch_costs WHERE batch_id=?',(bid,)).fetchone()
-    wip=conn.execute('SELECT COALESCE(SUM(value_cents),0) FROM production_stock WHERE batch_id=? AND owner_customer_id IS NULL',(bid,)).fetchone()[0]
-    accepted=conn.execute('SELECT COALESCE(SUM(qty_pairs),0) FROM deliveries WHERE batch_id=? AND accepted_on IS NOT NULL',(bid,)).fetchone()[0]
+    wip=conn.execute('SELECT COALESCE(SUM(value_cents),0) FROM production_stock WHERE batch_id=? AND owner_customer_id IS NULL',(bid,)).fetchone()[0]+conn.execute('SELECT COALESCE(SUM(value_cents),0) FROM supply_pending_stock WHERE batch_id=? AND owner_customer_id IS NULL',(bid,)).fetchone()[0]
+    if __package__:
+        from .sections import accepted_pairs
+    else:
+        from sections import accepted_pairs
+    accepted=accepted_pairs(conn,bid)
     whole_accepted=accepted
     if terms and terms['settlement']=='complete':
-        whole_accepted=conn.execute('SELECT COALESCE(SUM(d.qty_pairs),0) FROM deliveries d JOIN production_batches p ON p.id=d.batch_id WHERE p.order_item_id=? AND d.accepted_on IS NOT NULL',(terms['id'],)).fetchone()[0]
+        whole_accepted=sum(accepted_pairs(conn,p[0]) for p in conn.execute('SELECT id FROM production_batches WHERE order_item_id=?',(terms['id'],)))
     revenue=0 if total is None else (total if whole_accepted>=terms['qty_pairs'] else 0) if terms['settlement']=='complete' else total if accepted==b['qty_pairs'] else total*accepted//b['qty_pairs']
     mat_remaining=0
     for p in plans:
         used=conn.execute("SELECT COALESCE(SUM(qty_milli),0) FROM inventory_movements WHERE batch_id=? AND material_id=? AND owner_customer_id IS ? AND kind IN ('consume','loss')",(bid,p['material_id'],p['owner_customer_id'])).fetchone()[0]
         stock=conn.execute('SELECT qty_milli,value_cents FROM production_stock WHERE batch_id=? AND material_id=? AND owner_customer_id IS ?',(bid,p['material_id'],p['owner_customer_id'])).fetchone()
-        stockqty=stock['qty_milli'] if stock else 0
+        stockqty=(stock['qty_milli'] if stock else 0)+conn.execute('SELECT COALESCE(SUM(qty_milli),0) FROM supply_pending_stock WHERE batch_id=? AND material_id=? AND owner_customer_id IS ?',(bid,p['material_id'],p['owner_customer_id'])).fetchone()[0]
         if not p['owner_customer_id']:
             mat_remaining+=max(0,p['qty_milli']-used-stockqty)*(p['estimated_unit_cents'] or 0)//1000
     forecast=labor_forecast+mat_actual+wip+mat_remaining+max(costs[0],costs[1])

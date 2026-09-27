@@ -1,86 +1,77 @@
-"""First-use workflows, atomic shortcuts, retries and production visibility."""
-import json
-import os
+"""Form retry, entity ownership and production information boundaries."""
+import json,os,re,secrets,sys,tempfile
 from pathlib import Path
-import re
-import secrets
-import sys
-import tempfile
 from werkzeug.datastructures import MultiDict
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
-
 with tempfile.TemporaryDirectory(prefix='jail-experience-') as folder:
-    os.environ['JAIL_DB_PATH']=str(Path(folder)/'test.db')
-    os.environ['JAIL_SECRET_KEY']='experience-isolated'
+    os.environ['JAIL_DB_PATH']=str(Path(folder)/'test.db');os.environ['JAIL_SECRET_KEY']='experience-isolated'
     from jail.app import app,db
-    from fixtures import reference_data
-    reference_data(db)
-    app.testing=True
-    client=app.test_client()
+    from jail import business_core as core
+    app.testing=True;client=app.test_client()
     assert client.get('/login/proizv').location.endswith('/proizv/batches')
     client.get('/login/sklad',follow_redirects=True)
-    with client.session_transaction() as session: csrf=session['csrf_token']
+    with client.session_transaction() as s:csrf=s['csrf_token']
     def post(path,data,follow=False):
-        fields=MultiDict(data);fields['csrf_token']=csrf;fields.setdefault('token',secrets.token_hex(8))
-        return client.post('/sklad'+path,data=fields,follow_redirects=follow)
+        f=MultiDict(data);f['csrf_token']=csrf;f.setdefault('token',secrets.token_hex(10))
+        return client.post('/sklad'+path,data=f,follow_redirects=follow)
     def one(sql,args=()):
-        with db.get_db() as conn: return conn.execute(sql,args).fetchone()
-    def count(table): return one('SELECT COUNT(*) c FROM '+table)['c']
-    new_order=dict(customer_id='new',new_customer='Фирма Север',model_id='new',new_model='Ботинки 80',qty='80',price='950',quantity_unit='pair',price_unit='pair',price_kind='unit',settlement='proportional')
-    before=(count('customers'),count('models'))
-    assert post('/orders/new',{**new_order,'qty':'oops'}).status_code==200
-    assert before==(count('customers'),count('models'))
-    result=post('/orders/new',{**new_order,'token':'first-order'})
-    assert result.status_code==302 and '/batches/' in result.location
-    bid=int(result.location.rsplit('/',1)[1]);path='/batches/'+str(bid)
-    assert post('/orders/new',{**new_order,'token':'first-order'}).location==result.location
-    assert count('customers')==before[0]+1 and count('models')==before[1]+1
-    assert 'Выбрать операции' in client.get(result.location).text
-    cid=one('SELECT customer_id FROM production_batches WHERE id=?',(bid,))['customer_id']
-    legacy=dict(customer_id=str(cid),model_id='1',new_model='',qty='2',price='20',quantity_unit='pair',price_unit='pair',price_kind='unit',settlement='proportional')
-    assert post('/orders/new',legacy).status_code==200
-    assert one('SELECT customer_id FROM models WHERE id=1')['customer_id'] is None
-    assert post('/orders/new',{**legacy,'claim_model_0':'1'}).status_code==302
-    assert one('SELECT customer_id FROM models WHERE id=1')['customer_id']==cid
-    post(path,dict(action='operations_bulk',operation_id='1'))
-    tid=one('SELECT id FROM batch_operations WHERE batch_id=?',(bid,))['id']
-    assert 'Указать цену' in client.get('/sklad'+path).text
-    post(path,dict(action='operation_edit',task_id=str(tid),qty='80',rate='25',mode='internal',effective_date='2026-09-27'))
-    assert one('SELECT rate_cents FROM batch_operations WHERE id=?',(tid,))['rate_cents']==2500
-    material=dict(action='material',material_id='new',new_material='Подошвы 80',new_unit='pary',qty='80',price='110')
-    post(path,material)
-    mid=one("SELECT id FROM materials WHERE name='Подошвы 80'")['id']
-    assert 'Передать материалы' in client.get('/sklad'+path).text
-    before=count('materials')
-    bad=dict(action='material_move',kind='receipt',material_id='new',new_material='Без остатка',new_unit='kg',qty='no',cost='500')
-    response=post('/inventory',bad,True)
-    assert response.status_code==200 and 'biz-retry-fields' in response.text and count('materials')==before
-    assert json.loads(re.search(r'id="biz-retry-fields">(.*?)</script>',response.text,re.S).group(1))['new_material']==['Без остатка']
+        with db.get_db() as c:return c.execute(sql,args).fetchone()
+    def count(t):return one('SELECT COUNT(*) FROM '+t)[0]
+    # Catalog creation in a foreign section fails without creating any record.
+    response=post('/orders/new',dict(customer_id='new',new_customer='Север',model_id='new',new_model='714',qty='80',price='900'))
+    assert response.status_code==200 and count('customers')==count('models')==0
+    post('/customers/new',dict(name='Север',token='customer'))
+    post('/models/new',dict(customer_id='1',name='714',sale_price='900',token='model'))
+    r=post('/orders/new',dict(customer_id='1',model_id='1',qty='80',price='900',token='order'))
+    assert r.status_code==302 and '/orders/' in r.location
+    bid=one('SELECT id FROM production_batches')[0];path='/batches/'+str(bid)
+    post(path,dict(action='operations_bulk',operation_id='1',rate_1='25'))
+    tid=one('SELECT id FROM batch_operations')[0]
+    post('/inventory/new',dict(name='Подошвы',unit='pary',token='material'))
+    mid=one('SELECT id FROM materials')[0]
+    # Small retries go through redirect; retries are consumed exactly once.
+    response=post('/inventory',dict(action='material_move',kind='receipt',material_id=mid,qty='no',cost='500',note='Сохранить примечание'),True)
+    assert response.status_code==200 and 'biz-retry-fields' in response.text and count('inventory_movements')==0
+    data=json.loads(re.search(r'id="biz-retry-fields">(.*?)</script>',response.text,re.S).group(1))
+    assert data['note']==['Сохранить примечание'] and data['material_id']==[str(mid)]
     assert 'biz-retry-fields' not in client.get('/sklad/inventory').text
-    receipt=dict(action='material_move',kind='receipt',material_id=str(mid),qty='80',cost='8800',token='receipt-one')
-    post('/inventory',receipt);post('/inventory',receipt)
-    assert one('SELECT qty_milli FROM stock_balances WHERE material_id=?',(mid,))['qty_milli']==80000
-    post(path,dict(action='material_move',kind='issue',material_id=str(mid),qty='80'))
-    assert 'Записать работу' in client.get('/sklad'+path).text
-    before=count('workers')
-    work=dict(action='work',task_id=str(tid),worker_id='new',new_worker_name='Иван',share='100',qty='81',worked_on='2026-09-27')
-    assert 'biz-retry-fields' in post(path,work,True).text
-    assert count('workers')==before and count('work_acceptances')==0
-    work.update(qty='4',token='work-one');post(path,work);post(path,work)
-    assert count('workers')==before+1 and count('work_acceptances')==1
-    assert one('SELECT amount_cents FROM payroll_accruals')['amount_cents']==10000
-    # Large failed forms render directly, without cookie truncation or orphan records.
-    response=post(path,{**work,'token':'large-error','qty':'999','note':secrets.token_hex(9000)})
-    assert response.status_code==200 and 'biz-retry-fields' in response.text
-    assert count('work_acceptances')==1 and count('workers')==before+1
+    post('/inventory',dict(action='material_move',kind='receipt',material_id=mid,qty='80',cost='8800',token='receipt'))
+    post('/inventory',dict(action='material_move',kind='receipt',material_id=mid,qty='80',cost='8800',token='receipt'))
+    assert one('SELECT qty_milli FROM stock_balances')[0]==80000
+    post('/inventory/new',dict(name='Клей',unit='kg',token='second-material'))
+    before=count('inventory_movements')
+    invalid=dict(kind='receipt',material_id=['1','2'],qty=['1','bad'],cost=['10','20'],owner_customer_id=['',''],token='multi-invalid')
+    post('/inventory',invalid)
+    assert count('inventory_movements')==before and one('SELECT qty_milli FROM stock_balances WHERE material_id=1')[0]==80000
+    multiple=dict(kind='receipt',material_id=['2','2',''],qty=['1','2',''],cost=['0','5',''],owner_customer_id=['','',''],token='multi-once')
+    post('/inventory',multiple);post('/inventory',multiple)
+    assert one('SELECT qty_milli,value_cents FROM stock_balances WHERE material_id=2')[0]==3000
+    assert one('SELECT value_cents FROM stock_balances WHERE material_id=2')[0]==500
+    post('/inventory',{**multiple,'material_id':['2'],'qty':['20'],'cost':['10']})
+    assert one('SELECT qty_milli FROM stock_balances WHERE material_id=2')[0]==3000
+    post('/staff',dict(name='Иван',token='worker'))
+    wid=one('SELECT id FROM workers')[0]
+    bad=dict(action='work',task_id=tid,worker_id=wid,qty='81',note='Не терять')
+    assert 'biz-retry-fields' in post(path,bad,True).text and count('work_acceptances')==0
+    work={**bad,'qty':'4','token':'work-once'};post(path,work);post(path,work)
+    assert count('workers')==count('work_acceptances')==1 and one('SELECT amount_cents FROM payroll_accruals')[0]==10000
+    # Large retries render directly rather than overflowing the session cookie.
+    r=post(path,{**bad,'note':secrets.token_hex(9000)})
+    assert r.status_code==200 and 'biz-retry-fields' in r.text and count('work_acceptances')==1
     supply=dict(send_token='supply-retry',inventory_tracking='1',party_id=['2','5'],party_batch_2=str(bid),party_batch_5=str(bid),party_material_id_2=str(mid),party_material_qty_2='999',party_material_owner_2='',party_material_id_5=str(mid),party_material_qty_5='1',party_material_owner_5='',ship_note='Сохранить после ошибки')
-    response=post('/requests/supply/new',supply,True)
-    assert response.status_code==200 and 'biz-retry-fields' in response.text and count('shipments')==0
+    r=post('/supplies/new',supply,True)
+    assert r.status_code==200 and 'biz-retry-fields' in r.text and count('shipments')==0
+    retry=json.loads(re.search(r'id="biz-retry-fields">(.*?)</script>',r.text,re.S).group(1))
+    assert retry['party_id']==['2','5'] and retry['ship_note']==['Сохранить после ошибки']
+    # Navigation selects the owning page and carries the return context.
+    r=post('/customers/new?ctx=return-example',dict(name='Юг',token='ctx-customer'))
+    assert 'ctx=return-example' in r.location and 'created=customer%3A' in r.location
     client.get('/login/proizv')
-    response=client.get('/proizv'+path)
-    stock=json.loads(re.search(r'id="biz-stock-data">(.*?)</script>',response.text,re.S).group(1))
-    assert stock['warehouse']==[]
-    assert all('value_cents' not in r and 'cost_cents' not in r for r in stock['production'])
-    assert 'Экономика партии' not in response.text and 'Завершить партию' not in response.text
-    assert client.get('/proizv/payroll/ledger').status_code==403
-    print('PASS: role entry, inline order and ownership, atomic catalog/work shortcuts, idempotence, guidance, small/large retries, supply retry, production visibility')
+    r=client.get('/proizv'+path)
+    stock=json.loads(re.search(r'id="biz-stock-data">(.*?)</script>',r.text,re.S).group(1))
+    assert stock['warehouse']==[] and all('value_cents' not in x and 'cost_cents' not in x for x in stock['production'])
+    assert 'Экономика партии' not in r.text and 'Завершить партию' not in r.text
+    for p in ('payroll/ledger','orders','customers','models','staff','inventory','customer-payments','deliveries'):
+        assert client.get('/proizv/'+p).status_code==403,p
+    assert client.get('/proizv/models/1/photo').status_code==404
+    print('PASS: section ownership, atomic rollback, small/large retries, dynamic supply retry, idempotence, navigation context and factory financial access')
