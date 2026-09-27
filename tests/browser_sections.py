@@ -30,15 +30,22 @@ try:
     def screenshot(name):
         shot=command('Page.captureScreenshot',{'captureBeyondViewport':True});Path('/tmp/jail-director-'+name+'.png').write_bytes(base64.b64decode(shot['data']))
     command('Page.enable');command('Runtime.enable');navigate('/login/director');js('sessionStorage.clear()')
+    for path in ('customers','models','orders','batches','inventory','staff','payroll/ledger','requests','supplies','deliveries','customer-payments'):
+        navigate('/director/'+path)
+        for width in (1440,390):
+            command('Emulation.setDeviceMetricsOverride',{'width':width,'height':900,'deviceScaleFactor':1,'mobile':width<720})
+            assert js("document.querySelectorAll('.biz-empty-action').length===1&&!document.querySelector('.wrap h2,.wrap table,.wrap form')"),path
+            assert js("const button=document.querySelector('.biz-empty-action').getBoundingClientRect(),empty=document.querySelector('.biz-empty').getBoundingClientRect();Math.abs((button.x+button.width/2)-(empty.x+empty.width/2))<1&&Math.abs((button.y+button.height/2)-(empty.y+empty.height/2))<1&&! (document.documentElement.scrollWidth>innerWidth)"),(path,width)
+            if path=='inventory':screenshot('empty-materials-'+str(width))
+    command('Emulation.setDeviceMetricsOverride',{'width':1440,'height':900,'deviceScaleFactor':1,'mobile':False})
     navigate('/director/orders/new')
-    js("document.querySelector('[name=due_date]').value='2026-12-01';document.querySelector('[name=note]').value='Вернуть заполненный заказ';document.querySelector('[data-picker=customer_id]').click()")
+    js("document.querySelector('.biz-empty-action').click()")
     wait("location.pathname==='/director/customers/new'&&document.readyState==='complete'")
     js("document.querySelector('[name=name]').value='Фирма Север';document.querySelector('form[method=post]').requestSubmit()")
     wait("location.pathname==='/director/customers/1'&&document.readyState==='complete'&&!document.querySelector('#section-return').hidden")
     js("document.querySelector('#section-return').click()")
-    wait("location.pathname==='/director/orders/new'&&document.readyState==='complete'&&document.querySelector('[name=customer_id]').value==='1'")
-    assert js("document.querySelector('[name=due_date]').value==='2026-12-01'&&document.querySelector('[name=note]').value==='Вернуть заполненный заказ'")
-    js("document.querySelector('[data-model-create]').click()")
+    wait("location.pathname==='/director/orders/new'&&document.readyState==='complete'&&!!document.querySelector('.biz-empty-action')")
+    js("(document.querySelector('[data-model-create]')||document.querySelector('.biz-empty-action')).click()")
     wait("location.pathname==='/director/models/new'&&document.readyState==='complete'")
     assert js("document.querySelector('[name=customer_id]').value==='1'")
     js("document.querySelector('[name=name]').value='Кроссовки 714';document.querySelector('[name=sale_price]').value='900';document.querySelector('form[method=post]').requestSubmit()")

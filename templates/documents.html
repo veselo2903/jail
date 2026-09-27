@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Заявки — jail{% endblock %}
-{% block content %}
+{% from 'business/_empty.html' import empty_action with context %}{% block content %}{% if not rows %}{{ empty_action('К текущим заявкам' if archive else 'Открыть архив заявок' if has_archive else 'Запросить материалы' if can_request else 'Создать поставку',url_for('documents') if archive else url_for('documents',archive='1') if has_archive else url_for('request_new') if can_request else url_for('supply_new')) }}{% else %}
 <div class="{{ 'sklad-requests-page' if role in ['sklad','director'] else 'requests-page' }}">
 
 {% if to_action and role != 'sklad' %}<div class="card hero warn">
@@ -68,7 +68,7 @@
 </table>
 </div>
 {% endif %}
-{% if not rows %}<p class="biz-list-help">{{ 'Необработанных заявок нет.' if not archive else 'В архиве нет заявок.' }}</p>{% endif %}{% if has_archive or archive %}<a class="btn grey" href="{{ url_for('documents',archive=None if archive else '1') }}">{{ 'К текущим заявкам' if archive else 'Архив заявок' }}</a>{% endif %}
+{% if has_archive or archive %}<a class="btn grey" href="{{ url_for('documents',archive=None if archive else '1') }}">{{ 'К текущим заявкам' if archive else 'Архив заявок' }}</a>{% endif %}
 </div>
 
 <script>
@@ -86,4 +86,4 @@ if(/^#(?:dq|sh)-\d+$/.test(location.hash)){
 }
 </script>
 
-{% endblock %}
+{% endif %}{% endblock %}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Новая поставка — jail{% endblock %}
-{% block content %}
+{% from 'business/_empty.html' import empty_action with context %}{% block content %}{% if not materials and not batches %}{{ empty_action('Добавить материал',url_for('business.material_new'),hop=true,picker='extra_material_id') }}{% else %}
 <div class="sklad-supply-page">
 <div class="sklad-supply-header">
   <a class="btn grey sm sklad-back-to-requests" data-discard-draft href="{{ url_for('supplies') }}">← К поставкам</a>
@@ -249,4 +249,4 @@
  const material={{ selected_material|tojson }};if(material&&!retry){form.querySelector('.sklad-unassigned-materials').open=true;form.querySelector('[name=extra_material_id]').value=material}
 })();
 </script>
-{% endblock %}
+{% endif %}{% endblock %}

@@ -248,6 +248,16 @@ def register(bp,access,mutate,rows,choices,prefix):
         archive=request.args.get('archive')=='1'
         return render_template('business/staff.html',workers=rows('SELECT * FROM workers WHERE archived=? ORDER BY name',(int(archive),)),archive=archive,has_archive=bool(rows('SELECT 1 FROM workers WHERE archived=1 LIMIT 1')))
 
+    @bp.route(prefix+'/staff/new',methods=['GET','POST'])
+    @access(True)
+    def staff_new():
+        if request.method=='POST' and not getattr(g,'render_failed_form',False):
+            def change():
+                wid=create_worker(g.db,request.form);g.created_entity=('worker',wid)
+                return url_for('business.staff_detail',wid=wid)
+            return mutate(change,url_for('business.staff_new'),'Сотрудник сохранён.')
+        return render_template('business/staff_new.html')
+
     @bp.route(prefix+'/staff/<int:wid>',methods=['GET','POST'])
     @access(True)
     def staff_detail(wid):

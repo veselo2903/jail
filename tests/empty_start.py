@@ -23,7 +23,17 @@ with tempfile.TemporaryDirectory(prefix='jail-empty-') as folder:
         assert 'refs-list card' not in response.text and 'Показать архив' not in response.text
         if role=='proizv':assert 'refs-section' not in response.text
         else: assert 'refs-add card' not in response.text
+    for role in ('director','sklad','proizv'):
+        client.get('/login/'+role)
+        paths=['batches','requests','supplies','supplies/return/new'] if role=='proizv' else ['customers','models','orders','batches','inventory','staff','payroll/ledger','requests','supplies','deliveries','customer-payments','models/new','orders/new','supplies/new','deliveries/new','customer-payments/new']
+        for path in paths:
+            response=client.get('/'+role+'/'+path);assert response.status_code==200,(role,path)
+            content=response.text.split('id="biz-page-start">',1)[1].split('</div>\n</div>\n<script>',1)[0]
+            assert 'class="biz-empty"' in content,(role,path)
+            assert content.count('biz-empty-action')==1,(role,path)
+            assert not any(value in content for value in ('<h2','<table','<form','class="card','biz-list-help','biz-next-step')),(role,path)
     client.get('/login/sklad')
+
     assert client.get('/sklad/orders/new').status_code==200
     with client.session_transaction() as session:csrf=session['csrf_token']
     for table in ('customers','models','workers'):

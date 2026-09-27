@@ -1,0 +1,1 @@
+{% macro empty_action(label,href,hop=false,picker=None) %}<div class="biz-empty"><a class="btn biz-empty-action" href="{{ href }}"{% if hop %} data-section-hop{% endif %}{% if picker %} data-picker="{{ picker }}"{% endif %}>{{ label }}</a></div>{% endmacro %}

@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='jail-director-') as folder:
         with db.get_db() as conn:return conn.execute(sql,args).fetchone()
     def state(bid):
         with db.get_db() as conn:return flow.batch_state(conn,conn.execute('SELECT * FROM production_batches WHERE id=?',(bid,)).fetchone())
-    assert 'Сначала добавьте заказчика' in client.get('/director/orders').text
+    assert 'Добавить заказчика' in client.get('/director/orders').text
     assert 'refs' not in client.get('/director/orders').text.split('<nav')[1].split('</nav>')[0]
     assert one('SELECT COUNT(*) n FROM customers')['n']==0
     assert post('/customers/new',{'name':'  '},True).status_code==200

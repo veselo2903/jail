@@ -331,7 +331,7 @@ def batch_detail(bid):
     if director_state:
         target=director_state['target'];pane='materials' if target in ('biz-plan-material','biz-material-move') else 'finish' if target in ('biz-delivery','biz-output','biz-close') or director_state['stage']==4 else 'tasks'
         guidance.update(title=director_state['title'],text=director_state['text'],target=target,label=director_state['label'],pane=pane)
-    if guidance.get('target')=='biz-work' and not workers and session['role'] in MANAGERS:guidance['href']=url_for('business.staff',_anchor='biz-staff-add');guidance['label']='Добавить сотрудника'
+    if guidance.get('target')=='biz-work' and not workers and session['role'] in MANAGERS:guidance['href']=url_for('business.staff_new');guidance['label']='Добавить сотрудника'
     if guidance.get('target')=='biz-supplies':guidance['href']=url_for('supplies',batch=bid)
     if guidance.get('target')=='biz-delivery':guidance['href']=url_for('business.deliveries',batch=bid) if guidance['delivered']>=guidance['good'] else url_for('business.delivery_new',batch=bid)
     warehouse_stock=rows('SELECT material_id,owner_customer_id,qty_milli FROM stock_balances WHERE qty_milli>0') if session['role'] in MANAGERS else []
