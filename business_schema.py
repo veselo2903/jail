@@ -6,6 +6,9 @@ OPERATIONS = (
 )
 
 SCHEMA = '''
+CREATE TABLE IF NOT EXISTS catalog_submissions (token TEXT PRIMARY KEY, kind TEXT NOT NULL, entity_id INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS model_sale_price_history (id INTEGER PRIMARY KEY AUTOINCREMENT, model_id INTEGER NOT NULL REFERENCES models(id), price_cents INTEGER CHECK(price_cents>=0), at TEXT NOT NULL, actor TEXT NOT NULL);
+
 CREATE TABLE IF NOT EXISTS business_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS orders (
  id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER NOT NULL REFERENCES customers(id),
@@ -185,7 +188,8 @@ CREATE INDEX IF NOT EXISTS idx_material_movements_batch ON inventory_movements(b
 def migrate(conn):
     conn.executescript(SCHEMA)
     additions = {
-        'models': [('customer_id', 'INTEGER REFERENCES customers(id)')],
+        'customers': [('contact','TEXT'),('note','TEXT')],
+        'models': [('customer_id', 'INTEGER REFERENCES customers(id)'),('sale_price_cents','INTEGER CHECK(sale_price_cents>=0)'),('description','TEXT'),('photo_filename','TEXT')],
         'production_batches': [('contract_cents', 'INTEGER CHECK(contract_cents>=0)'),
                                ('no_materials', 'INTEGER NOT NULL DEFAULT 0 CHECK(no_materials IN (0,1))')],
         'requests': [('batch_id', 'INTEGER REFERENCES production_batches(id)')],

@@ -34,7 +34,7 @@ app.config["SESSION_COOKIE_NAME"] = "jail_session"
 app.config["SESSION_COOKIE_PATH"] = os.environ.get("JAIL_COOKIE_PATH", "/")
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("JAIL_COOKIE_SECURE") == "1"
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 6 * 1024 * 1024
 ENABLE_WEB_UPDATES = False
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -285,6 +285,11 @@ def can_edit_refs():
 
 def can_see_discrepancies():
     return session.get("role") in ("sklad", "proizv", "director")
+
+
+@app.errorhandler(413)
+def oversized_form(error):
+    return render_template('business/upload_error.html'),413
 
 
 # ---------- Вход ----------

@@ -7,6 +7,8 @@
    const forms=Array.from(document.querySelectorAll('form[method="post"]'));
    const identifiers=['plan_id','assignment_id','acceptance_id','delivery_id','payment_id'];
    if(action==='operation_edit'||action==='assignment'||action==='external')identifiers.push('task_id');
+   if(action==='model_edit')identifiers.push('model_id');
+   if(action==='worker_edit')identifiers.push('worker_id');
    const form=forms.find(f=>f.querySelector('[name="action"]')?.value===action&&identifiers.every(key=>!fields[key]||f.querySelector(`[name="${key}"]`)?.value===fields[key][0])) || forms.find(f=>Array.from(f.querySelectorAll('button[name="action"]')).some(b=>b.value===action)&&identifiers.every(key=>!fields[key]||f.querySelector(`[name="${key}"]`)?.value===fields[key][0]));
    if(form){
      const crew=form.querySelector('[data-work-people]');
@@ -45,7 +47,7 @@
    showPane(document.querySelector('form[data-retry]')?.closest('[data-biz-pane]')?.dataset.bizPane||tabs.dataset.defaultPane);
  }
  const order=document.getElementById('biz-order-form');
- if(order){
+ if(order&&!order.hasAttribute('data-director-order')){
    const list=document.getElementById('biz-order-positions'),customer=document.getElementById('biz-customer');
    function refresh(){
      const customerNew=customer.value==='new',newCustomer=order.querySelector('[data-new-customer]');
@@ -114,6 +116,7 @@
    }
    form.addEventListener('change',refresh);refresh();
  });
+ document.querySelectorAll('[data-model-photo]').forEach(input=>input.addEventListener('change',()=>{input.setCustomValidity(input.files[0]?.size>5*1024*1024?'Фото должно быть не больше 5 МБ. Выберите изображение меньшего размера.':'')}));
  document.querySelectorAll('[data-material-plan]').forEach(form=>{
    const material=form.querySelector('[name="material_id"]');
    function refresh(){

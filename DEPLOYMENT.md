@@ -12,7 +12,7 @@
 
 1. Проверить исходники: `/opt/jail/.venv/bin/python /root/jail/tests/smoke.py`, `/opt/jail/.venv/bin/python /root/jail/tests/business.py` и `/opt/jail/.venv/bin/python /root/jail/tests/experience.py`.
 2. Создать копию: `systemctl start jail-backup.service`; проверить `systemctl status jail-backup.service`.
-3. Остановить `jail.service`. Скопировать `app.py`, `db.py`, `business.py`, `business_core.py`, `business_schema.py`, `experience.py`, `VERSION`, `templates/` и `static/` из `/root/jail` в `/opt/jail`. Не копировать `jail.db` и `.venv`.
+3. Остановить `jail.service`. Скопировать `app.py`, `db.py`, `business.py`, `business_core.py`, `business_schema.py`, `experience.py`, `catalog.py`, `director_flow.py`, `VERSION`, `templates/` и `static/` из `/root/jail` в `/opt/jail`. Не копировать `jail.db` и `.venv`.
 4. Установить для файлов владельца `root:jail`, права `640`, для каталогов шаблонов `750`. Проверить, что ACL не закрывают доступ группе `jail`. Копирование через `copy2` переносит ACL исходников; после копирования нужно явно задать базовую ACL группы (`g::r--` для файлов, `g::r-x` для каталогов) и соответствующую маску. Один `chmod` при наличии расширенной ACL меняет маску и может оставить базовую группу без доступа.
 5. При изменении зависимостей выполнить `/opt/jail/.venv/bin/pip install -r /root/jail/requirements.txt`.
 6. `systemctl start jail.service`; затем проверить `systemctl status jail.service`, `/jail/login` и журнал `journalctl -u jail.service -n 100`.
@@ -46,3 +46,9 @@
 ## Пустые справочники 0.62
 
 При запуске заказчики, модели и работники не создаются автоматически. Пустые списки и пустой архив скрыты; формы добавления доступны складу и директору. Восемь прежних неиспользуемых стартовых заглушек удалены из рабочей базы после резервного копирования. Реальные заявки и остальные данные сохраняются. Проверка чистой установки: `tests/empty_start.py`; тестовые справочники создаются явно через `tests/fixtures.py`.
+
+## Путь директора 0.63
+
+Сценарий и изменения: [DIRECTOR_WORKFLOW_063.md](docs/DIRECTOR_WORKFLOW_063.md). Проверка: `tests/director.py`. Новые модули `catalog.py` и `director_flow.py` обязательны при развёртывании. Фотографии моделей находятся в `/var/lib/jail/model-photos/`, владелец `jail:jail`, каталог 750, файлы 640.
+
+Установить `ops/backup.py` как `/usr/local/sbin/jail-backup.py` с владельцем `root:root` и правами 755. Снимок БД с фотографиями получает парный архив `jail-<дата>.photos.tar.gz`; при отсутствии фото архив не создаётся. При восстановлении распаковать соответствующий архив в `/var/lib/jail` и установить для фотографий владельца `jail:jail`, каталог 750, файлы 640. Скрипт копирует только изображения, на которые ссылается снимок, и удаляет их архив вместе с устаревшим снимком.

@@ -120,7 +120,14 @@ def create_order(conn, form, actor):
                 audit(conn,actor,'model_customer',mid,{'customer_id':cid,'reason':'Подтверждено при создании заказа'})
             elif model['customer_id'] != cid:
                 raise RuleError('Модель должна принадлежать выбранному заказчику. Укажите владельца в справочнике или создайте новую модель.')
-        price = scaled(val('price'),label='Цена')
+        raw_price=val('price')
+        if not raw_price.strip() and pkind=='unit' and punit=='pair':
+            model=require(conn,'models',mid,True)
+            if model['sale_price_cents'] is not None:raw_price=str(Decimal(model['sale_price_cents'])/100)
+        price = scaled(raw_price,label='Цена заказчика')
+        if val('new_model').strip() and pkind=='unit' and punit=='pair':
+            conn.execute('UPDATE models SET sale_price_cents=? WHERE id=?',(price,mid))
+            conn.execute('INSERT INTO model_sale_price_history(model_id,price_cents,at,actor) VALUES (?,?,?,?)',(mid,price,now(),actor))
         total = price if pkind=='total' else price*pairs*(2 if punit=='shoe' else 1)
         settlement = val('settlement','proportional')
         if settlement not in ('proportional','complete'): raise RuleError('Проверьте условие приёмки.')

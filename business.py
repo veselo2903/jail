@@ -5,13 +5,18 @@ from decimal import Decimal
 import json
 import secrets
 import sqlite3
+from werkzeug.datastructures import MultiDict
 from flask import Blueprint, abort, current_app, flash, g, redirect, render_template, request, session, url_for
 if __package__:
     from . import business_core as core
     from . import experience as ux
+    from . import director_flow as flow
+    from . import catalog
 else:
     import business_core as core
     import experience as ux
+    import director_flow as flow
+    import catalog
 
 bp=Blueprint('business',__name__)
 PREFIX='/<any(sklad,proizv,director):role_url>'
@@ -33,6 +38,11 @@ def access(manager=False):
     return decorate
 
 
+def cleanup_catalog_files():
+    for path in getattr(g,'catalog_files',[]):path.unlink(missing_ok=True)
+    g.catalog_files=[]
+
+
 def mutate(action, target, success='Сохранено.'):
     """Rollback before flashing: app's audit hook commits all pending writes."""
     try:
@@ -42,15 +52,16 @@ def mutate(action, target, success='Сохранено.'):
         if isinstance(result,str): target=result
         flash(success)
     except core.RuleError as exc:
-        g.db.rollback(); flash(str(exc), 'error')
+        g.db.rollback(); cleanup_catalog_files(); flash(str(exc), 'error')
         if not ux.remember_form():
             g.render_failed_form=True
             return current_app.view_functions[request.endpoint](**request.view_args)
     except sqlite3.IntegrityError:
-        g.db.rollback(); flash('Такая запись уже существует или связана с другими данными.', 'error')
+        g.db.rollback(); cleanup_catalog_files(); flash('Такая запись уже существует или связана с другими данными.', 'error')
         if not ux.remember_form():
             g.render_failed_form=True
             return current_app.view_functions[request.endpoint](**request.view_args)
+    if '#' not in target and target.split('?',1)[0]==request.script_root+request.path:target+='#biz-page-start'
     return redirect(target)
 
 
@@ -92,11 +103,29 @@ def context():
 @bp.route(PREFIX+'/orders')
 @access(True)
 def orders():
+    archive=session['role']=='director' and request.args.get('archive')=='1'
+    condition=" WHERE o.status IN ('completed','canceled')" if archive else " WHERE o.status NOT IN ('completed','canceled')" if session['role']=='director' else ''
     orders=rows('''SELECT o.*,c.name customer_name,COALESCE(SUM(i.total_cents),0) total,
        COUNT(i.id) positions,(SELECT COALESCE(SUM(amount_cents),0) FROM customer_payments WHERE order_id=o.id) paid
        FROM orders o JOIN customers c ON c.id=o.customer_id LEFT JOIN order_items i ON i.order_id=o.id
-       GROUP BY o.id ORDER BY o.id DESC''')
-    return render_template('business/orders.html',orders=orders)
+       '''+condition+' GROUP BY o.id ORDER BY o.id DESC')
+    has_orders=bool(rows('SELECT 1 FROM orders LIMIT 1'))
+    has_archive=bool(rows("SELECT 1 FROM orders WHERE status IN ('completed','canceled') LIMIT 1"))
+    customers=choices('customers');models=choices('models')
+    setup=None
+    if not customers:setup=dict(title='Сначала добавьте заказчика',text='Укажите, кто заказывает у вас обувь. Затем добавьте его модели и согласованные цены.',label='Добавить заказчика',url=url_for('business.customer_new'),step=1)
+    elif not any(m['customer_id'] in [c['id'] for c in customers] for m in models):
+        target=url_for('business.customer_detail',cid=customers[0]['id'],_anchor='biz-model-add') if len(customers)==1 else url_for('business.customers')
+        setup=dict(title='Теперь добавьте модели заказчика',text='Название или артикул модели и цена за пару. После этого можно принять первый заказ.',label='Добавить модель' if len(customers)==1 else 'Выбрать заказчика',url=target,step=2)
+    elif not orders:setup=dict(title='Примите следующий заказ' if has_orders else 'Можно принять первый заказ',text='Выберите заказчика и его модели, укажите количество пар и срок. Согласованные цены подставятся сами.',label='Создать заказ',url=url_for('business.order_new'),step=3)
+    if session['role']=='director':
+        overview=[]
+        for row in orders:
+            entry=dict(row);parts=rows(batch_title_query()+' WHERE oi.order_id=? ORDER BY b.id',(row['id'],))
+            entry['flow']=flow.order_state(g.db,row,parts);overview.append(entry)
+        orders=overview
+    return render_template('business/orders.html',orders=orders,setup=None if archive else setup,archive=archive,has_archive=has_archive)
+
 
 
 @bp.route(PREFIX+'/orders/new',methods=['GET','POST'])
@@ -108,10 +137,22 @@ def order_new():
             oid=core.create_order(g.db,request.form,session['role'])
             g.db.commit(); flash('Заказ создан. Для каждой модели подготовлена партия.')
             batches=rows('SELECT id FROM production_batches WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=?)',(oid,))
-            return redirect(url_for('business.batch_detail',bid=batches[0]['id'])) if len(batches)==1 else redirect(url_for('business.order_detail',oid=oid))
+            return redirect(url_for('business.batch_detail',bid=batches[0]['id'])) if len(batches)==1 and session['role']!='director' else redirect(url_for('business.order_detail',oid=oid))
         except (core.RuleError,sqlite3.IntegrityError) as exc:
-            g.db.rollback(); flash(str(exc) if isinstance(exc,core.RuleError) else 'Проверьте модель и заказчика.', 'error')
-    return render_template('business/order_new.html',customers=choices('customers'),models=choices('models'),form=request.form, position_rows=[{key:request.form.getlist(key)[n] if n<len(request.form.getlist(key)) else '' for key in ('qty','model_id','new_model','price','quantity_unit','price_kind','price_unit','settlement','specification')} for n in range(len(request.form.getlist('qty')))])
+            g.db.rollback(); cleanup_catalog_files(); flash(str(exc) if isinstance(exc,core.RuleError) else 'Проверьте модель и заказчика.', 'error')
+    form=MultiDict(request.form)
+    if request.method=='GET':
+        cid=request.args.get('customer',type=int)
+        if cid:core.require(g.db,'customers',cid,True);form['customer_id']=str(cid)
+        mid=request.args.get('model',type=int)
+        if mid:
+            model=core.require(g.db,'models',mid,True)
+            if not model['customer_id'] or (cid and model['customer_id']!=cid):abort(400)
+            form['customer_id']=str(model['customer_id']);form.setlist('model_id',[str(mid)]);form.setlist('qty',['']);form.setlist('price',[str(Decimal(model['sale_price_cents'])/100) if model['sale_price_cents'] is not None else ''])
+    fields=('qty','model_id','new_model','price','quantity_unit','price_kind','price_unit','settlement','specification')
+    position_rows=[{key:form.getlist(key)[n] if n<len(form.getlist(key)) else '' for key in fields} for n in range(len(form.getlist('qty')))]
+    return render_template('business/director_order_new.html' if session['role']=='director' and request.args.get('simple')!='1' else 'business/order_new.html',customers=choices('customers'),models=choices('models'),form=form,position_rows=position_rows)
+
 
 
 @bp.route(PREFIX+'/orders/<int:oid>',methods=['GET','POST'])
@@ -147,12 +188,13 @@ def order_detail(oid):
     batches=rows(batch_title_query()+' WHERE oi.order_id=? ORDER BY b.id',(oid,))
     payments=rows('SELECT * FROM customer_payments WHERE order_id=? ORDER BY paid_on DESC,id DESC',(oid,))
     finance=[core.batch_finance(g.db,b['id']) for b in batches]
+    workflow=flow.order_state(g.db,order,batches)
     changes=[]
     for change in rows('SELECT * FROM order_changes WHERE order_id=? ORDER BY id DESC',(oid,)):
         entry=dict(change); entry['before']=json.loads(entry['snapshot']);changes.append(entry)
-    return render_template('business/order_detail.html',order=order,customer=customer,items=items,batches=batches,payments=payments,
+    return render_template('business/director_order_detail.html' if session['role']=='director' else 'business/order_detail.html',economics=dict(planned=None if any(f['planned'] is None for f in finance) else sum(f['planned'] for f in finance),actual=sum(f['actual'] for f in finance),margin=None if any(f['margin'] is None for f in finance) else sum(f['margin'] for f in finance)),order=order,customer=customer,items=items,batches=batches,payments=payments,
          total=sum(i['total_cents'] for i in items),paid=sum(p['amount_cents'] for p in payments),earned=sum(f['revenue'] for f in finance),
-         changes=changes)
+         changes=changes,workflow=workflow)
 
 
 @bp.route(PREFIX+'/batches')
@@ -166,6 +208,7 @@ def batches():
         entry=dict(row);tasks=core.task_rows(g.db,row['id'])
         entry['tasks_total']=len([t for t in tasks if t['mode']!='skip'])
         entry['tasks_done']=len([t for t in tasks if t['mode']!='skip' and t['done']>=t['qty_pairs']])
+        entry['flow']=flow.batch_state(g.db,row) if session['role']=='director' else None
         entry['next_label']='Настроить задания' if not tasks and session['role'] in MANAGERS else 'Ожидает заданий склада' if not tasks else 'Задания выполнены' if entry['tasks_done']==entry['tasks_total'] else str(entry['tasks_done'])+' из '+str(entry['tasks_total'])+' операций выполнено'
         overview.append(entry)
     return render_template('business/batches.html',batches=overview,archive=show)
@@ -193,6 +236,14 @@ def batch_detail(bid):
                 fields=f.to_dict()
                 if task['rate_cents'] is None and fields.get('rate') and not fields.get('reason'): fields['reason']='Первичная расценка'
                 core.update_operation(g.db,bid,task['id'],fields,actor)
+            elif action=='worker_add':catalog.create_worker(g.db,f)
+            elif action=='start':
+                state=flow.batch_state(g.db,b)
+                if not state['prepared']:raise core.RuleError('Сначала укажите операции, оплату, необходимые материалы и сотрудников производства.')
+                if b['status']=='planned':
+                    g.db.execute("UPDATE production_batches SET status='working' WHERE id=?",(bid,))
+                    if b['order_item_id']:g.db.execute("UPDATE orders SET status='working' WHERE id=(SELECT order_id FROM order_items WHERE id=?) AND status='confirmed'",(b['order_item_id'],))
+                    core.audit(g.db,actor,'batch_start',bid,{'prepared':True})
             elif action=='template': core.save_template(g.db,bid)
             elif action=='split':
                 newbid=core.split_batch(g.db,bid,f,actor)
@@ -262,7 +313,7 @@ def batch_detail(bid):
                     g.db.execute("UPDATE orders SET status='completed' WHERE id=?",(oid[0],))
                 core.audit(g.db,actor,'batch_close',bid,fin)
             else: raise core.RuleError('Неизвестное действие.')
-        return mutate(change,url_for('business.batch_detail',bid=bid),{'work':'Работа записана. Оплата начислена сотрудникам.', 'operations_bulk':'Операции добавлены в задания партии.', 'material':'Материал сохранён в плане партии.', 'material_move':'Движение записано. Остатки обновлены.', 'output':'Выпуск готовой обуви записан.', 'delivery':'Отгрузка записана. Отметьте приёмку после получения обуви заказчиком.', 'delivery_accept':'Приёмка заказчиком записана.', 'close':'Партия закрыта. Итоги сохранены.', 'template':'Настройки сохранены для следующих заказов этой модели.'}.get(action,'Изменения сохранены.'))
+        return mutate(change,url_for('business.batch_detail',bid=bid),{'worker_add':'Сотрудник добавлен. Можно продолжить подготовку модели.','start':'Задание передано в производство. Склад и производство видят его в своих партиях.','work':'Работа записана. Оплата начислена сотрудникам.', 'operations_bulk':'Операции добавлены в задания партии.', 'material':'Материал сохранён в плане партии.', 'material_move':'Движение записано. Остатки обновлены.', 'output':'Выпуск готовой обуви записан.', 'delivery':'Отгрузка записана. Отметьте приёмку после получения обуви заказчиком.', 'delivery_accept':'Приёмка заказчиком записана.', 'close':'Партия закрыта. Итоги сохранены.', 'template':'Настройки сохранены для следующих заказов этой модели.'}.get(action,'Изменения сохранены.'))
     batch=rows(batch_title_query()+' WHERE b.id=?',(bid,))[0]
     tasks=core.task_rows(g.db,bid)
     material_plans=rows('''SELECT p.*,m.name,m.unit,c.name owner_name FROM batch_material_plan p JOIN materials m ON m.id=p.material_id
@@ -278,9 +329,13 @@ def batch_detail(bid):
     deliveries=rows('SELECT * FROM deliveries WHERE batch_id=? ORDER BY id DESC',(bid,))
     workers=choices('workers')
     guidance=ux.batch_guidance(batch,tasks,material_plans,production_stock,outputs,deliveries,session['role'] in MANAGERS,len(workers),any(v['kind'] in ('issue','allocate','consume','loss') for v in movements))
+    director_state=flow.batch_state(g.db,batch) if session['role']=='director' else None
+    if director_state:
+        target=director_state['target'];pane='materials' if target in ('biz-plan-material','biz-material-move') else 'finish' if target in ('biz-delivery','biz-output','biz-close') or director_state['stage']==4 else 'tasks'
+        guidance.update(title=director_state['title'],text=director_state['text'],target=target,label=director_state['label'],pane=pane)
     warehouse_stock=rows('SELECT material_id,owner_customer_id,qty_milli FROM stock_balances WHERE qty_milli>0') if session['role'] in MANAGERS else []
     stock_data=dict(batch_id=bid,warehouse=[dict(r) for r in warehouse_stock],production=[{key:r[key] for key in ('material_id','owner_customer_id','qty_milli')} for r in production_stock],pool=[dict(r) for r in rows('SELECT material_id,owner_customer_id,qty_milli FROM production_pool WHERE qty_milli>0')])
-    return render_template('business/batch.html',guidance=guidance,stock_data=stock_data,batch=batch,tasks=tasks,materials=choices('materials'),plans=material_plans,
+    return render_template('business/batch.html',guidance=guidance,director_state=director_state,stock_data=stock_data,batch=batch,tasks=tasks,materials=choices('materials'),plans=material_plans,
         stock=production_stock,operations=rows('SELECT * FROM operations ORDER BY ord,id'),workers=workers,history=history,
         finance=core.batch_finance(g.db,bid) if session['role'] in MANAGERS else None,movements=movements,
         deliveries=deliveries,outputs=outputs,
@@ -360,5 +415,11 @@ def worker(wid):
         operations=rows('SELECT * FROM operations ORDER BY ord,id'),skills={r['operation_id'] for r in rows('SELECT operation_id FROM worker_skills WHERE worker_id=?',(wid,))})
 
 
+@bp.app_template_filter('money_input')
+def money_input(value):
+    return format(Decimal(value)/100,'.2f') if value is not None else ''
+
+
 def register(app):
+    catalog.register(bp,access,mutate,rows,choices,PREFIX)
     app.register_blueprint(bp)
