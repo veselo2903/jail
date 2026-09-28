@@ -54,6 +54,8 @@ def register(app,access,mutate,prefix):
     @app.route(prefix+'/supplies')
     @access()
     def supplies():
+        if not request.args.get('batch') and not request.args.get('issues'):
+            return redirect(url_for('warehouse',_anchor='warehouse-supplies'))
         bid=request.args.get('batch',type=int)
         shipments=g.db.execute('''SELECT s.*,r.id receipt_id,r.received_on,r.note receipt_note,
            (SELECT COUNT(*) FROM shipment_items WHERE shipment_id=s.id) positions,
@@ -154,4 +156,4 @@ def register(app,access,mutate,prefix):
                 if entry['remaining']!=0:g.db.execute("UPDATE request_items SET status='rejected',placed=0,collected=NULL,rejection_note=? WHERE id=?",(reason,entry['row']['id']))
             app.jail_resolve_request(req_id)
             core.audit(g.db,session['role'],'request_reject',req_id,{'reason':reason})
-        return mutate(change,url_for('documents'),'Необработанные позиции заявки отклонены.')
+        return mutate(change,url_for('warehouse'),'Необработанные позиции заявки отклонены.')

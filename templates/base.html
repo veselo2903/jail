@@ -16,37 +16,15 @@
 {% set factory_icon='<path d="M3 21V9l6 3V8l6 3V3h6v18zM6 17h2m4 0h2m4 0h2"/>' %}
 {% set box_icon='<path d="M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 5 9-5M12 12v9"/>' %}
 {% set money_icon='<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M15 14h3"/>' %}
-{% set customer_ep=ep in ['business.customers','business.customer_new','business.customer_detail'] %}
-{% set model_ep=ep in ['business.models','business.model_new','business.model_detail'] %}
-{% set staff_ep=ep in ['business.staff','business.staff_new','business.staff_detail'] %}
-{% set order_ep=ep in ['business.orders','business.order_new','business.order_detail'] %}
-{% set production_ep=ep in ['business.batches','business.batch_detail'] %}
-{% set supplies_ep=ep in ['supplies','supply_new','supply_detail','supply_return_new','doc_view','doc_new'] %}
-{% set payroll_ep=ep in ['business.payroll','business.worker'] %}
+{% set order_ep=ep in ['business.orders','business.order_new','business.order_detail','business.customers','business.customer_new','business.customer_detail','business.models','business.model_new','business.model_detail','business.deliveries','business.delivery_new','business.delivery_detail','business.customer_payments','business.customer_payment_new'] %}
+{% set production_ep=ep in ['business.batches','business.batch_detail','business.work_log'] %}
+{% set warehouse_ep=ep in ['warehouse','documents','request_new','request_edit','supplies','supply_new','supply_detail','supply_return_new','doc_view','doc_new','business.inventory','business.material_detail','business.material_new','discrepancies'] %}
+{% set payroll_ep=ep in ['business.payroll','business.worker','business.staff','business.staff_new','business.staff_detail'] %}
 <nav class="side">
-{% if role=='director' %}
-{{ menu_link('business.customers','Заказчики',catalog_icon,customer_ep) }}
-{{ menu_link('business.models','Модели',box_icon,model_ep) }}
-{{ menu_link('business.orders','Заказы',paper_icon,order_ep) }}
+{% if role in ['director','sklad'] %}{{ menu_link('business.orders','Заказы',paper_icon,order_ep) }}{% endif %}
 {{ menu_link('business.batches','Производство',factory_icon,production_ep) }}
-<div class="nav-desktop">{{ menu_link('business.inventory','Материалы',box_icon,ep in ['business.inventory','business.material_detail','business.material_new']) }}{{ menu_link('business.staff','Сотрудники',catalog_icon,staff_ep) }}{{ menu_link('business.payroll','Зарплата',money_icon,payroll_ep) }}</div>
-{% elif role=='sklad' %}
-{{ menu_link('documents','Заявки',paper_icon,ep in ['documents','request_new','request_edit']) }}
-{{ menu_link('supplies','Поставки',box_icon,supplies_ep) }}
-{{ menu_link('business.inventory','Материалы',box_icon,ep in ['business.inventory','business.material_detail','business.material_new']) }}
-{{ menu_link('business.batches','Производство',factory_icon,production_ep) }}
-{% else %}
-{{ menu_link('business.batches','Производство',factory_icon,production_ep) }}
-{{ menu_link('business.work_log','Выработка',paper_icon,ep=='business.work_log') }}
-{{ menu_link('documents','Заявки',paper_icon,ep in ['documents','request_new','request_edit']) }}
-{{ menu_link('supplies','Поставки',box_icon,supplies_ep) }}
-{% endif %}
-<details class="side-more director-more"><summary class="nav {{ 'on' if ep in ['business.customer_payments','business.customer_payment_new','business.deliveries','business.delivery_new','business.delivery_detail','discrepancies'] or (role=='director' and (supplies_ep or ep=='documents')) or (role=='sklad' and (customer_ep or model_ep or order_ep or staff_ep or payroll_ep)) }}"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>Ещё</summary><div class="side-more-panel">
-{% if role=='director' %}<div class="nav-mobile">{{ menu_link('business.inventory','Материалы',box_icon,ep in ['business.inventory','business.material_detail','business.material_new']) }}{{ menu_link('business.staff','Сотрудники',catalog_icon,staff_ep) }}{{ menu_link('business.payroll','Зарплата',money_icon,payroll_ep) }}</div>{{ menu_link('documents','Заявки',paper_icon,ep=='documents') }}{{ menu_link('supplies','Поставки',box_icon,supplies_ep) }}{% elif role=='sklad' %}{{ menu_link('business.customers','Заказчики',catalog_icon,customer_ep) }}{{ menu_link('business.models','Модели',box_icon,model_ep) }}{{ menu_link('business.orders','Заказы',paper_icon,order_ep) }}{{ menu_link('business.staff','Сотрудники',catalog_icon,staff_ep) }}{{ menu_link('business.payroll','Зарплата',money_icon,payroll_ep) }}{% endif %}
-{% if role in ['director','sklad'] %}{{ menu_link('business.work_log','Выработка',paper_icon,ep=='business.work_log') }}{{ menu_link('business.deliveries','Отгрузки',box_icon,ep in ['business.deliveries','business.delivery_new','business.delivery_detail']) }}{{ menu_link('business.customer_payments','Оплата заказов',money_icon,ep in ['business.customer_payments','business.customer_payment_new']) }}{% endif %}
-
-<div class="director-mobile-user"><b>{{ role_name }}</b><a class="btn ghost sm block side-user-logout" href="{{ url_for('logout') }}">Выйти</a></div>
-</div></details>
+{{ menu_link('warehouse','Склад',box_icon,warehouse_ep) }}
+{% if role in ['director','sklad'] %}{{ menu_link('business.payroll','Зарплата',money_icon,payroll_ep) }}{% endif %}
 <div class="side-user"><span class="side-user-role">{{ role_name }}</span><a class="btn ghost sm block side-user-logout" href="{{ url_for('logout') }}">Выйти</a></div>
 </nav>
 {% endif %}
@@ -59,17 +37,6 @@
     {% block content %}{% endblock %}
   </div>
 </div>
-<script>
-/* Меню и его обработчики живут до следующего перехода. */
-(function(){
-  const more=document.querySelector('.side-more'),wide=matchMedia('(min-width:721px)');
-  if(more){
-    const sync=function(){more.open=wide.matches&&!more.classList.contains('director-more')};sync();wide.addEventListener('change',sync,{signal:window.jailPage.signal});
-    document.addEventListener('pointerdown',function(event){if((!wide.matches||more.classList.contains('director-more'))&&!more.contains(event.target))more.open=false},{signal:window.jailPage.signal});
-    document.addEventListener('keydown',function(event){if(event.key==='Escape'&&(!wide.matches||more.classList.contains('director-more')))more.open=false},{signal:window.jailPage.signal});
-  }
-})();
-</script>
 {% if retry_fields %}<script type="application/json" id="biz-retry-fields">{{ retry_fields|tojson }}</script>{% endif %}
 {% if ep=='business.work_log' %}<script src="{{ url_for('static',filename='work_log.js',v=VERSION) }}" defer></script>{% endif %}
 <script src="{{ url_for('static',filename='business.js',v=VERSION) }}" defer></script>

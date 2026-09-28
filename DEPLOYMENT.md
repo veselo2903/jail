@@ -76,3 +76,7 @@
 Новый маршрут `/<роль>/work-log` реализован в обязательном файле `work_log.py`, шаблон `templates/business/work_log.html`, скрипт `static/work_log.js`. Сервер использует существующие `work_acceptances`, `work_shares`, версии расценок и `payroll_accruals`; миграция схемы и пересчёт старых записей не требуются. Сценарий и права: [DAILY_WORK_AND_MODEL_067.md](docs/DAILY_WORK_AND_MODEL_067.md).
 
 Вместе с кодом, шаблонами и статикой перенести `work_log.py`, обновить `VERSION`, затем перезапустить сервис. Проверить прежние данные и новый дневной журнал; подлинная рабочая БД не наполняется тестовыми записями.
+
+## Сокращённое меню 0.68
+
+Четыре раздела директора и склада, два раздела производства, новый общий экран склада и вложенные действия в заказах и зарплате описаны в [MENU_IMPLEMENTATION_068.md](docs/MENU_IMPLEMENTATION_068.md). В БД изменений нет. При развёртывании перенести `templates/warehouse.html`, остальные шаблоны, `app.py`, `business.py`, `catalog.py`, `sections.py`, `supply_sections.py`, `static/app.css` и `VERSION`.

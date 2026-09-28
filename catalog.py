@@ -152,6 +152,7 @@ def register(bp,access,mutate,rows,choices,prefix):
     @access(True)
     def customers():
         archive=request.args.get('archive')=='1'
+        if not archive:return redirect(url_for('business.orders',view='customers'))
         entries=rows('SELECT * FROM customers WHERE archived=? ORDER BY name',(int(archive),))
         return render_template('business/customers.html',customers=entries,archive=archive,has_archive=bool(rows('SELECT 1 FROM customers WHERE archived=1 LIMIT 1')),choosing_model=request.args.get('for')=='model' and not archive)
 
@@ -181,12 +182,13 @@ def register(bp,access,mutate,rows,choices,prefix):
                     g.db.execute('UPDATE customers SET name=?,contact=?,note=? WHERE id=?',(name,text(f,'contact','контакт',300),text(f,'note','примечание',2000),cid))
                 else:raise core.RuleError('Модели создаются и изменяются в разделе «Модели».')
             return mutate(change,url_for('business.customer_detail',cid=cid),'Заказчик удалён.' if request.form.get('action')=='delete' else 'Заказчик сохранён.')
-        return render_template('business/customer.html',customer=customer,model_count=rows('SELECT COUNT(*) n FROM models WHERE customer_id=?',(cid,))[0]['n'],used=customer_used(g.db,cid),order_count=rows('SELECT COUNT(*) n FROM orders WHERE customer_id=?',(cid,))[0]['n'])
+        return render_template('business/customer.html',customer=customer,models=rows('SELECT * FROM models WHERE customer_id=? AND archived=0 ORDER BY name',(cid,)),model_count=rows('SELECT COUNT(*) n FROM models WHERE customer_id=?',(cid,))[0]['n'],used=customer_used(g.db,cid),order_count=rows('SELECT COUNT(*) n FROM orders WHERE customer_id=?',(cid,))[0]['n'])
 
     @bp.route(prefix+'/models')
     @access(True)
     def models():
         archive=request.args.get('archive')=='1';cid=request.args.get('customer',type=int)
+        if not archive:return redirect(url_for('business.customer_detail',cid=cid) if cid else url_for('business.orders',view='customers'))
         where='(m.archived=1 OR c.archived=1)' if archive else 'm.archived=0 AND (c.archived=0 OR c.id IS NULL)'
         if cid:where+=' AND m.customer_id=?'
         entries=rows('SELECT m.*,c.name customer_name,c.archived customer_archived FROM models m LEFT JOIN customers c ON c.id=m.customer_id WHERE '+where+' ORDER BY c.name,m.name',(cid,) if cid else ())
@@ -251,9 +253,10 @@ def register(bp,access,mutate,rows,choices,prefix):
         if request.method=='POST' and not getattr(g,'render_failed_form',False):
             def change():
                 wid=create_worker(g.db,request.form);g.created_entity=('worker',wid)
-                return url_for('business.staff_detail',wid=wid)
+                return url_for('business.worker',wid=wid)
             return mutate(change,url_for('business.staff'),'Сотрудник сохранён.')
         archive=request.args.get('archive')=='1'
+        if not archive:return redirect(url_for('business.payroll'))
         return render_template('business/staff.html',workers=rows('SELECT * FROM workers WHERE archived=? ORDER BY name',(int(archive),)),archive=archive,has_archive=bool(rows('SELECT 1 FROM workers WHERE archived=1 LIMIT 1')))
 
     @bp.route(prefix+'/staff/new',methods=['GET','POST'])
@@ -262,7 +265,7 @@ def register(bp,access,mutate,rows,choices,prefix):
         if request.method=='POST' and not getattr(g,'render_failed_form',False):
             def change():
                 wid=create_worker(g.db,request.form);g.created_entity=('worker',wid)
-                return url_for('business.staff_detail',wid=wid)
+                return url_for('business.worker',wid=wid)
             return mutate(change,url_for('business.staff_new'),'Сотрудник сохранён.')
         return render_template('business/staff_new.html')
 
@@ -286,5 +289,5 @@ def register(bp,access,mutate,rows,choices,prefix):
                     g.db.execute('DELETE FROM worker_skills WHERE worker_id=?',(wid,))
                     g.db.executemany('INSERT INTO worker_skills(worker_id,operation_id) VALUES (?,?)',[(wid,op) for op in selected])
                 else:raise core.RuleError('Неизвестное действие.')
-            return mutate(change,url_for('business.staff_detail',wid=wid),'Сотрудник удалён.' if request.form.get('action')=='delete' else 'Сотрудник сохранён.')
-        return render_template('business/staff_detail.html',worker=worker,used=references(g.db,'workers',wid,WORKER_METADATA),skills={r[0] for r in g.db.execute('SELECT operation_id FROM worker_skills WHERE worker_id=?',(wid,))},operations=rows('SELECT * FROM operations ORDER BY ord,id'))
+            return mutate(change,url_for('business.worker',wid=wid),'Сотрудник удалён.' if request.form.get('action')=='delete' else 'Сотрудник сохранён.')
+        return redirect(url_for('business.worker',wid=wid))

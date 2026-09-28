@@ -54,8 +54,11 @@ def register(bp,access,mutate,rows,choices,prefix,batch_query):
                 if not token:raise core.RuleError('Обновите форму.')
                 g.db.execute('INSERT INTO customer_payment_reversals(payment_id,amount_cents,reversed_on,reason,actor,created_at,token) VALUES (?,?,?,?,?,?,?)',(pid,p['amount_cents'],core.day(),reason,session['role'],core.now(),token))
                 core.audit(g.db,session['role'],'customer_payment_reverse',pid,{'reason':reason})
-            return mutate(change,url_for('business.customer_payments',order=request.args.get('order')),'Запись оплаты отменена. История сохранена.')
-        oid=request.args.get('order',type=int);orders=orders_data()
+            oid=request.args.get('order',type=int)
+            return mutate(change,url_for('business.order_detail',oid=oid,_anchor='biz-order-money') if oid else url_for('business.customer_payments'),'Запись оплаты отменена. История сохранена.')
+        oid=request.args.get('order',type=int)
+        if request.method=='GET':return redirect(url_for('business.order_detail',oid=oid,_anchor='biz-order-money') if oid else url_for('business.orders',filter='debt'))
+        orders=orders_data()
         if oid:orders=[o for o in orders if o['id']==oid]
         orders.sort(key=lambda o:(o['remaining'] is not None and o['remaining']<=0,-o['id']))
         history=rows('SELECT p.*,c.name customer_name,r.reason reversal_reason,r.reversed_on FROM customer_payments p JOIN orders o ON o.id=p.order_id JOIN customers c ON c.id=o.customer_id LEFT JOIN customer_payment_reversals r ON r.payment_id=p.id'+(' WHERE p.order_id=?' if oid else '')+' ORDER BY p.id DESC',(oid,) if oid else ())
@@ -73,7 +76,7 @@ def register(bp,access,mutate,rows,choices,prefix,batch_query):
                     amount=core.scaled(request.form.get('amount'),positive=True)
                     pid=g.db.execute('INSERT INTO customer_payments(order_id,amount_cents,paid_on,note,actor,token) VALUES (?,?,?,?,?,?)',(oid,amount,core.day(request.form.get('paid_on')),request.form.get('note','').strip(),session['role'],token)).lastrowid
                     core.audit(g.db,session['role'],'customer_payment',pid,{'order_id':oid,'amount_cents':amount})
-                return url_for('business.customer_payments',order=oid)
+                return url_for('business.order_detail',oid=oid,_anchor='biz-order-money') if request.args.get('order',type=int)==oid else url_for('business.customer_payments',order=oid)
             return mutate(change,url_for('business.customer_payment_new',order=request.form.get('order_id')),'Получение денег записано.')
         data=orders_data()
         if request.method=='GET' and not data:
@@ -86,6 +89,7 @@ def register(bp,access,mutate,rows,choices,prefix,batch_query):
     @access(True)
     def deliveries():
         oid=request.args.get('order',type=int);bid=request.args.get('batch',type=int)
+        if not bid:return redirect(url_for('business.order_detail',oid=oid,_anchor='biz-order-deliveries') if oid else url_for('business.orders',filter='delivery'))
         documents=rows('''SELECT h.*,c.name customer_name,COALESCE(SUM(d.qty_pairs),0) qty,
            COALESCE((SELECT SUM(a.qty_pairs) FROM delivery_acceptances a JOIN deliveries x ON x.id=a.delivery_id WHERE x.document_id=h.id),0) accepted
            FROM delivery_documents h JOIN orders o ON o.id=h.order_id JOIN customers c ON c.id=o.customer_id JOIN deliveries d ON d.document_id=h.id'''+(' WHERE h.order_id=?' if oid else ' WHERE d.batch_id=?' if bid else '')+' GROUP BY h.id ORDER BY (qty>accepted) DESC,h.id DESC',(oid,) if oid else (bid,) if bid else ())

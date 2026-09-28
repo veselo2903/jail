@@ -308,7 +308,7 @@ def login_as(role):
             return redirect(url_for("overview"))
         if role == "proizv":
             return redirect(url_for("business.batches"))
-    return redirect(url_for("documents"))
+    return redirect(url_for("warehouse"))
 
 
 @app.route("/logout")
@@ -324,7 +324,61 @@ def index():
         return redirect(url_for("overview"))
     if session["role"] == "proizv":
         return redirect(url_for("business.batches"))
-    return redirect(url_for("documents"))
+    return redirect(url_for("warehouse"))
+
+
+@app.route("/<any(sklad,proizv,director):role_url>/warehouse")
+@login_required
+def warehouse():
+    """One working place for requests, transfers, and stock, scoped by role."""
+    role = session["role"]
+    requests = []
+    for row in g.db.execute("SELECT * FROM requests WHERE created_role='proizv' ORDER BY id DESC"):
+        if role in ("sklad", "director") and _hidden_from_sklad(row):
+            continue
+        if not g.db.execute("SELECT 1 FROM request_items WHERE request_id=? LIMIT 1", (row["id"],)).fetchone():
+            continue
+        pending = row["status"] in ("open", "progress", "done")
+        requests.append(dict(id=row["id"], created_at=row["created_at"], urgent=row["urgent"],
+                             status=row["status"], need_action=pending and role != "proizv",
+                             detail=_request_detail(row, role)))
+    active_requests = [r for r in requests if r["status"] != "shipped"]
+    past_requests = [r for r in requests if r["status"] == "shipped"]
+    shipments = g.db.execute("""SELECT s.*,
+      (SELECT COUNT(*) FROM shipment_items WHERE shipment_id=s.id) positions,
+      (SELECT id FROM supply_receipts WHERE shipment_id=s.id) receipt_id,
+      (SELECT COUNT(*) FROM shipment_items i JOIN supply_receipt_items ri ON ri.shipment_item_id=i.id
+       WHERE i.shipment_id=s.id AND ri.qty_milli<>CAST(ROUND(i.qty*1000) AS INTEGER)) differences
+      FROM shipments s ORDER BY s.id DESC""").fetchall()
+    transfers = g.db.execute("""SELECT d.*,(SELECT COALESCE(SUM(pairs_sent),0) FROM lines WHERE document_id=d.id) qty,
+      (SELECT COUNT(*) FROM lines WHERE document_id=d.id AND pairs_recv IS NOT NULL AND pairs_recv<>pairs_sent) differences
+      FROM documents d ORDER BY d.id DESC""").fetchall()
+    active_shipments = [s for s in shipments if (s["receipt_required"] and not s["receipt_id"]) or s["differences"]]
+    past_shipments = [s for s in shipments if not ((s["receipt_required"] and not s["receipt_id"]) or s["differences"])]
+    active_transfers = [d for d in transfers if d["status"] != "accepted" or d["differences"]]
+    past_transfers = [d for d in transfers if d["status"] == "accepted" and not d["differences"]]
+    stock = []
+    pool = []
+    if role != "proizv":
+        stock = g.db.execute("""SELECT s.*,m.name,m.unit,c.name owner_name FROM stock_balances s
+          JOIN materials m ON m.id=s.material_id LEFT JOIN customers c ON c.id=s.owner_customer_id
+          WHERE s.qty_milli>0 ORDER BY m.name,c.name""").fetchall()
+        pool = g.db.execute("""SELECT p.*,m.name,m.unit,c.name owner_name FROM production_pool p
+          JOIN materials m ON m.id=p.material_id LEFT JOIN customers c ON c.id=p.owner_customer_id
+          WHERE p.qty_milli>0 ORDER BY m.name,c.name""").fetchall()
+    materials = g.db.execute("SELECT * FROM materials WHERE archived=0 ORDER BY name").fetchall() if role != "proizv" else []
+    archived_materials = g.db.execute("SELECT * FROM materials WHERE archived=1 ORDER BY name").fetchall() if role != "proizv" else []
+    customers = g.db.execute("SELECT * FROM customers WHERE archived=0 ORDER BY name").fetchall() if role != "proizv" else []
+    movements = g.db.execute("""SELECT v.*,m.name,m.unit FROM inventory_movements v JOIN materials m ON m.id=v.material_id
+      ORDER BY v.id DESC""").fetchall() if role != "proizv" else []
+    return render_template("warehouse.html", requests=active_requests, past_requests=past_requests,
+                           shipments=active_shipments, past_shipments=past_shipments,
+                           transfers=active_transfers, past_transfers=past_transfers,
+                           stock=stock, pool=pool, materials=materials, archived_materials=archived_materials, customers=customers, movements=movements,
+                           materials_count=len(materials), business_token=lambda: secrets.token_urlsafe(24),
+                           business_today=business_core.today().isoformat(), retry_fields=experience.retry_form(),
+                           movement_names={'receipt':'Поступление','issue':'Передача в производство','return':'Возврат на склад',
+                             'consume':'Использовано','loss':'Потери','allocate':'В партию'})
 
 
 # ---------- Документы ----------
@@ -368,7 +422,7 @@ def _sort_key(created_at):
 
 def _req_row(req_id):
     """Адрес списка с открытой заявкой."""
-    return url_for("documents", _anchor="dq-%d" % req_id)
+    return url_for("warehouse", _anchor="dq-%d" % req_id)
 
 
 def _request_detail(r, role):
@@ -392,67 +446,7 @@ def _request_detail(r, role):
 @app.route("/<any(sklad,proizv,director):role_url>/requests")
 @login_required
 def documents():
-    role = session["role"]
-    rows = []
-
-    # --- Заявки ---
-    reqs = g.db.execute("SELECT * FROM requests ORDER BY id DESC").fetchall()
-    for r in reqs:
-        if r["created_role"] == "sklad":
-            continue  # старые самостоятельные отправки показываются в журнале отправок
-        if role in ("sklad","director") and _hidden_from_sklad(r):
-            continue
-        n = g.db.execute("SELECT COUNT(*) c FROM request_items WHERE request_id=?",
-                         (r["id"],)).fetchone()["c"]
-        if n == 0:
-            continue
-        need = (role in ("sklad","director") and r["status"] in ("open", "progress", "done"))
-        detail = _request_detail(r, role)
-        has_rejected = any(i["status"] == "rejected" for i in detail["need"])
-        if has_rejected:
-            all_rejected = not detail["shipments"] and all(i["status"] == "rejected" for i in detail["need"])
-            status_label = ("Отклонена" if all_rejected else "Выполнена") if r["status"] == "shipped" else "Обработана частично"
-            status_cls = "rq-rejected" if all_rejected else "rq-completed" if r["status"] == "shipped" else "rq-progress"
-        else:
-            status_label = "Отправлена частично" if r["status"] == "progress" and detail["shipments"] else REQ_STATUS[r["status"]]
-            status_cls = "rq-" + r["status"]
-        rows.append(dict(
-            group="req", id=r["id"], created_at=r["created_at"],
-            title="Заявка", direction=("Склад → Производство" if r["created_role"] == "sklad" else "Производство → Склад"),
-            amount=str(n), unit="поз.",
-            status=r["status"],
-            status_label=status_label,
-            status_cls=status_cls,
-            diff=0, has_recv=False, urgent=r["urgent"],
-            need_action=need,
-            can_del=((role == "proizv" and r["status"] in ("open", "progress") and
-                      not detail["shipments"] and not has_rejected) or role == "director"),
-            can_edit=(role == "proizv" and _req_editable(r)),
-            edit_url=url_for("request_edit", req_id=r["id"]),
-            del_url=url_for("request_delete", req_id=r["id"]),
-            url=None,
-            detail=detail,
-            detail_id="dq-%d" % r["id"],
-        ))
-
-    archive=request.args.get("archive")=="1"
-    has_archive=any(not x["need_action"] for x in rows) if role in ("sklad","director") else any(x["status"]=="shipped" for x in rows)
-    rows=[x for x in rows if (not x["need_action"] if archive else x["need_action"]) ] if role in ("sklad","director") else [x for x in rows if (x["status"]=="shipped" if archive else x["status"]!="shipped")]
-    rows.sort(key=lambda x: (x["need_action"], _sort_key(x["created_at"])), reverse=True)
-
-    to_action = sum(1 for x in rows if x["need_action"])
-    # что может создавать роль
-    can_transfer = any(v[1] == role for v in KINDS.values())   # склад: OUT, производство: RETURN
-    can_request = (role == "proizv")
-
-    customers = models = []
-    if role in ("sklad","director"):
-        customers = g.db.execute("SELECT * FROM customers WHERE archived=0 ORDER BY name").fetchall()
-        models = g.db.execute("SELECT * FROM models WHERE archived=0 ORDER BY name").fetchall()
-    return render_template("documents.html", rows=rows, n_all=len(rows), customers=customers, models=models,
-                           to_action=to_action,
-                           can_transfer=False, can_request=can_request,archive=archive,has_archive=has_archive)
-
+    return redirect(url_for("warehouse", _anchor="warehouse-requests"))
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/collect")
 @login_required
@@ -460,7 +454,7 @@ def docs_collect():
     """Старый адрес сборки ведёт к единому экрану склада."""
     if session["role"] != "sklad":
         abort(403)
-    return redirect(url_for("documents"))
+    return redirect(url_for("warehouse"))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/supplies/new", methods=["GET", "POST"])
@@ -701,7 +695,7 @@ def doc_delete(doc_id):
     g.db.execute("DELETE FROM documents WHERE id=?", (doc_id,))
     g.db.commit()
     flash(f"Заявка №{doc_id} удалена.")
-    return redirect(url_for("documents"))
+    return redirect(url_for("warehouse"))
 
 
 # ---------- Справочники ----------
@@ -876,7 +870,7 @@ def request_item_reject(req_id, item_id):
         g.db.execute('UPDATE request_items SET rejection_note=? WHERE id=?',(request.form.get('reason','Отклонено складом'),item_id))
     complete = _resolve_request(req_id)
     g.db.commit()
-    if request.form.get("redirect")=="1":return redirect(url_for("documents",_anchor="dq-"+str(req_id)))
+    if request.form.get("redirect")=="1":return redirect(url_for("warehouse",_anchor="dq-"+str(req_id)))
     return jsonify(status="rejected", complete=complete, pending_count=_open_requests_count())
 
 
@@ -947,7 +941,7 @@ def _send_shipment(req_id=None, multi=False):
     """Одна поставка: позиции из любых входящих заявок и свои позиции склада."""
     if session.get("role") not in ("sklad","director"):
         abort(403)
-    back = url_for("supply_new") if multi else _req_row(req_id) if req_id else url_for("documents")
+    back = url_for("supply_new") if multi else _req_row(req_id) if req_id else url_for("warehouse")
     def fail(message):
         g.db.rollback()
         flash(message, 'error')
@@ -1027,7 +1021,7 @@ def _send_shipment(req_id=None, multi=False):
     except sqlite3.IntegrityError:
         g.db.rollback()
         if g.db.execute("SELECT 1 FROM shipments WHERE client_token=?", (token,)).fetchone():
-            return redirect(url_for("documents"))
+            return redirect(url_for("warehouse"))
         raise
     try:
         party_items = {}
@@ -1177,7 +1171,7 @@ def request_new():
     g.db.commit()
     flash("Заявка №%d создана. Склад увидит её через %s, до этого её можно изменить."
           % (cur.lastrowid, _window_label()))
-    return redirect(url_for("documents"))
+    return redirect(url_for("warehouse"))
 
 
 @app.route("/<any(sklad,proizv,director):role_url>/requests/<int:req_id>/edit", methods=["GET", "POST"])
@@ -1191,7 +1185,7 @@ def request_edit(req_id):
         abort(404)
     if not _req_editable(r):
         flash("Заявку №%d уже нельзя изменить: прошло больше %s." % (req_id, _window_label()))
-        return redirect(url_for("documents"))
+        return redirect(url_for("warehouse"))
     if request.method == "GET":
         rows = []
         for i in _load_req_items(req_id):
@@ -1219,7 +1213,7 @@ def request_edit(req_id):
                  (1 if any(p[4] for p in parsed) else 0, note, req_id))
     g.db.commit()
     flash("Заявка №%d изменена." % req_id)
-    return redirect(url_for("documents"))
+    return redirect(url_for("warehouse"))
 
 
 def _req_progress_sklad(req_id):
@@ -1331,7 +1325,7 @@ def request_placed_del(req_id, item_id):
             "SELECT 1 FROM request_items WHERE request_id=?", (req_id,)).fetchone():
         g.db.execute("DELETE FROM requests WHERE id=?", (req_id,))
         g.db.commit()
-        return redirect(url_for("documents"))
+        return redirect(url_for("warehouse"))
     g.db.commit()
     return redirect(_req_row(req_id))
 
@@ -1384,7 +1378,7 @@ def request_delete(req_id):
     g.db.execute("DELETE FROM requests WHERE id=?", (req_id,))
     g.db.commit()
     flash(f"Заявка №{req_id} удалена.")
-    return redirect(url_for("documents"))
+    return redirect(url_for("warehouse"))
 
 
 # ---------- Сдельная зарплата ----------

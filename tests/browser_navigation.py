@@ -30,7 +30,7 @@ try:
     def screenshot(name):
         shot=command('Page.captureScreenshot',{'captureBeyondViewport':True});Path('/tmp/jail-director-'+name+'.png').write_bytes(base64.b64decode(shot['data']))
     command('Page.enable');command('Runtime.enable');command('Network.enable');navigate('/login/director')
-    wait("window.jailNavigation?.ready('/director/inventory')&&window.jailNavigation.ready('/director/orders')&&window.jailNavigation.ready('/director/customers')")
+    wait("window.jailNavigation?.ready('/director/warehouse')&&window.jailNavigation.ready('/director/orders')&&window.jailNavigation.ready('/director/payroll/ledger')")
     js("window.navigationProbe='same-document';window.measuredTransition=null")
     command('Network.emulateNetworkConditions',{'offline':True,'latency':0,'downloadThroughput':0,'uploadThroughput':0})
     def click_menu(path):
@@ -40,16 +40,21 @@ try:
         value=result['result']['value'];assert value['path']==path and value['probe']=='same-document' and value['cached'],value
         assert value['ms']<150,value
         return value
-    first=click_menu('/director/inventory')
-    second=click_menu('/director/customers')
-    js('history.back()');wait("location.pathname==='/director/inventory'&&window.jailNavigation.stats.navigations===3")
-    js('history.forward()');wait("location.pathname==='/director/customers'&&window.jailNavigation.stats.navigations===4")
+    first=click_menu('/director/warehouse')
+    second=click_menu('/director/payroll/ledger')
+    js('history.back()');wait("location.pathname==='/director/warehouse'&&window.jailNavigation.stats.navigations===3")
+    js('history.forward()');wait("location.pathname==='/director/payroll/ledger'&&window.jailNavigation.stats.navigations===4")
     assert js("window.navigationProbe==='same-document'")
     command('Network.emulateNetworkConditions',{'offline':False,'latency':0,'downloadThroughput':-1,'uploadThroughput':-1})
-    js("document.querySelector('.side a[href=\"/director/models\"]').click()")
-    wait("location.pathname==='/director/models'&&document.querySelector('.biz-filter select')")
-    js("const select=document.querySelector('.biz-filter select');select.value=select.options[1].value;select.dispatchEvent(new Event('change',{bubbles:true}))")
-    wait("location.pathname==='/director/models'&&location.search.includes('customer=')&&window.navigationProbe==='same-document'")
+    js("document.querySelector('.side a[href=\"/director/orders\"]').click()")
+    wait("location.pathname==='/director/orders'&&!!document.querySelector('.orders-tabs,.biz-empty-action')")
+    js("(document.querySelector('.orders-tabs a[href=\"/director/orders?view=customers\"]')||document.querySelector('.biz-empty-action')).click()")
+    wait("(location.search.includes('view=customers')||location.pathname==='/director/customers/new')&&window.navigationProbe==='same-document'")
+    command('Emulation.setDeviceMetricsOverride',{'width':390,'height':850,'deviceScaleFactor':1,'mobile':True})
+    navigate('/director/warehouse')
+    assert not js('document.documentElement.scrollWidth>innerWidth')
+    assert js("document.querySelectorAll('.side a.nav').length") == 4
+    screenshot('warehouse-mobile')
     assert not errors,errors
     print('PASS browser: fully prefetched transitions with network offline, no document reload, browser back/forward, no runtime errors:',first,second)
     ws.close()

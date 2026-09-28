@@ -36,7 +36,7 @@ try:
     for name in ('Иван','Мария'):
         navigate('/director/staff/new')
         js("document.querySelector('[name=name]').value="+json.dumps(name)+";document.querySelector('form[method=post]').requestSubmit()")
-        wait("location.pathname.startsWith('/director/staff/')&&document.readyState==='complete'")
+        wait("location.pathname.startsWith('/director/payroll/workers/')&&document.readyState==='complete'")
     navigate('/login/proizv');navigate('/proizv/work-log')
     assert js("!!document.querySelector('#work-log-form')")
     assert js("!document.querySelector('[name=rate]')&&!document.body.textContent.includes('25,00 ₽')")

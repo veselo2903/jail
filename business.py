@@ -164,6 +164,7 @@ def context():
 @bp.route(PREFIX+'/orders')
 @access(True)
 def orders():
+    view=request.args.get('view','orders')
     archive=request.args.get('archive')=='1'
     condition=" WHERE o.status IN ('completed','canceled')" if archive else " WHERE o.status NOT IN ('completed','canceled')"
     orders=rows('''SELECT o.*,c.name customer_name,COALESCE(SUM(i.total_cents),0) total,
@@ -187,9 +188,20 @@ def orders():
         overview=[]
         for row in orders:
             entry=dict(row);parts=rows(batch_title_query()+' WHERE oi.order_id=? ORDER BY b.id',(row['id'],))
-            entry['total']=sections.order_total(g.db,row);entry['flow']=flow.order_state(g.db,row,parts);entry['paid']=sections.payment_total(g.db,row['id']);overview.append(entry)
+            entry['total']=sections.order_total(g.db,row);entry['flow']=flow.order_state(g.db,row,parts);entry['paid']=sections.payment_total(g.db,row['id'])
+            entry['needs_delivery']=any(b['flow']['good']>b['flow']['delivered'] for b in entry['flow']['batches'])
+            entry['debt']=sum(core.batch_finance(g.db,b['id'])['revenue'] for b in parts)-entry['paid']
+            overview.append(entry)
         orders=overview
-    return render_template('business/orders.html',orders=orders,setup=None if archive else setup,archive=archive,has_archive=has_archive)
+    filter_mode=request.args.get('filter','')
+    filter_counts={'delivery':sum(1 for o in orders if o['needs_delivery']),
+                   'debt':sum(1 for o in orders if o['debt']>0)}
+    if filter_mode=='delivery':orders=[o for o in orders if o['needs_delivery']]
+    elif filter_mode=='debt':orders=[o for o in orders if o['debt']>0]
+    return render_template('business/orders.html',orders=orders,setup=None if archive else setup,archive=archive,has_archive=has_archive,
+        view=view,filter_mode=filter_mode,filter_counts=filter_counts,customers=rows('SELECT * FROM customers WHERE archived=0 ORDER BY name'),
+        customer_models=rows('SELECT m.*,c.name customer_name FROM models m JOIN customers c ON c.id=m.customer_id WHERE m.archived=0 AND c.archived=0 ORDER BY c.name,m.name'),
+        customer_archive=bool(rows('SELECT 1 FROM customers WHERE archived=1 LIMIT 1')))
 
 
 
@@ -243,13 +255,16 @@ def order_detail(oid):
     customer=core.require(g.db,'customers',order['customer_id'])
     items=rows('SELECT i.*,m.name FROM order_items i JOIN models m ON m.id=i.model_id WHERE order_id=?',(oid,))
     batches=rows(batch_title_query()+' WHERE oi.order_id=? ORDER BY b.id',(oid,))
-    payments=rows('SELECT * FROM customer_payments WHERE order_id=? ORDER BY paid_on DESC,id DESC',(oid,))
+    payments=rows('SELECT p.*,r.reversed_on,r.reason reversal_reason FROM customer_payments p LEFT JOIN customer_payment_reversals r ON r.payment_id=p.id WHERE p.order_id=? ORDER BY p.paid_on DESC,p.id DESC',(oid,))
     finance=[core.batch_finance(g.db,b['id']) for b in batches]
     workflow=flow.order_state(g.db,order,batches)
     changes=[]
     for change in rows('SELECT * FROM order_changes WHERE order_id=? ORDER BY id DESC',(oid,)):
         entry=dict(change); entry['before']=json.loads(entry['snapshot']);changes.append(entry)
-    return render_template('business/director_order_detail.html',economics=dict(planned=None if any(f['unknown'] for f in finance) else sum(f['planned'] for f in finance),actual=sum(f['actual'] for f in finance),margin=(None if order['cancellation_settlement_cents'] is None else order['cancellation_settlement_cents']-sum(f['actual'] for f in finance)) if order['status']=='canceled' else None if any(f['margin'] is None for f in finance) else sum(f['margin'] for f in finance)),order=order,customer=customer,items=items,batches=batches,payments=payments,
+    deliveries=rows('''SELECT h.*,COALESCE(SUM(d.qty_pairs),0) qty,
+        COALESCE((SELECT SUM(a.qty_pairs) FROM delivery_acceptances a JOIN deliveries x ON x.id=a.delivery_id WHERE x.document_id=h.id),0) accepted
+        FROM delivery_documents h JOIN deliveries d ON d.document_id=h.id WHERE h.order_id=? GROUP BY h.id ORDER BY h.id DESC''',(oid,))
+    return render_template('business/director_order_detail.html',economics=dict(planned=None if any(f['unknown'] for f in finance) else sum(f['planned'] for f in finance),actual=sum(f['actual'] for f in finance),margin=(None if order['cancellation_settlement_cents'] is None else order['cancellation_settlement_cents']-sum(f['actual'] for f in finance)) if order['status']=='canceled' else None if any(f['margin'] is None for f in finance) else sum(f['margin'] for f in finance)),order=order,customer=customer,items=items,batches=batches,payments=payments,deliveries=deliveries,
          total=sections.order_total(g.db,order),paid=sections.payment_total(g.db,oid),earned=sum(f['revenue'] for f in finance),
          changes=changes,workflow=workflow,unused=sections.order_unused(g.db,oid))
 
@@ -407,6 +422,13 @@ def batch_detail(bid):
 @bp.route(PREFIX+'/inventory',methods=['GET','POST'])
 @access(True)
 def inventory():
+    retry=session.get('retry_form')
+    if request.method=='GET':
+        if retry and retry.get('path')==request.path and request.args.get('return_to')=='warehouse':
+            session['retry_form']={'path':'/'+session['role']+'/warehouse','fields':retry['fields']}
+            return redirect(url_for('warehouse',_anchor='warehouse-receipt'))
+        if not (retry and retry.get('path')==request.path):
+            return redirect(url_for('warehouse',_anchor='warehouse-receipt' if request.args.get('material') else 'warehouse-materials'))
     if request.method=='POST' and not getattr(g,'render_failed_form',False):
         def change():
             if request.form.get('action')=='material':raise core.RuleError('Откройте «Добавить материал» в этом разделе.')
@@ -428,7 +450,13 @@ def inventory():
                         core.inventory_move(g.db,fields,session['role']);count+=1
                     if not count:raise core.RuleError('Добавьте хотя бы один материал и количество.')
                 catalog.remember(g.db,token,'inventory_receipt',g.db.execute('SELECT MAX(id) FROM inventory_movements').fetchone()[0])
-        return mutate(change,url_for('business.inventory'),'Материал добавлен в справочник.' if request.form.get('action')=='material' else 'Движение записано. Остатки материалов обновлены.')
+        destination=url_for('warehouse',_anchor='warehouse-materials') if request.args.get('return_to')=='warehouse' else url_for('business.inventory')
+        response=mutate(change,destination,'Материал добавлен в справочник.' if request.form.get('action')=='material' else 'Движение записано. Остатки материалов обновлены.')
+        retry=session.get('retry_form')
+        if request.args.get('return_to')=='warehouse' and retry and retry.get('path')==request.path:
+            session['retry_form']={'path':'/'+session['role']+'/warehouse','fields':retry['fields']}
+            if response.status_code in (301,302,303):response.location=url_for('warehouse',_anchor='warehouse-receipt')
+        return response
     stock=rows('''SELECT s.*,m.name,m.unit,c.name owner_name,
        COALESCE((SELECT SUM(reserved_milli) FROM batch_material_plan WHERE material_id=s.material_id AND owner_customer_id IS s.owner_customer_id),0) reserved
        FROM stock_balances s JOIN materials m ON m.id=s.material_id LEFT JOIN customers c ON c.id=s.owner_customer_id ORDER BY m.name,c.name''')
@@ -508,7 +536,18 @@ def worker(wid):
             if action=='payment': core.pay_worker(g.db,wid,f,actor)
             elif action=='payment_reverse': core.reverse_payment(g.db,wid,core.integer(f.get('payment_id')),f.get('reason',''),actor)
             elif action=='adjustment': core.payroll_adjustment(g.db,wid,f,actor)
-            elif action=='skills':raise core.RuleError('Навыки редактируются в разделе «Сотрудники».')
+            elif action=='worker_edit':
+                name=catalog.text(f,'name','имя сотрудника',required=True);number=catalog.text(f,'number','табельный номер',50,True)
+                if rows('SELECT 1 FROM workers WHERE number=? AND archived=0 AND id<>?',(number,wid)):raise core.RuleError('Такой табельный номер уже есть.')
+                g.db.execute('UPDATE workers SET name=?,number=? WHERE id=?',(name,number,wid))
+            elif action=='skills':
+                selected={core.integer(value,'Операция') for value in f.getlist('operation_id')}
+                if selected-set(r[0] for r in rows('SELECT id FROM operations')):raise core.RuleError('Операция не найдена.')
+                g.db.execute('DELETE FROM worker_skills WHERE worker_id=?',(wid,))
+                g.db.executemany('INSERT INTO worker_skills(worker_id,operation_id) VALUES (?,?)',[(wid,op) for op in selected])
+            elif action in ('archive','restore','delete'):
+                catalog.lifecycle(g.db,'workers',wid,action,actor)
+                if action=='delete':return url_for('business.payroll')
             else: raise core.RuleError('Неизвестное действие.')
         return mutate(change,url_for('business.worker',wid=wid),'Выплата записана. Остаток зарплаты обновлён.' if request.form.get('action')=='payment' else 'Изменения сохранены.')
     accruals=rows('''SELECT a.*,wa.qty_pairs,wa.rate_cents,wa.rate_version,o.name operation_name,m.name model_name,s.share_bp
@@ -519,7 +558,8 @@ def worker(wid):
         payments=rows('SELECT p.*,r.reversed_on,r.reason reversal_reason FROM payroll_payments p LEFT JOIN payroll_cash_reversals r ON r.payment_id=p.id WHERE p.worker_id=? ORDER BY p.paid_on DESC,p.id DESC',(wid,)),
         assignments=rows('''SELECT a.*,t.batch_id,t.qty_pairs,t.minutes_milli,o.name FROM batch_assignments a JOIN batch_operations t ON t.id=a.batch_operation_id
             JOIN operations o ON o.id=t.operation_id WHERE a.worker_id=?''',(wid,)),
-        operations=rows('SELECT * FROM operations ORDER BY ord,id'),skills={r['operation_id'] for r in rows('SELECT operation_id FROM worker_skills WHERE worker_id=?',(wid,))})
+        operations=rows('SELECT * FROM operations ORDER BY ord,id'),skills={r['operation_id'] for r in rows('SELECT operation_id FROM worker_skills WHERE worker_id=?',(wid,))},
+        used=catalog.references(g.db,'workers',wid,catalog.WORKER_METADATA))
 
 
 @bp.app_template_filter('money_input')

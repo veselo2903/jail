@@ -19,13 +19,13 @@ with tempfile.TemporaryDirectory(prefix='jail-sections-') as folder:
         r=client.post('/'+role+path,data=data)
         assert r.status_code in (200,302),(path,r.status_code,r.text[:250])
         if r.status_code==302:
-            page=client.get(r.location);assert page.status_code==200,(r.location,page.status_code)
+            page=client.get(r.location,follow_redirects=True);assert page.status_code==200,(r.location,page.status_code)
         return r
     def one(sql,args=()):
         with db.get_db() as c:return c.execute(sql,args).fetchone()
     def scalar(sql,args=()):return one(sql,args)[0]
     def created(r):return int(urlsplit(r.location).path.rsplit('/',1)[-1])
-    def page(path):assert client.get('/'+role+path).status_code==200,path
+    def page(path):assert client.get('/'+role+path,follow_redirects=True).status_code==200,path
     for name in app.jinja_env.list_templates():app.jinja_env.get_template(name)
     for table in ('customers','models','workers','orders','materials'):assert scalar('SELECT COUNT(*) FROM '+table)==0
     # Unused customer's own models and price records can be deleted together.
@@ -82,6 +82,9 @@ with tempfile.TemporaryDirectory(prefix='jail-sections-') as folder:
     assert scalar('SELECT SUM(qty_milli) FROM stock_balances')==75000
     wid=created(post('/staff',dict(name='Иван',number='17')))
     post('/staff/'+str(wid),dict(action='skills',operation_id='1'))
+    post('/payroll/workers/'+str(wid),dict(action='worker_edit',name='Иван',number='17'))
+    post('/payroll/workers/'+str(wid),dict(action='skills',operation_id='1'))
+    assert 'Сведения и навыки сотрудника' in client.get('/director/payroll/workers/'+str(wid)).text
     post('/customers/'+str(cid),dict(action='archive'))
     assert scalar('SELECT archived FROM customers WHERE id=?',(cid,))==1
     # Archived owner still allows finishing existing jobs.

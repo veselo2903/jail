@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='jail-empty-') as folder:
         else: assert 'refs-add card' not in response.text
     for role in ('director','sklad','proizv'):
         client.get('/login/'+role)
-        paths=['batches','requests','supplies'] if role=='proizv' else ['customers','models','orders','batches','inventory','staff','payroll/ledger','requests','supplies','deliveries','customer-payments']
+        paths=['batches','warehouse'] if role=='proizv' else ['orders','batches','warehouse','payroll/ledger']
         for path in paths:
             response=client.get('/'+role+'/'+path);assert response.status_code==200,(role,path)
             content=response.text.split('id="biz-page-start">',1)[1].split('</div>\n</div>\n<script>',1)[0]

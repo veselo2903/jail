@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix='jail-smoke-') as folder:
     def one(sql,args=()):
         with db.get_db() as c:return c.execute(sql,args).fetchone()
     def count(t):return one('SELECT COUNT(*) FROM '+t)[0]
-    def page(path):return client.get('/'+role+path).text
+    def page(path):return client.get('/'+role+path,follow_redirects=True).text
     assert client.get('/proizv/requests').status_code==403
     assert 'тестовый режим' not in page('/requests') and 'class="tag sent"' not in page('/requests')
     assert client.post('/sklad/supplies/new').status_code==400
@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix='jail-smoke-') as folder:
     r=post(path,dict(reason='Нитки не требуются'));assert r.status_code==200 and not r.json['complete']
     post('/supplies/new',{'qty_'+str(items[0]):'6','inventory_material_'+str(items[0]):'1','inventory_tracking':'1','send_token':'rest'})
     assert count('shipments')==2 and one('SELECT status FROM requests')[0]=='shipped'
-    assert 'Кожа' not in page('/requests') and 'Кожа' in page('/requests?archive=1')
+    assert 'Обработанные заявки' in page('/requests') and 'Кожа' in page('/requests')
     assert post(path,dict(reason='Повтор')).json['complete'] and count('shipments')==2
     assert post('/requests/'+str(rid)+'/items/'+str(items[0])+'/reject').status_code==409
     switch('proizv')
