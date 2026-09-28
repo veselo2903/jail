@@ -12,12 +12,12 @@ if __package__:
     from . import business_core as core
     from . import experience as ux
     from . import director_flow as flow
-    from . import catalog,sections
+    from . import catalog,sections,work_log
 else:
     import business_core as core
     import experience as ux
     import director_flow as flow
-    import catalog,sections
+    import catalog,sections,work_log
 
 bp=Blueprint('business',__name__)
 PREFIX='/<any(sklad,proizv,director):role_url>'
@@ -68,6 +68,9 @@ def mutate(action, target, success='Сохранено.'):
         if not ux.remember_form():
             g.render_failed_form=True
             return current_app.view_functions[request.endpoint](**request.view_args)
+    if request.args.get('ctx') and 'ctx' not in dict(parse_qsl(urlsplit(target).query)):
+        parts=urlsplit(target);query=dict(parse_qsl(parts.query));query['ctx']=request.args['ctx']
+        target=urlunsplit((parts.scheme,parts.netloc,parts.path,urlencode(query),parts.fragment))
     if '#' not in target and target.split('?',1)[0]==request.script_root+request.path:target+='#biz-page-start'
     return redirect(target)
 
@@ -83,7 +86,9 @@ def start_action(kind='order',customer=None,order=None,batch=None):
         customers=choices('customers');models=choices('models')
         if not customers:return action('Добавить заказчика','business.customer_new')
         relevant=[m for m in models if not customer or m['customer_id']==int(customer)]
-        if not relevant:return action('Добавить модель','business.model_new',customer=customer or (customers[0]['id'] if len(customers)==1 else None))
+        if not relevant:
+            if not customer and len(customers)>1:return action('Выбрать заказчика','business.customers',**{'for':'model'})
+            return action('Добавить модель','business.model_new',customer=customer or customers[0]['id'])
         return action('Создать заказ','business.order_new',customer=customer)
     if kind=='production':
         entries=rows("SELECT b.id FROM production_batches b LEFT JOIN order_items i ON i.id=b.order_item_id WHERE b.status NOT IN ('closed','canceled')"+(' AND i.order_id=?' if order else '')+(' AND b.id=?' if batch else ''),tuple(x for x in (order,batch) if x))
@@ -175,8 +180,8 @@ def orders():
     setup=None
     if not customers:setup=dict(title='Сначала добавьте заказчика',text='Укажите, кто заказывает у вас обувь. Затем добавьте его модели и согласованные цены.',label='Добавить заказчика',url=url_for('business.customer_new'),step=1)
     elif not any(m['customer_id'] in [c['id'] for c in customers] for m in models):
-        target=url_for('business.model_new',customer=customers[0]['id'] if len(customers)==1 else None)
-        setup=dict(title='Теперь добавьте модели заказчика',text='Название или артикул модели и цена за пару. После этого можно принять первый заказ.',label='Добавить модель',url=target,step=2)
+        target=url_for('business.model_new',customer=customers[0]['id']) if len(customers)==1 else url_for('business.customers',**{'for':'model'})
+        setup=dict(title='Теперь добавьте модели заказчика',text='Название или артикул модели и цена за пару. После этого можно принять первый заказ.',label='Добавить модель' if len(customers)==1 else 'Выбрать заказчика',url=target,step=2)
     elif not orders:setup=dict(title='Примите следующий заказ' if has_orders else 'Можно принять первый заказ',text='Выберите заказчика и его модели, укажите количество пар и срок. Согласованные цены подставятся сами.',label='Создать заказ',url=url_for('business.order_new'),step=3)
     if session['role'] in MANAGERS:
         overview=[]
@@ -272,6 +277,9 @@ def batch_detail(bid):
     b=core.require(g.db,'production_batches',bid)
     if request.method=='POST' and not getattr(g,'render_failed_form',False):
         action=request.form.get('action')
+        if action=='work' and session['role']!='proizv':abort(403)
+        if action=='operation_edit' and session['role']!='director':abort(403)
+        if session['role']!='director' and action in ('operation','operations_bulk') and any(str(v).strip() for k,v in request.form.items() if k=='rate' or k.startswith('rate_')):abort(403)
         if action not in ('work','output','material_move') and session['role'] not in MANAGERS: abort(403)
         if action=='material_move' and session['role'] not in MANAGERS and request.form.get('kind') not in ('consume','return','loss'): abort(403)
         def change():
@@ -381,6 +389,8 @@ def batch_detail(bid):
     if director_state:
         target=director_state['target'];pane='materials' if target in ('biz-plan-material','biz-material-move') else 'finish' if target in ('biz-delivery','biz-output','biz-close') or director_state['stage']==4 else 'tasks'
         guidance.update(title=director_state['title'],text=director_state['text'],target=target,label=director_state['label'],pane=pane)
+    if guidance.get('target')=='biz-work':
+        guidance['href']=url_for('business.work_log',batch=bid);guidance['label']='Записать выработку за день' if session['role']=='proizv' else 'Выработка производства'
     if guidance.get('target')=='biz-work' and not workers and session['role'] in MANAGERS:guidance['href']=url_for('business.staff_new');guidance['label']='Добавить сотрудника'
     if guidance.get('target')=='biz-supplies':guidance['href']=url_for('supplies',batch=bid)
     if guidance.get('target')=='biz-delivery':guidance['href']=url_for('business.deliveries',batch=bid) if guidance['delivered']>=guidance['good'] else url_for('business.delivery_new',batch=bid)
@@ -520,4 +530,5 @@ def money_input(value):
 def register(app):
     catalog.register(bp,access,mutate,rows,choices,PREFIX)
     sections.register(bp,access,mutate,rows,choices,PREFIX,batch_title_query)
+    work_log.register(bp,access,mutate,rows,choices,PREFIX)
     app.register_blueprint(bp)

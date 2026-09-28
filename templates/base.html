@@ -37,12 +37,13 @@
 {{ menu_link('business.batches','Производство',factory_icon,production_ep) }}
 {% else %}
 {{ menu_link('business.batches','Производство',factory_icon,production_ep) }}
+{{ menu_link('business.work_log','Выработка',paper_icon,ep=='business.work_log') }}
 {{ menu_link('documents','Заявки',paper_icon,ep in ['documents','request_new','request_edit']) }}
 {{ menu_link('supplies','Поставки',box_icon,supplies_ep) }}
 {% endif %}
 <details class="side-more director-more"><summary class="nav {{ 'on' if ep in ['business.customer_payments','business.customer_payment_new','business.deliveries','business.delivery_new','business.delivery_detail','discrepancies'] or (role=='director' and (supplies_ep or ep=='documents')) or (role=='sklad' and (customer_ep or model_ep or order_ep or staff_ep or payroll_ep)) }}"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>Ещё</summary><div class="side-more-panel">
 {% if role=='director' %}<div class="nav-mobile">{{ menu_link('business.inventory','Материалы',box_icon,ep in ['business.inventory','business.material_detail','business.material_new']) }}{{ menu_link('business.staff','Сотрудники',catalog_icon,staff_ep) }}{{ menu_link('business.payroll','Зарплата',money_icon,payroll_ep) }}</div>{{ menu_link('documents','Заявки',paper_icon,ep=='documents') }}{{ menu_link('supplies','Поставки',box_icon,supplies_ep) }}{% elif role=='sklad' %}{{ menu_link('business.customers','Заказчики',catalog_icon,customer_ep) }}{{ menu_link('business.models','Модели',box_icon,model_ep) }}{{ menu_link('business.orders','Заказы',paper_icon,order_ep) }}{{ menu_link('business.staff','Сотрудники',catalog_icon,staff_ep) }}{{ menu_link('business.payroll','Зарплата',money_icon,payroll_ep) }}{% endif %}
-{% if role in ['director','sklad'] %}{{ menu_link('business.deliveries','Отгрузки',box_icon,ep in ['business.deliveries','business.delivery_new','business.delivery_detail']) }}{{ menu_link('business.customer_payments','Оплата заказов',money_icon,ep in ['business.customer_payments','business.customer_payment_new']) }}{% endif %}
+{% if role in ['director','sklad'] %}{{ menu_link('business.work_log','Выработка',paper_icon,ep=='business.work_log') }}{{ menu_link('business.deliveries','Отгрузки',box_icon,ep in ['business.deliveries','business.delivery_new','business.delivery_detail']) }}{{ menu_link('business.customer_payments','Оплата заказов',money_icon,ep in ['business.customer_payments','business.customer_payment_new']) }}{% endif %}
 
 <div class="director-mobile-user"><b>{{ role_name }}</b><a class="btn ghost sm block side-user-logout" href="{{ url_for('logout') }}">Выйти</a></div>
 </div></details>
@@ -70,6 +71,7 @@
 })();
 </script>
 {% if retry_fields %}<script type="application/json" id="biz-retry-fields">{{ retry_fields|tojson }}</script>{% endif %}
+{% if ep=='business.work_log' %}<script src="{{ url_for('static',filename='work_log.js',v=VERSION) }}" defer></script>{% endif %}
 <script src="{{ url_for('static',filename='business.js',v=VERSION) }}" defer></script>
 {% if ep=='business.order_new' %}<script src="{{ url_for('static',filename='director_order.js',v=VERSION) }}" defer></script>{% endif %}
 <script src="{{ url_for('static',filename='section_navigation.js',v=VERSION) }}" defer></script>

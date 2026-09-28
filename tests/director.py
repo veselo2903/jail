@@ -32,8 +32,8 @@ with tempfile.TemporaryDirectory(prefix='jail-director-') as folder:
     assert one('SELECT COUNT(*) n FROM customers')['n']==1
     assert 'Добавить модель' in client.get('/director/orders').text
     path='/customers/'+str(cid)
-    post('/models/new',dict(customer_id=cid,name='714',sale_price='900,25',token='model-once'))
-    post('/models/new',dict(customer_id=cid,name='714',sale_price='900,25',token='model-once'))
+    post('/models/new?customer='+str(cid),dict(customer_id=cid,name='714',sale_price='900,25',token='model-once'))
+    post('/models/new?customer='+str(cid),dict(customer_id=cid,name='714',sale_price='900,25',token='model-once'))
     mid=one('SELECT id FROM models')['id'];assert one('SELECT COUNT(*) n FROM models')['n']==1
     assert one('SELECT sale_price_cents FROM models')['sale_price_cents']==90025
     page=client.get('/director/orders/new?customer='+str(cid)+'&model='+str(mid))
@@ -91,7 +91,7 @@ with tempfile.TemporaryDirectory(prefix='jail-director-') as folder:
     filename=one('SELECT photo_filename FROM models WHERE id=?',(mid,))['photo_filename'];assert re.fullmatch(r'[a-f0-9]{32}\.png',filename)
     photo=client.get('/director/models/'+str(mid)+'/photo');assert photo.status_code==200 and photo.mimetype=='image/png' and photo.headers['X-Content-Type-Options']=='nosniff'
     files=list((Path(folder)/'model-photos').iterdir())
-    post('/models/new',dict(customer_id=cid,name='Плохое фото',sale_price='1',photo=(io.BytesIO(b'<svg></svg>'),'shoe.png')))
+    post('/models/new?customer='+str(cid),dict(customer_id=cid,name='Плохое фото',sale_price='1',photo=(io.BytesIO(b'<svg></svg>'),'shoe.png')))
     assert one("SELECT COUNT(*) n FROM models WHERE name='Плохое фото'")['n']==0 and list((Path(folder)/'model-photos').iterdir())==files
     db.init_db();assert not one('PRAGMA foreign_key_check')
     print('PASS: director first setup, scoped catalog, price defaults/history/snapshots, idempotence, preparation and worker, handoff, factory work, delivery/close, photo and access')

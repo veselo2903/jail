@@ -141,6 +141,7 @@ def add_operation(conn, bid, form, actor):
     mode = form.get('mode','internal')
     if mode not in ('internal','external','ready','skip'): raise RuleError('Проверьте способ выполнения.')
     rate = scaled(form['rate']) if form.get('rate','').strip() else None
+    if actor not in ('director','template') and rate is not None:raise RuleError('Расценку операции назначает только директор.')
     minutes = scaled(form['minutes'],1000,'Норма времени') if form.get('minutes','').strip() else None
     parent = integer(form.get('parent_id')) if form.get('parent_id') else None
     reason = form.get('reason','').strip()
@@ -186,6 +187,7 @@ def update_operation(conn,bid,tid,form,actor):
     t = require(conn,'batch_operations',tid)
     if t['batch_id']!=bid: raise RuleError('Операция другой партии.')
     rate = scaled(form['rate']) if form.get('rate','').strip() else None
+    if actor not in ('director','template') and rate is not None:raise RuleError('Расценку операции назначает только директор.')
     minutes = scaled(form['minutes'],1000,'Норма времени') if form.get('minutes','').strip() else None
     mode = form.get('mode','internal')
     qty = integer(form.get('qty') or t['qty_pairs'])
@@ -195,6 +197,7 @@ def update_operation(conn,bid,tid,form,actor):
         raise RuleError('Проверьте объём и способ выполнения операции.')
     if done and mode != t['mode']: raise RuleError('У операции есть принятая выработка. Способ выполнения менять нельзя.')
     version = t['rate_version']
+    if rate != t['rate_cents'] and actor!='director':raise RuleError('Расценку операции назначает только директор.')
     if rate != t['rate_cents']:
         effective = day(form.get('effective_date'))
         reason = form.get('reason','').strip()
@@ -557,7 +560,7 @@ def split_batch(conn,bid,form,actor):
         if not newqty or newqty==t['qty_pairs']: raise RuleError('Объём одной из операций слишком мал для такого разделения.')
         task=add_operation(conn,newbid,dict(operation_id=t['operation_id'],qty=newqty,mode=t['mode'],
             rate=str(Decimal(t['rate_cents'])/100) if t['rate_cents'] is not None else '',
-            minutes=str(Decimal(t['minutes_milli'])/1000) if t['minutes_milli'] is not None else ''),actor)
+            minutes=str(Decimal(t['minutes_milli'])/1000) if t['minutes_milli'] is not None else ''),'template')
         conn.execute('UPDATE batch_operations SET qty_pairs=qty_pairs-? WHERE id=?',(newqty,t['id']))
     for p in conn.execute('SELECT * FROM batch_material_plan WHERE batch_id=?',(bid,)).fetchall():
         newqty=p['qty_milli']*qty//b['qty_pairs']

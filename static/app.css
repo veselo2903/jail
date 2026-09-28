@@ -615,3 +615,12 @@ tr.grp a{margin-left:8px;font-weight:600}
 /* A new section has one centered action, without placeholder cards. */
 .biz-empty{display:flex;flex:1;align-items:center;justify-content:center;width:100%;min-width:0}
 .biz-empty-action{width:min(100%,360px);white-space:normal}
+
+/* Дневной лист производства: постоянные столбцы, одна общая дата. */
+.biz-model-customer{display:flex;flex-direction:column;gap:4px;padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.work-log-date{margin:0;min-width:180px}.work-log-date .biz-field{margin:0}
+.work-log-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr) minmax(0,1.2fr) minmax(88px,.55fr) var(--control-height);gap:12px;padding:16px;align-items:start;border-bottom:1px solid var(--line)}
+.work-log-row:last-child{border-bottom:0}.work-log-row>.biz-field{margin:0;min-width:0}.work-log-row>[data-work-remove]{margin-top:24px}
+.work-log-row [data-work-remaining]{min-height:18px}.work-log-add{margin:0}.work-log-history,.work-log-totals{margin-top:18px}
+.work-log-record{display:flex;gap:16px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}.work-log-record:last-child{border-bottom:0}.work-log-record>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}.work-log-record>strong{white-space:nowrap}.work-log-record>strong>small{display:block}.work-log-record>form{margin:0}
+@media(max-width:720px){.work-log-page>.biz-header{align-items:center}.work-log-date{min-width:0;width:160px}.work-log-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) var(--control-height);gap:12px}.work-log-row>.biz-field:nth-child(2){grid-column:1 / 3;grid-row:2}.work-log-row>.biz-field:nth-child(3){grid-column:1;grid-row:3}.work-log-row>.biz-field:nth-child(4){grid-column:2;grid-row:3}.work-log-row>[data-work-remove]{grid-column:3;grid-row:1}.work-log-row>.biz-field:first-child{grid-column:1 / 3}.work-log-record{flex-wrap:wrap;gap:10px}.work-log-record>div{flex-basis:60%}}

@@ -59,10 +59,12 @@ with tempfile.TemporaryDirectory(prefix='jail-empty-') as folder:
     with client.session_transaction() as state:csrf=state['csrf_token']
     client.post('/sklad/customers/new',data=dict(csrf_token=csrf,token='second-customer',name='Фирма Юг'))
     response=client.get('/sklad/batches')
-    assert 'href="/sklad/models/new"' in response.text and '>Добавить модель</a>' in response.text
+    assert 'href="/sklad/customers?for=model"' in response.text and '>Выбрать заказчика</a>' in response.text
     response=client.get('/sklad/models/new')
-    assert '<select name="customer_id"' in response.text and 'biz-empty-action' not in response.text
-    client.post('/sklad/models/new',data=dict(csrf_token=csrf,token='first-model',customer_id='1',name='Ботинки 714',sale_price='900'))
+    assert response.status_code==302 and '/sklad/customers?for=model' in response.location
+    response=client.get('/sklad/models/new?customer=1')
+    assert 'name="customer_id" value="1"' in response.text and '<select name="customer_id"' not in response.text
+    client.post('/sklad/models/new?customer=1',data=dict(csrf_token=csrf,token='first-model',customer_id='1',name='Ботинки 714',sale_price='900'))
     response=client.get('/sklad/orders/new?customer=2')
     assert response.status_code==302 and response.location=='/sklad/models/new?customer=2'
     response=client.get('/sklad/batches')

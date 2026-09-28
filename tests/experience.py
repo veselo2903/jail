@@ -11,9 +11,13 @@ with tempfile.TemporaryDirectory(prefix='jail-experience-') as folder:
     assert client.get('/login/proizv').location.endswith('/proizv/batches')
     client.get('/login/sklad',follow_redirects=True)
     with client.session_transaction() as s:csrf=s['csrf_token']
+    role='sklad'
+    def switch(value):
+        global role
+        role=value;client.get('/login/'+value)
     def post(path,data,follow=False):
         f=MultiDict(data);f['csrf_token']=csrf;f.setdefault('token',secrets.token_hex(10))
-        return client.post('/sklad'+path,data=f,follow_redirects=follow)
+        return client.post('/'+role+path,data=f,follow_redirects=follow)
     def one(sql,args=()):
         with db.get_db() as c:return c.execute(sql,args).fetchone()
     def count(t):return one('SELECT COUNT(*) FROM '+t)[0]
@@ -21,11 +25,11 @@ with tempfile.TemporaryDirectory(prefix='jail-experience-') as folder:
     response=post('/orders/new',dict(customer_id='new',new_customer='Север',model_id='new',new_model='714',qty='80',price='900'))
     assert response.status_code==200 and count('customers')==count('models')==0
     post('/customers/new',dict(name='Север',token='customer'))
-    post('/models/new',dict(customer_id='1',name='714',sale_price='900',token='model'))
+    post('/models/new?customer=1',dict(customer_id='1',name='714',sale_price='900',token='model'))
     r=post('/orders/new',dict(customer_id='1',model_id='1',qty='80',price='900',token='order'))
     assert r.status_code==302 and '/orders/' in r.location
     bid=one('SELECT id FROM production_batches')[0];path='/batches/'+str(bid)
-    post(path,dict(action='operations_bulk',operation_id='1',rate_1='25'))
+    switch('director');post(path,dict(action='operations_bulk',operation_id='1',rate_1='25'));switch('sklad')
     tid=one('SELECT id FROM batch_operations')[0]
     post('/inventory/new',dict(name='Подошвы',unit='pary',token='material'))
     mid=one('SELECT id FROM materials')[0]
@@ -51,6 +55,7 @@ with tempfile.TemporaryDirectory(prefix='jail-experience-') as folder:
     assert one('SELECT qty_milli FROM stock_balances WHERE material_id=2')[0]==3000
     post('/staff',dict(name='Иван',token='worker'))
     wid=one('SELECT id FROM workers')[0]
+    switch('proizv')
     bad=dict(action='work',task_id=tid,worker_id=wid,qty='81',note='Не терять')
     assert 'biz-retry-fields' in post(path,bad,True).text and count('work_acceptances')==0
     work={**bad,'qty':'4','token':'work-once'};post(path,work);post(path,work)
@@ -58,6 +63,7 @@ with tempfile.TemporaryDirectory(prefix='jail-experience-') as folder:
     # Large retries render directly rather than overflowing the session cookie.
     r=post(path,{**bad,'note':secrets.token_hex(9000)})
     assert r.status_code==200 and 'biz-retry-fields' in r.text and count('work_acceptances')==1
+    switch('sklad')
     supply=dict(send_token='supply-retry',inventory_tracking='1',party_id=['2','5'],party_batch_2=str(bid),party_batch_5=str(bid),party_material_id_2=str(mid),party_material_qty_2='999',party_material_owner_2='',party_material_id_5=str(mid),party_material_qty_5='1',party_material_owner_5='',ship_note='Сохранить после ошибки')
     r=post('/supplies/new',supply,True)
     assert r.status_code==200 and 'biz-retry-fields' in r.text and count('shipments')==0

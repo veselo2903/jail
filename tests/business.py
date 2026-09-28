@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     shoe['qty']=['6'];assert post('/orders/new',shoe).status_code==302
     assert one('SELECT total_cents,qty_pairs FROM order_items ORDER BY id DESC')['total_cents']==7500
     # Operation versions, work volume, individual and team accounting.
-    post(path,{'action':'operation','operation_id':'1','qty':'300','rate':'12.50','minutes':'2'})
+    switch('director');post(path,{'action':'operation','operation_id':'1','qty':'300','rate':'12.50','minutes':'2'})
     tid=one('SELECT id FROM batch_operations WHERE batch_id=?',(bid,))['id']
     post(path,{'action':'operation','operation_id':'1','qty':'300','rate':'50'})
     assert one('SELECT COUNT(*) c FROM batch_operations WHERE batch_id=?',(bid,))['c']==1
@@ -99,7 +99,7 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     assert one('SELECT COUNT(*) c FROM work_acceptances')['c']==1
     post(path,{**work,'token':'bad-shares','share':['50','40']})
     assert one('SELECT COUNT(*) c FROM work_acceptances')['c']==1
-    switch('sklad')
+    switch('director')
     post(path,{'action':'operation_edit','task_id':tid,'qty':'300','mode':'internal','rate':'20','minutes':'2','effective_date':today,'reason':'Новая расценка'})
     assert one('SELECT rate_version FROM batch_operations WHERE id=?',(tid,))['rate_version']==2
     assert one('SELECT amount_cents FROM work_acceptances')['amount_cents']==125000
@@ -165,7 +165,7 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     assert one('SELECT COUNT(*) c FROM shipments')['c']==1
     # Full completion, recognised fixed total exact to the cent.
     done=one('SELECT COALESCE(SUM(qty_pairs),0) done FROM work_acceptances WHERE batch_operation_id=? AND canceled_at IS NULL',(tid,))['done']
-    post(path,{'action':'work','task_id':tid,'qty':300-done,'worked_on':today,'worker_id':'1'})
+    switch('proizv');post(path,{'action':'work','task_id':tid,'qty':300-done,'worked_on':today,'worker_id':'1'});switch('sklad')
     post(path,{'action':'output','kind':'good','qty':'300','occurred_on':today})
     deliver(bid,'100')
     did=one('SELECT id FROM deliveries')['id']
@@ -187,7 +187,7 @@ with tempfile.TemporaryDirectory(prefix='jail-business-') as folder:
     post('/orders/new',payload)
     split_source=one('SELECT id FROM production_batches ORDER BY id DESC')['id']
     split_path='/batches/'+str(split_source)
-    post(split_path,{'action':'operations_bulk','operation_id':['1','7'],'rate_1':'5','rate_7':'2'})
+    switch('director');post(split_path,{'action':'operations_bulk','operation_id':['1','7'],'rate_1':'5','rate_7':'2'});switch('sklad')
     assert one('SELECT COUNT(*) c FROM batch_operations WHERE batch_id=?',(split_source,))['c']==2
     post(split_path,{'action':'split','qty':'100','token':'split-once'})
     post(split_path,{'action':'split','qty':'100','token':'split-once'})

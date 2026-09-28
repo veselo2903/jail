@@ -11,6 +11,7 @@
    if(action==='worker_edit')identifiers.push('worker_id');
    const form=forms.find(f=>f.querySelector('[name="action"]')?.value===action&&identifiers.every(key=>!fields[key]||f.querySelector(`[name="${key}"]`)?.value===fields[key][0])) || forms.find(f=>Array.from(f.querySelectorAll('button[name="action"]')).some(b=>b.value===action)&&identifiers.every(key=>!fields[key]||f.querySelector(`[name="${key}"]`)?.value===fields[key][0]));
    if(form){
+     if(form.id==='work-log-form'&&window.jailWorkLogRestore)window.jailWorkLogRestore(fields);
      const crew=form.querySelector('[data-work-people]');
      if(crew)while(crew.children.length<(fields.worker_id?.length||1))crew.appendChild(crew.children[0].cloneNode(true));
      for(const [key,values] of Object.entries(fields)){

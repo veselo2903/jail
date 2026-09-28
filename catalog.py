@@ -153,7 +153,7 @@ def register(bp,access,mutate,rows,choices,prefix):
     def customers():
         archive=request.args.get('archive')=='1'
         entries=rows('SELECT * FROM customers WHERE archived=? ORDER BY name',(int(archive),))
-        return render_template('business/customers.html',customers=entries,archive=archive,has_archive=bool(rows('SELECT 1 FROM customers WHERE archived=1 LIMIT 1')))
+        return render_template('business/customers.html',customers=entries,archive=archive,has_archive=bool(rows('SELECT 1 FROM customers WHERE archived=1 LIMIT 1')),choosing_model=request.args.get('for')=='model' and not archive)
 
     @bp.route(prefix+'/customers/new',methods=['GET','POST'])
     @access(True)
@@ -197,13 +197,19 @@ def register(bp,access,mutate,rows,choices,prefix):
     def model_new():
         if request.method=='POST' and not getattr(g,'render_failed_form',False):
             def change():
-                cid=core.integer(request.form.get('customer_id'),'Заказчик');mid=save_model(g.db,cid,request.form,session['role']);g.created_entity=('model',mid)
+                cid=request.args.get('customer',type=int)
+                if not cid:abort(400)
+                if request.form.get('customer_id') and core.integer(request.form['customer_id'])!=cid:raise core.RuleError('Модель создаётся для выбранного заказчика.')
+                mid=save_model(g.db,cid,request.form,session['role']);g.created_entity=('model',mid)
                 return url_for('business.model_detail',mid=mid)
             return mutate(change,url_for('business.model_new',customer=request.form.get('customer_id')),'Модель сохранена.')
         customers=choices('customers')
         if request.method=='GET' and not customers:
             return redirect(url_for('business.customer_new',ctx=request.args.get('ctx')))
-        return render_template('business/model_new.html',customers=customers,customer_id=request.args.get('customer',type=int) or (customers[0]['id'] if len(customers)==1 else None))
+        cid=request.args.get('customer',type=int)
+        if not cid:return redirect(url_for('business.customers',**{'for':'model','ctx':request.args.get('ctx')}))
+        customer=core.require(g.db,'customers',cid,True)
+        return render_template('business/model_new.html',customers=customers,customer_id=cid,customer=customer)
 
     @bp.route(prefix+'/models/<int:mid>',methods=['GET','POST'])
     @access(True)
@@ -217,11 +223,10 @@ def register(bp,access,mutate,rows,choices,prefix):
                     if action=='delete':return url_for('business.models',customer=model['customer_id'])
                 elif action=='model_edit':
                     cid=core.integer(f.get('customer_id'),'Заказчик')
-                    if cid!=model['customer_id']:
-                        if model_used(g.db,mid):raise core.RuleError('Модель уже используется. Для другого заказчика создайте новую модель.')
-                        core.require(g.db,'customers',cid,True);g.db.execute('UPDATE models SET customer_id=? WHERE id=?',(cid,mid))
+                    if cid!=model['customer_id']:raise core.RuleError('Для другого заказчика создайте новую модель.')
                     save_model(g.db,cid,f,session['role'],mid)
                 elif action=='template':
+                    if session['role']!='director':abort(403)
                     bid=core.integer(f.get('batch_id'),'Партия');b=core.require(g.db,'production_batches',bid)
                     if b['model_id']!=mid:raise core.RuleError('Выберите партию этой модели.')
                     core.save_template(g.db,bid);core.audit(g.db,session['role'],'model_template',mid,{'batch_id':bid})

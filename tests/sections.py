@@ -30,13 +30,13 @@ with tempfile.TemporaryDirectory(prefix='jail-sections-') as folder:
     for table in ('customers','models','workers','orders','materials'):assert scalar('SELECT COUNT(*) FROM '+table)==0
     # Unused customer's own models and price records can be deleted together.
     unused=created(post('/customers/new',dict(name='Удаляемый')))
-    post('/models/new',dict(customer_id=unused,name='Черновая модель',sale_price='10'))
+    post('/models/new?customer='+str(unused),dict(customer_id=unused,name='Черновая модель',sale_price='10'))
     post('/customers/'+str(unused),dict(action='delete'))
     assert scalar('SELECT COUNT(*) FROM customers')==0 and scalar('SELECT COUNT(*) FROM models')==0
     cid=created(post('/customers/new',dict(name='Север',token='customer-once')))
     post('/customers/new',dict(name='Север',token='customer-once'));assert scalar('SELECT COUNT(*) FROM customers')==1
-    a=created(post('/models/new',dict(customer_id=cid,name='А',sale_price='300')))
-    b=created(post('/models/new',dict(customer_id=cid,name='Б',sale_price='1000')))
+    a=created(post('/models/new?customer='+str(cid),dict(customer_id=cid,name='А',sale_price='300')))
+    b=created(post('/models/new?customer='+str(cid),dict(customer_id=cid,name='Б',sale_price='1000')))
     oid=created(post('/orders/new',dict(customer_id=cid,model_id=[str(a),str(b)],qty=['10','5'],price=['',''],token='order-once')))
     post('/orders/new',dict(customer_id=cid,model_id=[str(a),str(b)],qty=['10','5'],price=['',''],token='order-once'))
     assert scalar('SELECT COUNT(*) FROM orders')==1

@@ -16,13 +16,14 @@
    const form=all.find((f,i)=>signature(f,i)===record.key)||all[index];if(!form)return;
    const grouped={};record.fields.forEach(item=>(grouped[item.name]??=[]).push(item.value));
    if(form.id==='inventory-receipt-form'&&window.jailInventoryRestore)window.jailInventoryRestore(grouped);
+   if(form.id==='work-log-form'&&window.jailWorkLogRestore)window.jailWorkLogRestore(grouped);
    if(form.id==='supply-form'&&window.jailSupplyRestore)window.jailSupplyRestore(grouped);
    const crew=form.querySelector('[data-work-people]');if(crew)while(crew.children.length<(grouped.worker_id?.length||1))form.querySelector('[data-add-person]').click();
    const counts={};for(const field of record.fields){
     const i=counts[field.name]||0;counts[field.name]=i+1;
     const scope=field.model?form.querySelector('[data-model-id="'+CSS.escape(field.model)+'"]'):form;if(!scope)continue;
     const matches=Array.from(scope.elements||scope.querySelectorAll('[name]')).filter(el=>el.name===field.name&&el.type!=='file'&&el.tagName!=='BUTTON');const el=matches[field.model?0:i];if(!el)continue;
-    if(el.type==='checkbox'||el.type==='radio')el.checked=field.checked;else if(!el.readOnly)el.value=field.value;
+    if(el.type==='checkbox'||el.type==='radio')el.checked=field.checked;else if(!el.readOnly&&!(form.id==='biz-model-form'&&el.name==='customer_id'))el.value=field.value;
    }
    form.querySelectorAll('[data-model-id]').forEach(row=>{row.querySelector('[data-choose-model]').checked=record.chosen.includes(row.dataset.modelId)});
    record.open?.forEach(id=>{const element=document.getElementById(id);if(element?.tagName==='DETAILS')element.open=true});

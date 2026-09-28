@@ -42,7 +42,7 @@
  }
  function warmPage(){
   // Visible primary actions and menu links are fetched before the user clicks.
-  const links=[...document.querySelectorAll('.biz-empty-action,.biz-header a.btn,.biz-actions a,.side a.nav,[data-section-hop],#section-return:not([hidden])')];
+  const links=[...document.querySelectorAll('.biz-empty-action,.biz-header a.btn,.biz-actions a,.side a.nav,[data-section-hop],#section-return:not([hidden])'),...Array.from(document.querySelectorAll('.biz-customer-picker-row')).slice(0,12)];
   const run=()=>{const current=eligible(location.href);if(current)load(current).catch(()=>{});links.forEach(warm)};
   if('requestIdleCallback' in window)requestIdleCallback(run,{timeout:250});else setTimeout(run,0);
  }
@@ -51,7 +51,7 @@
   scripts.forEach(script=>script.remove());
   // Scripts in the new document receive a fresh lifetime, so handlers never accumulate.
   window.jailPage.abort();window.jailPage=new AbortController();
-  delete window.jailSupplyRestore;delete window.jailInventoryRestore;
+  delete window.jailSupplyRestore;delete window.jailInventoryRestore;delete window.jailWorkLogRestore;
   page.body.dataset.navigationReady='0';
   document.title=page.title;document.body.replaceWith(document.importNode(page.body,true));
   const finalURL=new URL(result.url);['ctx','resume','created'].forEach(name=>{if(target.searchParams.has(name))finalURL.searchParams.set(name,target.searchParams.get(name))});finalURL.hash=target.hash;
