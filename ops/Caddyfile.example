@@ -1,0 +1,14 @@
+example.com {
+	@jailRoot path /jail
+	redir @jailRoot /jail/ 308
+
+	handle_path /jail/* {
+		header {
+			X-Robots-Tag "noindex, nofollow, noarchive"
+			Cache-Control "no-store"
+		}
+		reverse_proxy 127.0.0.1:8091 {
+			header_up X-Forwarded-Prefix /jail
+		}
+	}
+}

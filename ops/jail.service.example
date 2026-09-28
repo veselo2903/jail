@@ -1,0 +1,21 @@
+[Unit]
+Description=Jail shoe manufacturing application
+After=network.target
+
+[Service]
+Type=simple
+User=jail
+Group=jail
+WorkingDirectory=/opt/jail
+EnvironmentFile=/etc/jail.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/jail/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8091 --access-logfile - --error-logfile - app:app
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/jail
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
