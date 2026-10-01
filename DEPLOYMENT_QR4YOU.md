@@ -7,6 +7,7 @@
 - Служба: `jail3.service`, Gunicorn на `127.0.0.1:8092`.
 - Caddy в `/etc/caddy/Caddyfile` проксирует `/jail/*` на 8092 и передаёт `X-Forwarded-Prefix: /jail`.
 - `JAIL_SECRET_KEY`, `JAIL_COOKIE_PATH=/jail`, `JAIL_COOKIE_SECURE=1` задаются в `/etc/jail3.env`. Значение секретного ключа в репозиторий не включается.
+- Ежедневные снимки новой базы создаёт `jail-backup.timer` в `/srv/backups/jail3`. Снимки старой версии остались в `/srv/backups/jail`.
 
 Код умеет читать `JAIL_DB_PATH`, а `ProxyFix` учитывает префикс `/jail`. На этой установке веб-загрузка ZIP-обновлений отключена: переменная `JAIL_ALLOW_WEB_UPDATES` не задана. Код развёртывается администратором сервера. Это важно, пока роли выбираются без пароля.
 
