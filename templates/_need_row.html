@@ -1,0 +1,12 @@
+{# Строка заявки производства (материал). editable — показывать удаление #}
+<tr class="placed-row" data-id="{{ i.id }}">
+  <td><b>{{ i.item }}</b>{% if i.urgent %} <span class="tag urgent">Срочно</span>{% endif %}{% if i.note %}<div class="placed-note">{{ i.note }}</div>{% endif %}</td>
+  <td class="num placed-qty">{{ (('%g' % i.qty)|replace('.', ',')) if i.qty is not none else '—' }} <span class="small">{{ i.unit or '' }}</span></td>
+  {% if editable %}
+  <td class="num" style="width:56px">
+    <form method="post" class="ajax-del" action="{{ url_for('request_item_del', req_id=r.id, item_id=i.id) }}">
+      <button class="btn grey icon sm" type="submit" aria-label="Убрать">×</button>
+    </form>
+  </td>
+  {% endif %}
+</tr>

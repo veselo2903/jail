@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Ошибка — jail{% endblock %}
+{% block content %}
+<div class="card hero">
+  <div class="big">{{ code }}</div>
+  <div class="lbl">{{ text }}</div>
+</div>
+<a class="btn block" href="{{ url_for('index') if role else url_for('login') }}">На главную</a>
+{% endblock %}

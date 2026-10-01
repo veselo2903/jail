@@ -1,55 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Расхождения — jail{% endblock %}
 {% block content %}
-
-{% if total_diff %}<div class="card hero warn">
-  <div class="big">{{ total_diff }}</div>
-  <div class="lbl">пар отдано в производство, но ещё не вернулось на склад</div>
+<div class="subtabs">
+  {% for k, name in tabs %}<a href="{{ url_for('discrepancies', tab=k) }}" class="{{ 'active' if tab==k }}">{{ name }}{% if groups[k] and k!='closed' %}<span class="n">{{ groups[k]|length }}</span>{% endif %}</a>{% endfor %}
 </div>
-{% endif %}
-
-{% if report or doc_discr %}
-<p class="small">Сравнение по моделям: сколько принято производством (типы «Заготовки» и «На упаковку») и сколько вернулось на склад (возврат ГП). Разница — это то, что в работе или потеряно.</p>
-{% endif %}
-
-{% if report %}
-<div class="card flush">
-<table>
-  <tr><th>Модель</th><th class="num">Отдано</th><th class="num">Вернулось</th><th class="num">Разница</th></tr>
-  {% for r in report %}
-  <tr>
-    <td>{{ r.model }}</td>
-    <td class="num">{{ r.out }}</td>
-    <td class="num">{{ r.back }}</td>
-    <td class="num">{% if r.diff!=0 %}<span class="diff-neg">{{ r.diff }}</span>{% else %}<span class="diff-zero">0</span>{% endif %}</td>
-  </tr>
-  {% endfor %}
-</table>
+<div class="card disc-card">
+  {% if not items %}<div class="empty">{{ 'Закрытых расхождений пока нет.' if tab=='closed' else 'Здесь пусто.' }}</div>{% endif %}
+  {% include "_disc_list.html" %}
 </div>
-{% endif %}
-
-{% if doc_discr %}
-<details>
-  <summary>Расхождения при приёмке ({{ doc_discr|length }})</summary>
-  <div class="body">
-      {% for x in doc_discr %}
-      <div class="mb-sm">
-        <div><b>Заявка №{{ x.d.id }}</b> · {{ KIND_SHORT[x.d.kind] }} · {{ x.d.accepted_at }}</div>
-        <table>
-          <tr><th>Заказчик — модель</th><th class="num">Отдано</th><th class="num">Принято</th><th>Причина</th></tr>
-          {% for l in x.bad %}
-          <tr>
-            <td>{{ l.customer }} — {{ l.model }}</td>
-            <td class="num">{{ l.pairs_sent }}</td>
-            <td class="num"><span class="diff-neg">{{ l.pairs_recv }}</span></td>
-            <td class="small">{{ l.discrepancy_note or '—' }}</td>
-          </tr>
-          {% endfor %}
-        </table>
-      </div>
-      {% endfor %}
-  </div>
-</details>
-{% endif %}
-
 {% endblock %}

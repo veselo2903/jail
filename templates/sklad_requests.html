@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Заявки — jail{% endblock %}
+{% block content %}
+
+<div class="pr-bar">
+  <a class="btn pr-create" href="{{ url_for('docs_collect') }}">Собрать передачу</a>
+  <div class="subtabs pr-sub">
+    <a href="{{ url_for('documents', sub='work') }}" class="{{ 'active' if sub=='work' }}">В работе <span class="n">{{ n_work }}</span></a>
+    <a href="{{ url_for('documents', sub='done') }}" class="{{ 'active' if sub=='done' }}">Выполненные <span class="n">{{ n_done }}</span></a>
+  </div>
+</div>
+
+<div class="card flush">
+{% if rows %}
+<table class="pr-table">
+  <tr><th style="width:60px">№</th><th>Что заказано</th><th style="width:220px">Статус</th><th style="width:130px">Создана</th></tr>
+  {% for x in rows %}
+  <tr class="linkrow {{ 'pr-act' if x.action }}" onclick="location='{{ x.url }}'">
+    <td>{{ x.id }}</td>
+    <td><b>{{ x.first }}</b>{% if x.more %} <span class="small">ещё {{ x.more }}</span>{% endif %}{% if x.urgent and not x.done %} <span class="tag urgent">Срочно</span>{% endif %}</td>
+    <td><span class="tag {{ 'you' if x.action else ('d' if x.disc else 'sent') }}">{{ x.status }}</span></td>
+    <td class="small">{{ (x.created_at|dt)[:10] }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="empty">{{ 'Выполненных пока нет.' if sub=='done' else 'Заказов от производства нет.' }}</div>
+{% endif %}
+</div>
+{% endblock %}

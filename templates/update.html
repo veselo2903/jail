@@ -24,7 +24,7 @@
 
 <div class="card">
   <h3>Загрузить обновление</h3>
-  <form method="post" action="{{ url_for('update') }}" enctype="multipart/form-data" class="grid"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <form method="post" action="{{ url_for('update') }}" enctype="multipart/form-data" class="grid">
     <div>
       <label>Файл обновления (.zip)</label>
       <input type="file" name="pkg" accept=".zip">
@@ -33,13 +33,22 @@
   </form>
 </div>
 
+{% if prev %}
+<div class="card">
+  <h3>Вернуть прошлую версию</h3>
+  <form method="post" action="{{ url_for('update_rollback') }}" data-confirm="Вернуть версию {{ prev }}? Данные в базе останутся как есть.">
+    <button class="btn grey block" type="submit">Вернуть версию {{ prev }}</button>
+  </form>
+</div>
+{% endif %}
+
 <details>
   <summary>Как это работает</summary>
   <div class="body small">
     Архив обновления содержит только изменённые файлы и файл VERSION — например
-    <b>app.py</b>, <b>templates/documents.html</b>, <b>VERSION</b>. Система распакует их
-    поверх текущих. База данных <b>jail.db</b> не трогается никогда — заказчики, модели,
-    работники и заявки сохраняются. После применения нужен один Reload
+    <b>app.py</b>, <b>templates/…</b>, <b>VERSION</b>. Система распакует их
+    поверх текущих. Перед установкой автоматически сохраняются копия базы и текущей версии
+    программы — если новая версия работает плохо, её можно вернуть кнопкой «Вернуть прошлую версию». После применения нужен один Reload
     (делается автоматически, если сервер это позволяет, иначе кнопкой на вкладке Web).
   </div>
 </details>
@@ -50,6 +59,13 @@
   <div class="body">
     {% for h in history %}<div class="small">{{ h }}</div>{% endfor %}
   </div>
+</details>
+{% endif %}
+
+{% if errors %}
+<details>
+  <summary>Ошибки сервера (последние)</summary>
+  <div class="body"><pre style="white-space:pre-wrap;font-size:12px;max-height:420px;overflow:auto">{{ errors }}</pre></div>
 </details>
 {% endif %}
 

@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Склад производства — jail{% endblock %}
+{% block content %}
+{% include "_wh_switch.html" %}
+
+{% if tab=='ready' %}
+<div class="card hero">
+  <div class="big">{{ ready|sum(attribute='ready')|q }}</div>
+  <div class="lbl">пар готовой обуви на нашем складе</div>
+</div>
+{% else %}
+<div class="card hero">
+  <div class="big">{{ total_pairs|q }}</div>
+  <div class="lbl">пар сейчас на производстве</div>
+</div>
+{% endif %}
+
+<div class="subtabs">
+  {% if role=='director' %}<a href="{{ url_for('stock', tab='ready') }}" class="{{ 'active' if tab=='ready' }}">Готовая на складе <span class="n">{{ ready|selectattr('ready')|list|length }}</span></a>{% endif %}
+  <a href="{{ url_for('stock', tab='pairs') }}" class="{{ 'active' if tab=='pairs' }}">{{ 'На производстве' if role=='director' else 'Обувь' }} <span class="n">{{ pairs|length }}</span></a>
+  <a href="{{ url_for('stock', tab='mats') }}" class="{{ 'active' if tab=='mats' }}">Материалы <span class="n">{{ mats|length }}</span></a>
+  <a href="{{ url_for('stock', tab='moves') }}" class="{{ 'active' if tab=='moves' }}">Движения</a>
+</div>
+
+{% if tab in ['pairs','mats'] %}
+{% set list = pairs if tab=='pairs' else mats %}
+{% if list %}<input type="search" id="stock-q" class="stock-q" placeholder="Поиск: {{ 'заказчик или модель' if tab=='pairs' else 'материал' }}" autocomplete="off">{% endif %}
+<div class="card flush">
+  {% if list %}
+  <table>
+    <tr>{% if tab=='pairs' %}<th>Заказчик</th><th>Модель</th>{% else %}<th>Материал</th>{% endif %}<th class="num">Остаток</th><th class="num hide-m">Последнее изменение</th>{% if can_edit and tab=='mats' %}<th></th>{% endif %}</tr>
+    {% for e in list %}
+    <tr class="linkrow stock-row" data-q="{{ e.title|lower }}" onclick="location='{{ url_for('stock_item', k=e.key) }}'">
+      {% if tab=='pairs' %}<td class="nw"><b>{{ e.customer }}</b></td><td><b>{{ e.model }}</b></td>{% else %}<td><b>{{ e.title }}</b></td>{% endif %}
+      <td class="num placed-qty">{% if e.qty < 0 %}<span class="diff-neg">{{ e.qty|q }}</span>{% else %}{{ e.qty|q }}{% endif %} <span class="small">{{ e.unit }}</span></td>
+      <td class="num small hide-m">{{ e.last|dt }}</td>
+      {% if can_edit and tab=='mats' %}<td class="num" style="width:110px"><button class="btn grey sm wo-open" type="button" data-k="{{ e.key }}" data-title="{{ e.title }}" data-qty="{{ e.qty|q }}" data-unit="{{ e.unit }}" onclick="event.stopPropagation()">Списать</button></td>{% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="empty" id="stock-none" hidden>Ничего не найдено.</div>
+  {% else %}
+  <div class="empty">{{ 'Обуви на производстве нет.' if tab=='pairs' else 'Материалов на производстве нет.' }}</div>
+  {% endif %}
+</div>
+
+{% if can_edit %}<div class="sheet-back" id="wo-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-t" style="color:var(--ink)">Списать</div>
+    <div class="sheet-sub" id="wo-title"></div>
+    <form method="post" action="{{ url_for('stock_act') }}" class="grid">
+      <input type="hidden" name="act" value="writeoff"><input type="hidden" name="k" id="wo-k">
+      <input type="hidden" name="back_tab" value="{{ tab }}">
+      <div class="grid">
+        <div style="max-width:200px"><label>Сколько</label><input name="qty" id="wo-qty" inputmode="decimal" placeholder="0"></div>
+        <div><label>Причина</label><div class="seg seg-wrap">{% for r in reasons %}<label class="seg-opt"><input type="radio" name="reason" value="{{ r }}" {{ 'checked' if loop.first }}><span>{{ r }}</span></label>{% endfor %}</div></div>
+      </div>
+      <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
+      <button class="btn block" type="submit">Списать</button>
+      <button class="btn grey block" type="button" id="wo-close">Отмена</button>
+    </form>
+  </div>
+</div>{% endif %}
+{% if can_edit %}
+
+
+<div class="sheet-back" id="sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-t" style="color:var(--ink)">Добавить материал</div>
+
+    <form method="post" action="{{ url_for('stock_add') }}" class="grid" style="margin-top:12px">
+      <input type="hidden" name="t" id="add-t" value="material">
+      <div class="grid add-part" data-t="pair" hidden>
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div><label>Заказчик</label><input class="combo" name="customer_name" placeholder="впишите заказчика" data-options='{{ customers|map(attribute="name")|list|tojson|forceescape }}'></div>
+          <div><label>Модель</label><input class="combo" name="model_name" placeholder="впишите модель" data-options='{{ models|map(attribute="name")|list|tojson|forceescape }}'></div>
+        </div>
+        <div><label>Пар</label><input name="qty" inputmode="numeric" placeholder="0"></div>
+      </div>
+      <div class="grid add-part" data-t="material">
+<div><label>Материал</label><input class="combo" name="name" placeholder="впишите материал" data-options='{{ materials|map(attribute="name")|list|tojson|forceescape }}' data-units='{{ dict(materials|map("list")|list)|tojson|forceescape }}'></div>
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div><label>Кол-во</label><input name="qty" inputmode="decimal" placeholder="0"></div>
+          <div><label>Ед. изм.</label><div class="seg seg-wrap">{% for u in units %}<label class="seg-opt"><input type="radio" name="unit" value="{{ u }}" {{ 'checked' if loop.first }}><span>{{ u }}</span></label>{% endfor %}</div></div>
+        </div>
+      </div>
+      <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
+      <button class="btn green block" type="submit">Добавить</button>
+      <button class="btn grey block" type="button" id="add-close">Отмена</button>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  var sh=document.getElementById("sheet");
+  function open(){sh.hidden=false;requestAnimationFrame(function(){sh.classList.add("open");});var i=sh.querySelector("input:not([type=hidden])");if(i)setTimeout(function(){i.focus();},250);}
+  function close(){sh.classList.remove("open");setTimeout(function(){sh.hidden=true;},220);}
+  var ao=document.getElementById("add-open");if(ao)ao.addEventListener("click",open);
+  // списание прямо из списка
+  var wo=document.getElementById("wo-sheet");
+  function woClose(){wo.classList.remove("open");setTimeout(function(){wo.hidden=true;},220);}
+  document.querySelectorAll(".wo-open").forEach(function(b){b.addEventListener("click",function(){
+    document.getElementById("wo-k").value=b.dataset.k;
+    document.getElementById("wo-title").textContent=b.dataset.title+" · остаток "+b.dataset.qty+" "+b.dataset.unit;
+    wo.hidden=false;requestAnimationFrame(function(){wo.classList.add("open");});
+    setTimeout(function(){document.getElementById("wo-qty").focus();},250);});});
+  document.getElementById("wo-close").addEventListener("click",woClose);
+  wo.addEventListener("click",function(e){if(e.target===wo)woClose();});
+  function setT(t){document.getElementById("add-t").value=t;
+    sh.querySelectorAll(".add-part").forEach(function(p){var on=p.dataset.t===t;p.hidden=!on;
+      p.querySelectorAll("input,select").forEach(function(i){i.disabled=!on;});});}
+  sh.querySelectorAll("[name=addt]").forEach(function(r){r.addEventListener("change",function(){setT(r.value);});});
+  setT(document.getElementById("add-t").value);
+  document.getElementById("add-close").addEventListener("click",close);
+  sh.addEventListener("click",function(e){if(e.target===sh)close();});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!sh.hidden)close();});
+})();
+</script>
+{% endif %}
+<script>
+(function(){
+  // поиск по списку
+  var q=document.getElementById("stock-q");
+  if(q)q.addEventListener("input",function(){var v=q.value.trim().toLowerCase(),n=0;
+    document.querySelectorAll(".stock-row").forEach(function(tr){var on=!v||tr.dataset.q.indexOf(v)>=0;tr.hidden=!on;if(on)n++;});
+    document.getElementById("stock-none").hidden=n>0;});
+})();
+</script>
+
+{% elif tab=='ready' %}
+<div class="card flush">
+  {% if ready %}
+  <table>
+    <tr><th>Заказчик</th><th>Модель</th><th class="num">Готовая</th><th class="num">Брак</th><th class="num">Принято на склад</th></tr>
+    {% for r in ready %}
+    <tr class="linkrow" onclick="location='{{ url_for('doc_view', doc_id=r.doc_id) if r.doc_id else url_for('wh', tab='moves') }}'">
+      <td class="nw"><b>{{ r.customer }}</b></td><td><b>{{ r.model }}</b></td>
+      <td class="num placed-qty">{{ r.ready|q }} <span class="small">пар</span></td>
+      <td class="num">{% if r.brak %}<span class="diff-neg">{{ r.brak|q }}</span>{% else %}—{% endif %}</td>
+      <td class="num small">{{ (r.accepted|dt) or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">Склад ещё не принимал готовую обувь.</div>
+  {% endif %}
+</div>
+
+{% else %}
+<div class="card flush">
+  {% if moves %}
+  <table>
+    <tr><th>Дата</th><th>Операция</th><th>Заказчик</th><th>Модель / материал</th><th class="num">Кол-во</th></tr>
+    {% for m in moves %}
+    <tr>
+      <td class="small">{{ m.created_at|dt }}</td>
+      <td><span class="tag mv-{{ m.kind }}">{{ STOCK_KINDS[m.kind] }}</span>{% if m.reason and m.kind=='writeoff' %}<div class="small">{{ m.reason }}</div>{% endif %}{% if m.note %}<div class="small">{{ m.note }}</div>{% endif %}</td>
+      <td>{{ m.customer if m.item_type=='pair' else '—' }}</td>
+      <td>{{ m.model if m.item_type=='pair' else m.name }}</td>
+      <td class="num"><b class="{{ 'diff-zero' if m.qty > 0 else 'diff-neg' }}">{{ '+' if m.qty > 0 }}{{ m.qty|q }}</b> <span class="small">{{ 'пар' if m.item_type=='pair' else (m.unit or '') }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">Движений пока не было.</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

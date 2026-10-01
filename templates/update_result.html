@@ -4,8 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Обновление — jail</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=VERSION) }}">
-<link rel="stylesheet" href="{{ url_for('static', filename='entry.css', v=VERSION) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=cur) }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='entry.css', v=cur) }}">
+<style>
+.update-result-page .spin{width:44px;height:44px;margin:0 auto 14px;border-radius:50%;border:4px solid var(--blue-bg);border-top-color:var(--blue);animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
 </head>
 <body class="update-result-page">
 <div class="box">
@@ -16,29 +20,58 @@
       <div class="sub">Версия осталась {{ cur }}</div>
       <div class="note bad">{{ err }}</div>
     {% else %}
-      <div class="icon ok">✓</div>
-      <h2>Обновление применено</h2>
-      <div class="sub">Текущая версия — {{ cur }}</div>
-      <div class="note ok">Обновлено файлов: {{ applied|length }}.</div>
-      <div class="steps">
-        Чтобы изменения вступили в силу, нужен один шаг:<br>
-        {% if reloaded %}
-        Система дала команду на перезагрузку автоматически. Подождите ~10 секунд и обновите страницу (Ctrl+F5).
-        {% else %}
-        Откройте вкладку <b>Web</b> в PythonAnywhere и нажмите зелёную кнопку <b>Reload</b>, затем обновите страницу (Ctrl+F5).
-        {% endif %}
+      <div id="wait">
+        <div class="spin" aria-hidden="true"></div>
+        <h2>Применяется обновление</h2>
+        <div class="sub">Перезапуск сайта до версии {{ cur }} — обычно до 30 секунд. Прошло: <b id="sec">0</b> с</div>
+        <div style="height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:12px 0"><div id="bar" style="height:100%;width:0;background:var(--blue);transition:width .5s"></div></div>
+        <div class="note" id="slow" hidden style="background:#f7f9fb;border:1px solid var(--line);color:var(--ink)">
+          Долго? Откройте вкладку <b>Web</b> на PythonAnywhere и нажмите <b>Reload</b> — эта страница сама увидит новую версию.
+        </div>
+      </div>
+      <div id="done" hidden>
+        <div class="icon ok">✓</div>
+        <h2>Обновление применено</h2>
+        <div class="sub">Работает версия {{ cur }}. Открываю систему…</div>
       </div>
       {% if applied %}
       <details class="files-wrap">
         <summary class="result-files-summary">Что обновилось ({{ applied|length }})</summary>
-        <div class="files">
-          {% for f in applied %}<div>{{ f }}</div>{% endfor %}
-        </div>
+        <div class="files">{% for f in applied %}<div>{{ f }}</div>{% endfor %}</div>
       </details>
       {% endif %}
+      <script>
+      (function(){
+        var want="{{ cur }}",url="{{ request.script_root }}/version",t0=Date.now(),done=false;
+        // запрос версии с таймаутом: во время перезапуска сервер может не отвечать — не ждём вечно
+        function getv(){
+          var ac=window.AbortController?new AbortController():null;
+          var to=setTimeout(function(){if(ac)ac.abort();},5000);
+          return fetch(url+"?t="+Date.now(),{cache:"no-store",signal:ac?ac.signal:undefined})
+            .then(function(r){clearTimeout(to);return r.ok?r.text():"";},function(){clearTimeout(to);return "";});
+        }
+        function tick(){
+          if(done)return;
+          getv().then(function(v){
+            if(v.trim()===want){done=true;document.getElementById("wait").hidden=true;document.getElementById("done").hidden=false;
+              setTimeout(function(){location.href="{{ request.script_root }}/";},1200);return;}
+            again();
+          });
+        }
+        var rl="{{ request.script_root }}/update/reload",retried=false;
+        function reload(){fetch(rl,{method:"POST",cache:"no-store",keepalive:true}).catch(function(){});}
+        function again(){var dt=Date.now()-t0,s=Math.round(dt/1000);
+          document.getElementById("sec").textContent=s;
+          document.getElementById("bar").style.width=Math.min(100,s/30*100)+"%";
+          if(dt>45000&&!retried){retried=true;reload();}   // один повтор, если первый перезапуск не прошёл
+          if(dt>60000)document.getElementById("slow").hidden=false;
+          setTimeout(tick,2000);}
+        reload();               // один перезапуск сразу
+        setTimeout(tick,3000);
+      })();
+      </script>
     {% endif %}
-    <a class="btn block mt-sm" href="{{ url_for('update') }}">Готово</a>
-    <a class="btn grey block mt-sm" href="{{ url_for('login') }}">На главную</a>
+    {% if err %}<a class="btn block" href="{{ url_for('update') }}">Попробовать снова</a>{% endif %}
   </div>
 </div>
 </body>

@@ -1,0 +1,19 @@
+{# Строка обуви в передаче. i — позиция, editable — показывать удаление #}
+<tr class="placed-row" data-id="{{ i.id }}">
+  <td class="nw"><b>{{ i.customer }}</b></td>
+  <td><b>{{ i.model }}</b>{% if i.note %}<div class="placed-note">{{ i.note }}</div>{% endif %}</td>
+  <td class="ops-text">{% set os = ops_by_item.get(i.id, []) %}{% if os %}{{ os|ops_short }}{% elif i.status %}{{ LINE_STATUSES[i.status] }}{% else %}—{% endif %}</td>
+  <td class="num placed-qty">{{ i.collected }} <span class="small">пар</span>
+    {% if i.recv is not none and r.status=='accepted' %}
+      {% if i.recv != i.collected %}<div class="small">принято <span class="diff-neg">{{ ('%g' % i.recv)|replace('.', ',') }}</span></div>
+      {% else %}<div class="small diff-zero">принято ✓</div>{% endif %}
+    {% endif %}
+  </td>
+  {% if editable %}
+  <td class="num" style="width:56px">
+    <form method="post" class="ajax-del" action="{{ url_for('request_placed_del', req_id=r.id, item_id=i.id) }}">
+      <button class="btn grey icon sm" type="submit" aria-label="Убрать">×</button>
+    </form>
+  </td>
+  {% endif %}
+</tr>

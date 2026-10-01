@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Склад — jail{% endblock %}
+{% block content %}
+{% include "_wh_switch.html" %}
+
+{% if tab!='mats' %}
+<div class="card hero">
+  <div class="big">{{ (total_brak if tab=='brak' else total_ready)|q }}</div>
+  <div class="lbl">{{ 'пар брака на складе' if tab=='brak' else 'пар готовой обуви на складе' }}</div>
+</div>
+{% endif %}
+
+<div class="subtabs">
+  <a href="{{ url_for('wh', tab='ready') }}" class="{{ 'active' if tab=='ready' }}">Готовая <span class="n">{{ items|selectattr('ready')|list|length }}</span></a>
+  <a href="{{ url_for('wh', tab='brak') }}" class="{{ 'active' if tab=='brak' }}">Брак <span class="n">{{ items|selectattr('brak')|list|length }}</span></a>
+  <a href="{{ url_for('wh', tab='mats') }}" class="{{ 'active' if tab=='mats' }}">Материалы <span class="n">{{ mats|length }}</span></a>
+  <a href="{{ url_for('wh', tab='moves') }}" class="{{ 'active' if tab=='moves' }}">Движения</a>
+</div>
+
+{% if tab in ['ready','brak'] %}
+{% set list = items|selectattr(tab)|list %}
+{% if list %}<input type="search" id="stock-q" class="stock-q" placeholder="Поиск: заказчик или модель" autocomplete="off">{% endif %}
+<div class="card flush">
+  {% if list %}
+  <table>
+    <tr><th>Заказчик</th><th>Модель</th><th class="num">Остаток</th><th class="num hide-m">Принято на склад</th>{% if can_edit %}<th></th>{% endif %}</tr>
+    {% for e in list %}
+    <tr class="stock-row" data-q="{{ (e.customer ~ ' ' ~ e.model)|lower }}">
+      <td class="nw"><b>{{ e.customer }}</b></td><td><b>{{ e.model }}</b></td>
+      <td class="num placed-qty">{{ e[tab]|q }} <span class="small">пар</span></td>
+      <td class="num small hide-m">{{ (e.accepted|dt) or '—' }}</td>
+      {% if can_edit %}<td class="num" style="white-space:nowrap">
+        {% if tab=='brak' %}<button class="btn sm rp-open" type="button"
+          data-cid="{{ e.cid }}" data-mid="{{ e.mid }}" data-title="{{ e.customer }} — {{ e.model }}" data-qty="{{ e[tab]|q }}">В ремонт</button>{% endif %}
+        <button class="btn grey sm wo-open" type="button"
+        data-cid="{{ e.cid }}" data-mid="{{ e.mid }}" data-title="{{ e.customer }} — {{ e.model }}" data-qty="{{ e[tab]|q }}">Списать</button></td>{% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="empty" id="stock-none" hidden>Ничего не найдено.</div>
+  {% else %}
+  <div class="empty">{{ 'Брака на складе нет.' if tab=='brak' else 'Готовой обуви на складе нет.' }}</div>
+  {% endif %}
+</div>
+
+{% if can_edit %}
+<div class="sheet-back" id="wo-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-t" style="color:var(--ink)">Списать со склада</div>
+    <div class="sheet-sub" id="wo-title"></div>
+    <form method="post" action="{{ url_for('wh_writeoff') }}" class="grid">
+      <input type="hidden" name="cid" id="wo-cid"><input type="hidden" name="mid" id="wo-mid">
+      <input type="hidden" name="quality" value="{{ tab }}">
+      <div class="grid" style="grid-template-columns:140px 1fr">
+        <div><label>Сколько пар</label><input name="qty" id="wo-qty" inputmode="numeric" placeholder="0"></div>
+        <div><label>Причина</label>
+          <div class="seg seg-wrap">{% for r in reasons %}<label class="seg-opt"><input type="radio" name="reason" value="{{ r }}" {{ 'checked' if loop.first }}><span>{{ r }}</span></label>{% endfor %}</div>
+        </div>
+      </div>
+      <div><label>Примечание</label><input name="note" placeholder="например, кому отгрузили"></div>
+      <button class="btn block" type="submit">Списать</button>
+      <button class="btn grey block" type="button" id="wo-close">Отмена</button>
+    </form>
+  </div>
+</div>
+<div class="sheet-back" id="rp-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-t" style="color:var(--ink)">Отправить брак в ремонт</div>
+    <div class="sheet-sub" id="rp-title"></div>
+    <form method="post" action="{{ url_for('wh_repair') }}" class="grid">
+      <input type="hidden" name="cid" id="rp-cid"><input type="hidden" name="mid" id="rp-mid">
+      <div style="max-width:200px"><label>Сколько пар</label><input name="qty" id="rp-qty" inputmode="numeric" placeholder="0"></div>
+      <div><label>Операции ремонта (за них будет начислено производству)</label>
+        <div class="ops-pick">{% for o in operations %}<label class="op-opt"><input type="checkbox" name="ops" value="{{ o.id }}"><span>{{ o.name }}</span></label>{% endfor %}</div>
+      </div>
+      <div><label>Примечание</label><input name="note" placeholder="что починить"></div>
+      <button class="btn block" type="submit">Положить в передачу на производство</button>
+      <button class="btn grey block" type="button" id="rp-close">Отмена</button>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  var rp=document.getElementById("rp-sheet");
+  function rclose(){rp.classList.remove("open");setTimeout(function(){rp.hidden=true;},220);}
+  document.querySelectorAll(".rp-open").forEach(function(b){b.addEventListener("click",function(){
+    document.getElementById("rp-cid").value=b.dataset.cid;document.getElementById("rp-mid").value=b.dataset.mid;
+    document.getElementById("rp-title").textContent=b.dataset.title+" · брака "+b.dataset.qty+" пар";
+    rp.hidden=false;requestAnimationFrame(function(){rp.classList.add("open");});
+    setTimeout(function(){document.getElementById("rp-qty").focus();},250);});});
+  document.getElementById("rp-close").addEventListener("click",rclose);
+  rp.addEventListener("click",function(e){if(e.target===rp)rclose();});
+})();
+(function(){
+  var wo=document.getElementById("wo-sheet");
+  function close(){wo.classList.remove("open");setTimeout(function(){wo.hidden=true;},220);}
+  document.querySelectorAll(".wo-open").forEach(function(b){b.addEventListener("click",function(){
+    document.getElementById("wo-cid").value=b.dataset.cid;document.getElementById("wo-mid").value=b.dataset.mid;
+    document.getElementById("wo-title").textContent=b.dataset.title+" · остаток "+b.dataset.qty+" пар";
+    wo.hidden=false;requestAnimationFrame(function(){wo.classList.add("open");});
+    setTimeout(function(){document.getElementById("wo-qty").focus();},250);});});
+  document.getElementById("wo-close").addEventListener("click",close);
+  wo.addEventListener("click",function(e){if(e.target===wo)close();});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!wo.hidden)close();});
+})();
+</script>
+{% endif %}
+<script>
+(function(){
+  var q=document.getElementById("stock-q");
+  if(q)q.addEventListener("input",function(){var v=q.value.trim().toLowerCase(),n=0;
+    document.querySelectorAll(".stock-row").forEach(function(tr){var on=!v||tr.dataset.q.indexOf(v)>=0;tr.hidden=!on;if(on)n++;});
+    document.getElementById("stock-none").hidden=n>0;});
+})();
+</script>
+
+{% elif tab=='mats' %}
+{% if can_edit %}<button class="btn add" type="button" id="mi-open" style="margin-bottom:14px;align-self:flex-start">+ Приход материала</button>{% endif %}
+<div class="card flush">
+  {% if mats %}
+  <table>
+    <tr><th>Материал</th><th class="num">Остаток</th><th class="num hide-m">Последнее изменение</th>{% if can_edit %}<th></th>{% endif %}</tr>
+    {% for e in mats %}
+    <tr>
+      <td><b>{{ e.name }}</b></td>
+      <td class="num placed-qty">{% if e.qty < 0 %}<span class="diff-neg">{{ e.qty|q }}</span>{% else %}{{ e.qty|q }}{% endif %} <span class="small">{{ e.unit }}</span></td>
+      <td class="num small hide-m">{{ e.last|dt }}</td>
+      {% if can_edit %}<td class="num" style="width:110px"><button class="btn grey sm mw-open" type="button" data-name="{{ e.name }}" data-qty="{{ e.qty|q }}" data-unit="{{ e.unit }}">Списать</button></td>{% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">Материалов на складе по учёту нет. Внесите приход — тогда при сборке передачи будет видно, хватает ли.</div>
+  {% endif %}
+</div>
+{% if can_edit %}
+<div class="sheet-back" id="mi-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-t" style="color:var(--ink)" id="mi-t">Приход материала</div>
+    <form method="post" action="{{ url_for('wh_mat') }}" class="grid" id="mi-form">
+      <input type="hidden" name="act" id="mi-act" value="in">
+      <div id="mi-name-wrap"><label>Материал</label><input class="combo" name="name" id="mi-name" data-ref="materials" placeholder="Название материала"
+        data-options='{{ materials|map(attribute="name")|list|tojson|forceescape }}'></div>
+      <div class="grid" style="grid-template-columns:160px 1fr">
+        <div><label>Количество</label><input name="qty" inputmode="decimal" placeholder="—" id="mi-qty"></div>
+        <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
+      </div>
+      <button class="btn block" type="submit" id="mi-ok">Внести приход</button>
+      <button class="btn grey block" type="button" id="mi-close">Отмена</button>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  var sh=document.getElementById("mi-sheet");
+  function open(act,name,info){document.getElementById("mi-act").value=act;
+    document.getElementById("mi-t").textContent=act==="in"?"Приход материала":"Списать: "+name+(info?" · остаток "+info:"");
+    document.getElementById("mi-ok").textContent=act==="in"?"Внести приход":"Списать";
+    var n=document.getElementById("mi-name");n.value=name||"";document.getElementById("mi-name-wrap").hidden=act!=="in";
+    sh.hidden=false;requestAnimationFrame(function(){sh.classList.add("open");});
+    setTimeout(function(){(act==="in"?n:document.getElementById("mi-qty")).focus();},200);}
+  function close(){sh.classList.remove("open");setTimeout(function(){sh.hidden=true;},220);}
+  document.getElementById("mi-open").addEventListener("click",function(){open("in");});
+  document.querySelectorAll(".mw-open").forEach(function(b){b.addEventListener("click",function(){open("writeoff",b.dataset.name,b.dataset.qty+" "+b.dataset.unit);});});
+  document.getElementById("mi-close").addEventListener("click",close);
+  sh.addEventListener("click",function(e){if(e.target===sh)close();});
+})();
+</script>
+{% endif %}
+
+{% else %}
+<div class="card flush">
+  {% if moves %}
+  <table>
+    <tr><th class="hide-m">Дата</th><th>Операция</th><th>Заказчик</th><th>Модель</th><th class="num">Пар</th></tr>
+    {% for m in moves %}
+    <tr>
+      <td class="small hide-m">{{ m.created_at|dt }}</td>
+      <td><span class="tag mv-{{ 'in' if m.kind=='in' else ('out' if m.kind=='repair' else 'writeoff') }}">{{ WH_KINDS[m.kind] }}</span>{% if m.quality=='brak' %} <span class="st brak">Брак</span>{% endif %}
+        {% if m.kind!='in' %}<div class="small">{{ m.reason }}{% if m.note %} · {{ m.note }}{% endif %}</div>{% endif %}</td>
+      <td class="nw">{{ m.customer }}</td><td>{{ m.model }}</td>
+      <td class="num"><b class="{{ 'diff-zero' if m.qty > 0 else 'diff-neg' }}">{{ '+' if m.qty > 0 }}{{ m.qty|q }}</b></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">Движений обуви пока не было.</div>
+  {% endif %}
+</div>
+{% if mat_moves %}
+<h3>Материалы</h3>
+<div class="card flush">
+  <table>
+    <tr><th class="hide-m">Дата</th><th>Операция</th><th>Материал</th><th class="num">Кол-во</th></tr>
+    {% for m in mat_moves %}
+    <tr>
+      <td class="small hide-m">{{ m.created_at|dt }}</td>
+      <td>{{ {'in':'Приход','out':'На производство','writeoff':'Списание'}.get(m.kind, m.kind) }}<div class="small">{{ m.reason or '' }}{% if m.note %} · {{ m.note }}{% endif %}</div></td>
+      <td><b>{{ m.name }}</b></td>
+      <td class="num"><b class="{{ 'diff-zero' if m.qty > 0 else 'diff-neg' }}">{{ '+' if m.qty > 0 }}{{ m.qty|q }}</b> <span class="small">{{ m.unit or '' }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,15 @@
+{# Что положено: обувь и материалы — две таблицы. Нужны pair_items, mat_items, editable #}
+<div class="placed-sec" id="pairs-sec" {{ 'hidden' if not pair_items }}>
+  <h4 class="placed-sub">Обувь</h4>
+  <table class="placed-table">
+    <thead><tr><th>Заказчик</th><th>Модель</th><th>Операции</th><th class="num">Пар</th>{% if editable %}<th></th>{% endif %}</tr></thead>
+    <tbody id="pairs-list">{% for i in pair_items %}{% include "_placed_pair.html" with context %}{% endfor %}</tbody>
+  </table>
+</div>
+<div class="placed-sec" id="mats-sec" {{ 'hidden' if not mat_items }}>
+  <h4 class="placed-sub">Материалы</h4>
+  <table class="placed-table">
+    <thead><tr><th>Материал</th><th class="num">Кол-во</th>{% if editable %}<th></th>{% endif %}</tr></thead>
+    <tbody id="mats-list">{% for i in mat_items %}{% include "_placed_mat.html" with context %}{% endfor %}</tbody>
+  </table>
+</div>

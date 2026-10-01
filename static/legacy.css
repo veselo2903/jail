@@ -1,0 +1,267 @@
+/* Правила 0.21, которых нет в общем стиле */
+.subtabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 16px}
+.subtabs a{padding:7px 13px;border-radius:999px;background:var(--surface);
+  border:1px solid var(--line);color:var(--muted);font-size:14px;font-weight:600}
+.subtabs a:hover{border-color:var(--line2);color:var(--ink)}
+.subtabs a.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.subtabs a .n{opacity:.75;margin-left:3px}
+.tag.draft{background:#eef1f5;color:var(--muted)}
+.tag.sent{background:var(--blue-bg);color:var(--blue-d)}
+.tag.rq-draft{background:#eef1f5;color:var(--muted)}
+@media(max-width:720px){.side a.nav.desk-only{display:none}}
+/* Выбор операций: кнопки-переключатели, отмеченные — синие */
+.ops-pick{display:flex;flex-wrap:wrap;gap:8px}
+.op-opt{position:relative;margin:0;cursor:pointer}
+.op-opt input{position:absolute;opacity:0;pointer-events:none}
+.op-opt span{display:flex;align-items:center;min-height:44px;padding:8px 14px;border-radius:10px;
+  background:#fff;border:1px solid var(--line2);color:var(--muted);font-size:14px;font-weight:650;
+  transition:background .15s var(--ease-out),color .15s var(--ease-out),border-color .15s var(--ease-out)}
+.op-opt:hover span{border-color:var(--blue);color:var(--ink)}
+.op-opt input:checked + span{background:var(--blue);border-color:var(--blue);color:#fff}
+.op-opt input:focus-visible + span{outline:3px solid var(--blue-bg)}
+.ops-tags{display:inline-flex;flex-wrap:wrap;gap:4px;vertical-align:middle}
+.op-tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;
+  line-height:1.5;background:var(--st-blue);color:var(--st-blue-t)}
+td .ops-tags{margin-left:0}
+/* Что положено в передачу */
+.placed-card{border:2px solid var(--blue);background:#fff}
+.placed-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.placed-head h3{margin:0}
+.placed-count{min-width:34px;height:34px;padding:0 10px;border-radius:999px;background:var(--blue);color:#fff;
+  font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center}
+.placed-table td{font-size:15.5px;color:var(--ink)}
+.placed-qty{font-size:17px !important;font-weight:800;white-space:nowrap}
+.placed-ops{margin-top:4px}
+.placed-note{margin-top:4px;font-size:13.5px;color:var(--ink);background:var(--surface2);border-radius:8px;padding:4px 8px;display:inline-block}
+.mat-tag{background:var(--st-grey);color:var(--st-grey-t);vertical-align:middle}
+.placed-row.fresh td{animation:fresh 1.6s var(--ease-out)}
+@keyframes fresh{0%{background:#d6f0df}100%{background:transparent}}
+/* Статусы передач */
+.tag.rq-accepted{background:var(--green-bg);color:#0f7a3d}
+.tag.rq-shipped{background:var(--blue-bg);color:var(--blue-d)}
+/* Приёмка передач на производстве */
+.recv-card{scroll-margin-top:16px}
+.recv-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+.recv-table td{vertical-align:middle}
+.recv-table input.recv-in{text-align:right;font-size:17px;font-weight:700}
+.recv-table tr.ok input.recv-in{border-color:var(--green);background:#f3fbf6}
+.recv-table tr.bad input.recv-in{border-color:var(--warn);background:#fff6f6}
+.recv-mark{font-size:16px;white-space:nowrap}
+/* Выезжающая плашка подтверждения */
+.sheet-back{position:fixed;inset:0;z-index:50;background:rgba(15,28,51,0);display:flex;align-items:flex-end;justify-content:center;
+  transition:background .22s var(--ease-out)}
+.sheet-back.open{background:rgba(15,28,51,.45)}
+.sheet{width:100%;max-width:520px;background:#fff;border-radius:18px 18px 0 0;padding:22px 20px calc(20px + env(safe-area-inset-bottom));
+  box-shadow:0 -10px 40px rgba(16,32,43,.25);transform:translateY(100%);transition:transform .26s var(--ease-out)}
+.sheet-back.open .sheet{transform:none}
+@media(min-width:721px){.sheet-back{align-items:center}.sheet{border-radius:18px;transform:translateY(24px) scale(.97);opacity:0;
+  transition:transform .22s var(--ease-out),opacity .22s var(--ease-out)}.sheet-back.open .sheet{opacity:1}}
+.sheet-t{font-size:20px;font-weight:800;color:var(--warn);margin-bottom:6px}
+.sheet-sub{color:var(--muted);font-size:14px;margin-bottom:14px}
+.sheet-list{border:1px solid var(--line);border-radius:12px;margin-bottom:16px;max-height:40vh;overflow:auto}
+.sheet-row{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:14.5px}
+.sheet-row:last-child{border-bottom:none}
+.sheet-row span:first-child{font-weight:700}
+/* Склад производства: виды движений */
+.tag.mv-in,.tag.mv-add{background:var(--green-bg);color:#0f7a3d}
+.tag.mv-out{background:var(--blue-bg);color:var(--blue-d)}
+.tag.mv-writeoff{background:var(--warn-bg);color:var(--warn)}
+.tag.mv-inv{background:var(--st-grey);color:var(--st-grey-t)}
+.stock-q{margin-bottom:12px;font-size:16px;font-weight:400;text-transform:none;letter-spacing:0;background:#fff}
+.doc-pairs{display:inline-block;margin-left:6px;padding:3px 10px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);font-size:13px;font-weight:700;color:var(--ink)}
+.st.brak{background:var(--warn-bg);color:var(--warn)}
+/* Телефон: широкие таблицы листаются вбок внутри карточки, второстепенные столбцы скрыты */
+@media(max-width:720px){
+  .card table,details table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+  .card table th,details table th{white-space:nowrap}
+  .hide-m{display:none}
+  .two{grid-template-columns:1fr !important}
+}
+/* Поле с подсказками */
+.combo-wrap{position:relative}
+.combo-list{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;background:#fff;border:1px solid var(--line2);
+  border-radius:12px;box-shadow:var(--shadow);max-height:280px;overflow:auto;padding:4px}
+.combo-opt{padding:10px 12px;border-radius:8px;cursor:pointer;font-size:15px}
+.combo-opt:hover,.combo-opt.on{background:var(--blue-bg);color:var(--blue-d)}
+.combo-new{padding:10px 12px;font-size:14px;color:var(--muted);border-top:1px solid var(--line)}
+.combo-new b{color:var(--ink)}
+/* Окно подтверждения поверх всего */
+.ui-modal{z-index:80}
+.ui-modal .sheet-t{color:var(--ink)}
+.seg.seg-wrap{display:flex;flex-wrap:wrap;width:100%}
+.seg.seg-wrap .seg-opt{flex:1 1 auto;min-width:0}
+.seg.seg-wrap .seg-opt span{text-align:center;white-space:nowrap}
+.recv-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+@media(max-width:560px){.recv-actions{grid-template-columns:1fr}}
+.mat-grid{display:grid;gap:12px;grid-template-columns:1fr 100px 220px}
+.grid.mat-grid:not(:has(> div:nth-child(3))){grid-template-columns:140px 1fr}
+@media(max-width:560px){.mat-grid{grid-template-columns:1fr 1fr}.mat-grid>div:first-child{grid-column:auto}}
+/* Выбор партии при передаче на склад */
+.lot-pick{display:grid;gap:8px}
+.lot-opt{position:relative;margin:0;cursor:pointer}
+.lot-opt input{position:absolute;opacity:0;pointer-events:none}
+.lot-card{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.6fr) auto;gap:12px;align-items:center;
+  padding:12px 14px;border:1px solid var(--line2);border-radius:12px;background:#fff;
+  transition:border-color .15s var(--ease-out),background .15s var(--ease-out)}
+.lot-cm{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.lot-q{font-size:17px;font-weight:800;white-space:nowrap}
+.lot-opt:hover .lot-card{border-color:var(--blue)}
+.lot-opt input:checked + .lot-card{border:2px solid var(--blue);background:var(--blue-bg);padding:11px 13px}
+.op-tag.lot-none{background:var(--st-grey);color:var(--st-grey-t)}
+@media(max-width:560px){.lot-card{grid-template-columns:1fr auto}.lot-card .ops-tags{grid-column:1/-1;order:3}}
+.lot-opt{font-size:15px;color:var(--ink);font-weight:400}
+.lot-card{color:var(--ink)}
+.lot-card b{font-weight:700}
+.lot-q{color:var(--ink)}
+
+/* Переключатель «Наш / Зона» у склада */
+.wh-switch{margin:0 0 16px}
+.wh-switch a.seg-opt{text-decoration:none}
+.wh-switch .seg-opt span{padding:9px 26px;font-size:15px}
+.wh-switch .seg-opt span.on{background:#fff;color:var(--blue-d);box-shadow:var(--shadow-sm)}
+
+/* ===== 0.94 · Спокойный интерфейс (правила из разбора: цвет только для внимания, без лишнего движения) ===== */
+/* Содержимое всегда начинается сверху, а не «плавает» по центру в зависимости от количества */
+.wrap{justify-content:flex-start}
+/* Разделы открывают десятки раз в день — без анимации появления и перехода */
+.wrap > .card,.wrap > details,.wrap > .two,.wrap > .three,.wrap > h3{animation:none}
+@view-transition{navigation:none}
+/* Статусы — спокойные серые. Цвет несёт смысл: синий — ваш ход, красный — проблема */
+.tag.draft,.tag.sent,.tag.accepted,.tag.rq-draft,.tag.rq-open,.tag.rq-progress,.tag.rq-done,
+.tag.rq-shipped,.tag.rq-accepted,.tag.rq-completed{background:#eef1f5;color:#4f5e6f}
+.tag.you{background:var(--blue);color:#fff}
+.st.zagotovka,.st.upakovka,.st.gotovoe{background:#eef1f5;color:#4f5e6f}
+.op-tag{background:#eef1f5;color:#3f4d5d}
+/* Без декоративного свечения и толстых рамок */
+.side a.nav.on{box-shadow:none}
+.placed-card{border:1px solid var(--line)}
+.placed-count{background:var(--surface2);color:var(--ink);border:1px solid var(--line)}
+/* Одна главная кнопка — один цвет во всей программе */
+.btn.green{--btn-bg:var(--blue);--btn-border:var(--blue);--btn-hover-bg:var(--blue-d);--btn-hover-border:var(--blue-d)}
+/* «Всё сделано» — спокойно, не тянет взгляд */
+.hero.ok .big{color:#a7b5c4}
+/* Подробности по нажатию */
+.meta-more{margin-top:8px;box-shadow:none;border:0;background:none}
+.meta-more>summary{font-size:13.5px;color:var(--muted);cursor:pointer;padding:0;list-style:none}
+.meta-more>summary::-webkit-details-marker{display:none}
+.meta-more>summary::after{content:none}
+.meta-more>summary:hover{color:var(--ink)}
+/* Кнопка после нажатия ждёт ответа сервера */
+.btn.busy{opacity:.6;cursor:progress}
+/* Сообщения внизу экрана */
+.toasts{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:8px;
+  align-items:center;pointer-events:none;width:min(560px,calc(100vw - 32px))}
+.toast{pointer-events:auto;cursor:pointer;background:#1b2a3d;color:#fff;border-radius:12px;padding:12px 18px;font-weight:600;
+  font-size:15px;box-shadow:0 10px 30px rgba(16,32,43,.25);opacity:0;transform:translateY(8px) scale(.98);
+  transition:opacity .2s var(--ease-out),transform .2s var(--ease-out)}
+.toast.in{opacity:1;transform:none}
+.toast.out{opacity:0;transform:translateY(4px);transition-duration:.15s}
+/* «Добавить» — второстепенная кнопка; главная (синяя) на экране одна — «Отправить», «Принять» */
+.btn.add{--btn-bg:#fff;--btn-color:var(--blue-d);--btn-border:#b9cff3;--btn-hover-bg:var(--blue-bg);--btn-hover-color:var(--blue-d);--btn-hover-border:var(--blue)}
+.meta-more{margin:6px 0 0;padding:0}
+.meta-more[open]>summary{margin-bottom:2px}
+
+/* Приёмка: итог расхождения до нажатия «Принять» */
+.recv-total{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--warn-bg);font-size:15px}
+/* Флажок рядом с кнопкой */
+label.chk{display:inline-flex;align-items:center;gap:8px;font-weight:600;color:var(--ink);cursor:pointer}
+label.chk input{width:18px;height:18px;accent-color:var(--blue)}
+
+/* Разделы «Заявки» производства и склада */
+.pr-tabs{display:flex;gap:6px;background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:5px;margin-bottom:14px}
+.pr-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 16px;border-radius:10px;
+  font-size:16px;font-weight:700;color:var(--muted);transition:background .15s var(--ease-out),color .15s var(--ease-out)}
+.pr-tab:hover{color:var(--ink)}
+.pr-tab.on{background:#fff;color:var(--ink);box-shadow:var(--shadow-sm)}
+.pr-n{min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:var(--blue);color:#fff;font-size:12.5px;font-weight:800;
+  display:inline-flex;align-items:center;justify-content:center}
+.pr-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.pr-create{display:flex;align-items:center;gap:14px}
+.pr-sub{margin:0}
+.pr-table tr.pr-act td{background:#f1f6ff}
+.pr-table tr.pr-act:hover td{background:#e7f0ff}
+
+/* «+ Создать» в подсказках и подсветка незаполненных полей */
+.combo-create{padding:10px 12px;font-size:14.5px;font-weight:700;color:var(--blue-d);border-top:1px solid var(--line);cursor:pointer;border-radius:0 0 8px 8px}
+.combo-create:hover{background:var(--blue-bg)}
+input.invalid,.seg.invalid,.ops-pick.invalid{border-color:var(--warn)!important;box-shadow:0 0 0 3px var(--warn-bg)}
+.seg.invalid,.ops-pick.invalid{border:1px solid var(--warn);border-radius:11px;padding:4px}
+.page-h{font-size:24px;font-weight:800;margin:4px 0 16px}
+.placed-count{width:auto;gap:4px}
+
+/* Переключатель «Наш / Зона» — по размеру слов, а не на всю ширину */
+.wh-switch{align-self:flex-start}
+/* Что положено: обувь и материалы отдельно, операции — обычным текстом */
+.placed-sec+.placed-sec{margin-top:14px}
+.placed-sub{font-size:17px;font-weight:750;color:var(--ink);margin:14px 0 6px}
+.placed-sec+.placed-sec{border-top:1px solid var(--line);padding-top:4px}
+.ops-text{font-size:14px;color:#3f4d5d;line-height:1.45;max-width:360px}
+/* Красная кнопка удаления */
+.btn.red{--btn-bg:var(--warn);--btn-color:#fff;--btn-border:var(--warn);--btn-hover-bg:#b93636;--btn-hover-color:#fff;--btn-hover-border:#b93636}
+/* Приёмка производства */
+.acc-h{margin:0 0 10px;font-size:19px}
+.acc-table td{vertical-align:middle}
+.acc-table input.recv-in{text-align:right;font-size:17px;font-weight:700;max-width:130px;margin-left:auto}
+.acc-table tr.ok input.recv-in{border-color:var(--green);background:#f3fbf6}
+.acc-table tr.bad input.recv-in{border-color:var(--warn);background:#fff6f6}
+.acc-btn{margin-top:12px;font-size:17px;padding:15px}
+#acc-err{margin-top:10px}
+
+/* Имена заказчиков — всегда в одну строку */
+td.nw{white-space:nowrap}
+/* Формы добавления (общие для передачи склада и заявки производства) */
+.addwrap{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--surface2)}
+.addhead{font-weight:700;margin-bottom:10px}
+.form-err{color:var(--warn);background:var(--warn-bg);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600}
+.form-ok{color:#0f7a3d;background:var(--green-bg);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:700}
+.btn.busy{pointer-events:none}
+
+/* Операции коротко: «4 операции», список по клику / при наведении */
+.ops-n{display:inline-block;position:relative;margin:0;border:0;box-shadow:none;background:none;vertical-align:middle}
+.ops-n>summary{list-style:none;display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:999px;background:#eef1f5;
+  color:#3f4d5d;font-size:13px;font-weight:650;cursor:pointer;white-space:nowrap}
+.ops-n>summary::-webkit-details-marker{display:none}
+.ops-n>summary::after{content:"▾";font-size:10px;opacity:.6;position:static;transform:none;margin:0}
+.ops-n[open]>summary{background:var(--blue-bg);color:var(--blue-d)}
+.ops-list{position:absolute;z-index:20;top:calc(100% + 6px);left:0;min-width:200px;background:#fff;border:1px solid var(--line2);
+  border-radius:10px;box-shadow:0 10px 30px rgba(16,32,43,.15);padding:8px 12px;font-size:14px;line-height:1.7;color:var(--ink)}
+.ops-one{font-size:14px;color:#3f4d5d}
+
+/* Разбор расхождений */
+.disc-body{padding:0 4px 14px}
+.disc-t{margin-bottom:8px}
+.disc-t td,.disc-t th{padding:9px 8px}
+.disc-in{max-width:110px;text-align:right;margin-left:auto}
+.disc-comment{background:var(--warn-bg);color:var(--ink);border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:14px}
+.disc-answer{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.disc-no{display:flex;gap:8px;flex:1;min-width:280px}
+.disc-no input{flex:1}
+.disc-edit{box-shadow:none;border:0;background:none;margin:8px 0}
+.disc-edit>summary{font-size:14px;color:var(--blue-d);cursor:pointer;padding:0}
+
+.lot-ops{display:flex;align-items:center}
+.lot-pick.invalid{border:1px solid var(--warn);border-radius:12px;padding:4px}
+/* 1.08 Расхождения */
+.tag.d-you{background:var(--blue);color:#fff}
+.tag.d-wait{background:#eef1f5;color:#4f5e6f}
+.tag.d-done{background:var(--green-bg);color:var(--green)}
+.dl{padding:12px 0;border-top:1px solid var(--line)}
+.dl:first-child{border-top:0}
+.dl-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
+.dl-what{display:flex;gap:14px;font-size:16px;font-weight:600}
+.dl-c,.dl-m{white-space:nowrap}
+.dl-m{color:var(--muted,#5b6878);font-weight:500}
+.dl-nums{font-size:14px;color:var(--muted,#5b6878)}
+.dl-res{margin-top:6px;font-size:15px;font-weight:600;color:var(--blue-d)}
+.dl-hint{font-size:14px;color:var(--muted,#5b6878);margin:2px 0 6px}
+.dl-seg{margin-top:10px;max-width:560px}
+.dl-pick.invalid .dl-seg,.dl-pick.invalid .dl-split{border:1px solid var(--warn);border-radius:11px;box-shadow:0 0 0 3px var(--warn-bg)}
+.dl-split{display:flex;gap:12px;margin-top:10px;max-width:560px;padding:4px}
+.dl-split-f{flex:1;font-size:13px;color:var(--muted,#5b6878)}
+.dl-split-f input{max-width:none;text-align:left;margin-top:4px}
+.linkbtn{background:none;border:0;padding:0;margin-top:8px;color:var(--blue-d);font-size:13px;cursor:pointer}
+.linkbtn:hover{text-decoration:underline}
+.disc-two{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.disc-var{background:#f7f9fb;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.disc-var form{margin-top:10px}
+.disc-no-box{background:#f7f9fb;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}

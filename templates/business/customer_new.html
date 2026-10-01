@@ -1,6 +1,0 @@
-{% extends 'base.html' %}{% from 'business/_macros.html' import hidden,field with context %}
-{% block title %}Новый заказчик — jail{% endblock %}
-{% block content %}<div class="biz-page"><header class="biz-header"><h2>Новый заказчик</h2><a class="btn grey" data-discard-draft href="{{ url_for('business.customers') }}">← К заказчикам</a></header>
-<form method="post" class="card biz-form">{{ hidden('customer_create') }}{{ field('name','Название фирмы или имя заказчика') }}
-<details class="biz-subspoiler"><summary>Контакт и примечание — необязательно</summary><div class="biz-detail biz-grid">{{ field('contact','Телефон или контактное лицо','','text',false) }}{{ field('note','Примечание','','text',false) }}</div></details>
-<button class="btn green block">Сохранить заказчика</button></form></div>{% endblock %}

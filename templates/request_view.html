@@ -1,0 +1,300 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Передача' if r.created_role=='sklad' else 'Заявка' }} №{{ r.id }} — jail{% endblock %}
+{% block content %}
+
+{% set need_items = items|selectattr('line_kind','equalto','need')|list %}
+{% set pair_items = items|selectattr('line_kind','equalto','pair')|list %}
+{% set mat_items = items|selectattr('line_kind','equalto','material')|list %}
+{% macro opsline(i) %}{% set os = ops_by_item.get(i.id, []) %}{% if os %}{{ os|ops_short }}{% elif i.status %}{{ LINE_STATUSES[i.status] }}{% else %}<span class="small">—</span>{% endif %}{% endmacro %}
+
+{% if can_collect %}
+<h2 class="page-h">Передача №{{ r.id }}</h2>
+{% else %}
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <div>
+      <b>{{ 'Передача' if r.created_role=='sklad' else 'Заявка' }} №{{ r.id }}</b>
+      <span class="tag rq-{{ r.status }}">{{ PROD_REQ_STATUS[r.status] if role=='proizv' and r.created_role=='proizv' else (SKLAD_REQ_STATUS.get(r.status, REQ_STATUS[r.status]) if role=='sklad' else REQ_STATUS[r.status]) }}</span>
+      {% if r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}
+    </div>
+    <a class="small" href="{{ url_for('documents', tab=('mat' if role=='proizv' else 'need')) }}">к списку</a>
+  </div>
+  <div class="small" style="margin-top:6px">{{ 'Склад → Производство' if r.created_role=='sklad' else 'Производство → Склад' }}</div>
+  {% if r.note %}<div class="small">Примечание производства: {{ r.note }}</div>{% endif %}
+  <details class="meta-more">
+    <summary>Подробнее</summary>
+    {% if linked %}<div class="small" style="margin-top:6px">Собрано по заявкам: {% for x in linked %}<a href="{{ url_for('request_view', req_id=x.id) }}">№{{ x.id }}</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+  {% if r.transfer_id %}<div class="small" style="margin-top:6px">Собрана в <a href="{{ url_for('request_view', req_id=r.transfer_id) }}">передачу №{{ r.transfer_id }}</a></div>{% endif %}
+  <div class="small" style="margin-top:6px">
+    Создана {{ r.created_at|dt }}{% if r.sent_at %} · отправлена {{ r.sent_at|dt }}{% endif %}{% if r.taken_at %} · собирает с {{ r.taken_at|dt }}{% endif %}{% if r.done_at %} · отправлено {{ r.done_at|dt }}{% endif %}
+    </div>
+  </details>
+</div>
+{% endif %}
+
+{# ==================== КЛАДОВЩИК СОБИРАЕТ (пошаговый мастер) ==================== #}
+{% if can_collect %}
+
+{% if has_reqs %}
+<div class="steps">
+  <a href="{{ url_for('docs_collect') }}" class="step done"><span class="dot">1</span>Сборка</a>
+  <a href="{{ url_for('request_view', req_id=r.id, step=2) }}" class="step on"><span class="dot">2</span>Что положил и отправка</a>
+</div>
+{% endif %}
+
+{# --- ШАГ 2: что положил + примечание + отправка --- #}
+{% if step==2 %}
+{% set placed_n = pair_items|length + mat_items|length %}
+<div class="card placed-card">
+  <div class="placed-head">
+    <h3>Положено в передачу</h3>
+    <span class="placed-count" id="placed-count" data-n="{{ placed_n }}"><span id="placed-pairs">{{ pairs_total|q }}</span> пар</span>
+  </div>
+  {% set editable = true %}
+  {% include "_placed_tables.html" %}
+</div>
+
+<div class="card">
+  <div class="addwrap">
+    <div class="addhead">Добавить обувь</div>
+    <form method="post" action="{{ url_for('request_pair_add', req_id=r.id) }}" class="grid ajax-add" id="pair-form">
+      <div class="grid" style="grid-template-columns:1fr 1fr">
+        <div><label>Заказчик</label><input class="combo" name="customer_name" data-ref="customers" placeholder="—" data-options='{{ customers|map(attribute="name")|list|tojson|forceescape }}'></div>
+        <div><label>Модель</label><input class="combo" name="model_name" data-ref="models" placeholder="—" data-options='{{ models|map(attribute="name")|list|tojson|forceescape }}'></div>
+      </div>
+      <div>
+        <label>Операции</label>
+        <div class="ops-pick" data-field="ops">
+          {% for o in operations %}<label class="op-opt"><input type="checkbox" name="ops" value="{{ o.id }}"><span>{{ o.name }}</span></label>{% endfor %}
+        </div>
+      </div>
+      <div class="grid" style="grid-template-columns:140px 1fr">
+        <div><label>Пары</label><input name="pairs" type="number" min="1" inputmode="numeric" placeholder="—"></div>
+        <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
+      </div>
+      <div class="form-err" hidden></div>
+      <div class="form-ok" hidden></div>
+      <button class="btn add" type="submit">+ Добавить обувь</button>
+    </form>
+  </div>
+
+  <div class="addwrap" style="margin-top:14px">
+    <div class="addhead">Добавить материалы</div>
+    <form method="post" action="{{ url_for('request_material_add', req_id=r.id) }}" class="grid ajax-add" id="mat-form">
+      <div class="grid mat-grid">
+<div><label>Материал</label><input class="combo" name="item" data-ref="materials" placeholder="Название материала" data-options='{{ materials|map(attribute="name")|list|tojson|forceescape }}' data-units='{{ dict(materials|map("list")|list)|tojson|forceescape }}'></div>
+        <div><label>Кол-во</label><input name="qty" inputmode="decimal" placeholder="—"></div>
+        <div><label>Ед. изм.</label><div class="seg seg-wrap" data-field="unit">{% for u in units %}<label class="seg-opt"><input type="radio" name="unit" value="{{ u }}"><span>{{ u }}</span></label>{% endfor %}</div></div>
+      </div>
+      <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
+      <div class="form-err" hidden></div>
+      <div class="form-ok" hidden></div>
+      <button class="btn add" type="submit">+ Добавить материал</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <form method="post" action="{{ url_for('request_ship', req_id=r.id) }}" id="ship-form">
+    <div style="margin-bottom:12px">
+      <label>Примечание ко всей заявке</label>
+      <input name="ship_note" value="{{ r.ship_note or '' }}" placeholder="Необязательно">
+    </div>
+    <button class="btn green block" type="submit" style="font-size:17px;padding:15px">Отправить на производство →</button>
+  </form>
+</div>
+{% if has_reqs %}<a class="btn grey" href="{{ url_for('docs_collect') }}">← Назад к сборке</a>{% endif %}
+{% endif %}
+
+<style>
+.steps{display:flex;gap:8px;margin-bottom:16px}
+.steps .step{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;
+  padding:11px 8px;border-radius:11px;background:var(--surface);border:1px solid var(--line);
+  color:var(--muted);font-weight:650;font-size:14px;text-decoration:none}
+.steps .step .dot{width:22px;height:22px;border-radius:50%;background:#e6ebf2;color:var(--muted);
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex:none}
+.steps .step.on{background:var(--blue-bg);border-color:#bcd6fb;color:var(--blue-d)}
+.steps .step.on .dot{background:var(--blue);color:#fff}
+.steps .step.done .dot{background:var(--green);color:#fff}
+.steps .step.done{color:var(--ink)}
+@media(max-width:560px){.steps .step{font-size:12px;padding:9px 4px}}
+.pick th,.pick td{padding:9px 8px}
+.chkbox{width:22px;height:22px;accent-color:var(--green);cursor:pointer}
+.addwrap{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--surface2)}
+.addhead{font-weight:700;margin-bottom:10px}
+.lbl-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.lbl-row label{margin:0}
+.lbl-row .addlink{font-size:14px;font-weight:650;padding:6px 12px;border-radius:8px;background:var(--blue-bg);color:var(--blue-d)}
+.addbox{display:none;gap:8px;margin-top:8px}.addbox.open{display:flex}.addbox input{flex:1}
+.mat-grid{grid-template-columns:1fr 100px 220px}
+@media(max-width:560px){.mat-grid{grid-template-columns:1fr 1fr}.mat-grid>div:first-child{grid-column:1/-1}}
+.form-err{color:var(--warn);background:var(--warn-bg);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600}
+.btn.busy{opacity:.6;pointer-events:none}
+.form-ok{color:#0f7a3d;background:var(--green-bg);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:700}
+</style>
+<script>
+(function(){
+  var kinds={customer:"customers",model:"models"};
+  document.querySelectorAll('.chkbox').forEach(function(cb){cb.addEventListener('change',function(){var inp=document.querySelector('[name="'+cb.dataset.col+'"]');if(cb.checked&&inp&&!inp.value&&cb.dataset.qty){inp.value=cb.dataset.qty;}});});
+  document.querySelectorAll(".addlink").forEach(function(a){a.addEventListener("click",function(e){e.preventDefault();var b=document.getElementById("add-"+a.dataset.add);b.classList.toggle("open");if(b.classList.contains("open"))document.getElementById("new-"+a.dataset.add).focus();});});
+  document.querySelectorAll("[data-cancel]").forEach(function(b){b.addEventListener("click",function(){document.getElementById("add-"+b.dataset.cancel).classList.remove("open");});});
+  document.querySelectorAll("[data-save]").forEach(function(b){b.addEventListener("click",function(){save(b.dataset.save);});});
+  document.querySelectorAll(".addbox input").forEach(function(inp){inp.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();save(inp.id.replace("new-",""));}});});
+  function refreshCount(n,pairs){
+    var pc=document.getElementById("placed-count");pc.dataset.n=n;
+    if(pairs!==undefined)document.getElementById("placed-pairs").textContent=pairs;
+    document.getElementById("pairs-sec").hidden=!document.querySelector("#pairs-list tr");
+    document.getElementById("mats-sec").hidden=!document.querySelector("#mats-list tr");
+  }
+  // подсветка незаполненных полей
+  function mark(f,names){
+    f.querySelectorAll(".invalid").forEach(function(x){x.classList.remove("invalid");});
+    (names||[]).forEach(function(n){
+      var el=f.querySelector('[data-field="'+n+'"]')||f.querySelector('[name="'+n+'"]');
+      if(el)el.classList.add("invalid");
+    });
+    var first=f.querySelector(".invalid");
+    if(first){var i=first.matches("input")?first:first.querySelector("input");if(i&&i.type!=="checkbox"&&i.type!=="radio")i.focus();}
+  }
+  function missing(f){
+    var m=[];
+    f.querySelectorAll("[name=customer_name],[name=model_name],[name=item],[name=qty],[name=pairs]").forEach(function(i){if(!i.value.trim())m.push(i.name);});
+    if(f.querySelector("[data-field=ops]")&&!f.querySelector("[name=ops]:checked"))m.push("ops");
+    if(f.querySelector("[data-field=unit]")&&!f.querySelector("[name=unit]:checked"))m.push("unit");
+    return m;
+  }
+  document.addEventListener("input",function(e){var c=e.target.closest(".invalid")||(e.target.classList.contains("invalid")&&e.target);if(c)c.classList.remove("invalid");});
+  document.addEventListener("change",function(e){var c=e.target.closest(".invalid");if(c)c.classList.remove("invalid");});
+  function bindDel(root){
+    root.querySelectorAll("form.ajax-del").forEach(function(f){f.addEventListener("submit",function(e){
+      e.preventDefault();var tr=f.closest("tr");
+      fetch(f.action,{method:"POST",headers:{"X-Requested-With":"fetch"}}).then(function(r){return r.json();})
+        .then(function(d){if(d.ok){tr.remove();refreshCount(d.count,d.pairs);}}).catch(function(){f.submit();});
+    });});
+  }
+  bindDel(document);
+  document.querySelectorAll("form.ajax-add").forEach(function(f){f.addEventListener("submit",function(e){
+    e.preventDefault();
+    var btn=f.querySelector("button[type=submit]"),err=f.querySelector(".form-err");
+    err.hidden=true;
+    var miss=missing(f);
+    if(miss.length){mark(f,miss);err.textContent="Заполните выделенные поля.";err.hidden=false;return;}
+    mark(f,[]);
+    btn.classList.add("busy");
+    fetch(f.action,{method:"POST",body:new FormData(f),headers:{"X-Requested-With":"fetch"}})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        btn.classList.remove("busy");
+        if(!d.ok){err.textContent=d.error||"Ошибка";err.hidden=false;mark(f,d.fields);return;}
+        var tb=document.getElementById(f.id==="mat-form"?"mats-list":"pairs-list");
+        tb.insertAdjacentHTML("beforeend",d.html);
+        var row=tb.lastElementChild;row.classList.add("fresh");bindDel(row);
+        refreshCount(d.count,d.pairs);
+        // после добавления форма очищается полностью
+        f.reset();
+        f.querySelectorAll("input[type=text],input:not([type]),input[type=number]").forEach(function(i){i.value="";i.blur();});
+        f.querySelectorAll(".combo-list").forEach(function(l){l.hidden=true;});
+        f.querySelectorAll("input[type=checkbox],input[type=radio]").forEach(function(c){c.checked=false;c.disabled=false;});
+
+        var ok=f.querySelector(".form-ok");ok.textContent="Добавлено: "+[].map.call(row.querySelectorAll("td b"),function(b){return b.textContent;}).join(" — ")+" · "+row.querySelector(".placed-qty").firstChild.textContent.trim()+" "+(row.querySelector(".placed-qty .small")||{textContent:""}).textContent;
+        ok.hidden=false;clearTimeout(ok._t);ok._t=setTimeout(function(){ok.hidden=true;},4000);
+        if(d.warn){err.textContent=d.warn;err.hidden=false;}
+      })
+      .catch(function(){btn.classList.remove("busy");f.submit();});
+  });});
+  var sf=document.getElementById("ship-form");
+  if(sf){sf.addEventListener("submit",function(e){
+    var n=+document.getElementById("placed-count").dataset.n;
+    if(sf.dataset.ok)return;
+    e.preventDefault();
+    if(!n){uiAlert("Сначала добавьте пары или материалы.");return;}
+    uiConfirm("Отправить передачу на производство?",{ok:"Отправить",sub:"Производство увидит её в «Приёмке»."})
+      .then(function(y){if(y){sf.dataset.ok=1;sf.submit();}});
+  });}
+  function save(k){var inp=document.getElementById("new-"+k);var name=inp.value.trim();if(!name){inp.focus();return;}var fd=new FormData();fd.append("name",name);
+    fetch("{{ url_for('index') }}refs/"+kinds[k]+"/quick_add",{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(d){if(!d.ok){uiAlert(d.error||"Ошибка");return;}var sel=document.getElementById("sel-"+k);var opt=sel.querySelector('option[value="'+d.id+'"]');if(!opt){opt=document.createElement("option");opt.value=d.id;opt.textContent=d.name;sel.appendChild(opt);}sel.value=d.id;inp.value="";document.getElementById("add-"+k).classList.remove("open");}).catch(function(){uiAlert("Не удалось добавить");});}
+})();
+</script>
+
+{# ==================== ПРОСМОТР (производство / отправлено) ==================== #}
+{% else %}
+{% if need_items %}
+<div class="card flush">
+  <table>
+    <tr><th>Что заказано</th><th class="num">Заказано</th><th class="num">Пришло</th><th class="num">Сейчас в передаче</th></tr>
+    {% for i in need_items %}
+    <tr>
+      <td>{{ i.item }}{% if i.urgent %} <span class="tag urgent">Срочно</span>{% endif %}{% if i.note %}<div class="small">{{ i.note }}</div>{% endif %}</td>
+      <td class="num">{{ i.qty|q if i.qty is not none else '—' }} <span class="small">{{ i.unit or '' }}</span></td>
+      <td class="num">{% if i.delivered %}<span class="{{ 'diff-neg' if i.qty and i.delivered < i.qty else 'diff-zero' }}">{{ i.delivered|q }}</span>{% elif r.status=='accepted' %}{{ i.qty|q }}{% else %}—{% endif %}</td>
+      <td class="num">{{ i.collected|q if i.collected is not none else '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if pair_items or mat_items %}
+<h3>Что положено в передачу</h3>
+<div class="card">
+  {% set editable = false %}
+  {% include "_placed_tables.html" %}
+</div>
+{% endif %}
+
+{% if r.ship_note %}<div class="card"><span class="small">Примечание к заявке:</span> {{ r.ship_note }}</div>{% endif %}
+
+{% if not items %}<div class="card"><div class="empty">{{ 'Добавьте, чего не хватает.' if can_edit else 'Позиций нет.' }}</div></div>{% endif %}
+{% endif %}
+
+{# ==================== ОТПРАВКА СКЛАДУ (производство, черновик) ==================== #}
+{% if r.status=='draft' and role=='proizv' %}
+  {% if items %}
+  <form method="post" action="{{ url_for('request_submit', req_id=r.id) }}">
+    <button class="btn green block" type="submit" style="font-size:17px;padding:15px">Отправить складу →</button>
+  </form>
+  {% else %}
+    {% endif %}
+{% endif %}
+
+{# Добавление строки (производство, черновик) #}
+{% if can_edit %}
+<div class="card">
+  <h3>Добавить позицию</h3>
+  <form method="post" action="{{ url_for('request_item_add', req_id=r.id) }}" class="grid">
+    <div><label>Чего не хватает</label><input class="combo" name="item" placeholder="впишите материал" data-options='{{ materials|map(attribute="name")|list|tojson|forceescape }}' data-units='{{ dict(materials|map("list")|list)|tojson|forceescape }}'></div>
+    <div class="grid mat-grid">
+      <div><label>Кол-во</label><input name="qty" inputmode="decimal" placeholder="—"></div>
+      <div><label>Ед. изм.</label><div class="seg seg-wrap">{% for u in units %}<label class="seg-opt"><input type="radio" name="unit" value="{{ u }}" {{ 'checked' if loop.first }}><span>{{ u }}</span></label>{% endfor %}</div></div>
+    </div>
+    <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
+    <button class="btn add" type="submit">+ Добавить позицию</button>
+  </form>
+</div>
+{% endif %}
+
+
+{% if r.status=='shipped' and role=='proizv' and not r.transfer_id %}
+<a class="btn green block" href="{{ url_for('acceptance') }}#req-{{ r.id }}" style="margin-bottom:12px">Принять</a>
+{% endif %}
+
+{% if not can_collect %}
+<a class="btn block" href="{{ url_for('documents') }}" style="margin-bottom:12px">← К заявкам</a>
+{% endif %}
+
+{% if partial and role in ['sklad','proizv'] %}
+<form method="post" action="{{ url_for('request_close_rest', req_id=r.id) }}" style="margin-top:12px"
+      data-confirm="Остатка не будет?" data-ok="Закрыть заказ" data-sub="Заказ закроется с тем, что уже пришло. Остаток собирать не будут.">
+  <button class="btn grey" type="submit">Остатка не будет</button>
+</form>
+{% endif %}
+
+{% if can_delete %}
+<form method="post" action="{{ url_for('request_delete', req_id=r.id) }}" style="margin-top:18px"
+      data-confirm="Удалить {{ 'передачу' if r.created_role=='sklad' else 'заявку' }} №{{ r.id }}?" data-ok="Удалить" data-danger
+      data-sub="{% if r.created_role=='sklad' %}Всё, что в неё положено, будет удалено.{% if linked %} Заказы производства снова будут ждать сборки.{% endif %}{% else %}Заявка исчезнет у склада и производства. Отменить это нельзя.{% endif %}">
+  <button class="btn red" type="submit">Удалить</button>
+</form>
+{% endif %}
+
+{% endblock %}

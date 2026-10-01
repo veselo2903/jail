@@ -1,8 +1,10 @@
 __pycache__/
 *.pyc
 .venv/
-*.db
-*.db-shm
-*.db-wal
-*.sqlite3
+jail.db*
+backups/
+_next/
+_applying/
+_upload.zip
+*.log
 .env

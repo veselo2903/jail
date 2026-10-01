@@ -1,0 +1,175 @@
+{# Расхождения. Нужны items, tab, parts, needs, side_name #}
+{% macro url_of(x) %}{{ url_for('request_view', req_id=x.id) if x.t=='req' else url_for('doc_view', doc_id=x.id) }}{% endmacro %}
+
+{# итог строки текстом: «Не догрузили» или «Не догрузили 1 · Нашлось 1» #}
+{% macro res_text(v, short) %}{% set nz = [] %}{% for k, name in parts %}{% if (v.get(k) or 0) > 0 %}{% set _ = nz.append((name, v.get(k))) %}{% endif %}{% endfor %}{% if nz|length == 1 %}{{ nz[0][0] }}{% else %}{% for n, q in nz %}{{ n }} {{ q|q }}{% if not loop.last %} · {% endif %}{% endfor %}{% endif %}{% endmacro %}
+
+{% macro line_head(ln) %}
+<div class="dl-head">
+  <div class="dl-what">{% if ln.customer %}<span class="dl-c">{{ ln.customer }}</span><span class="dl-m">{{ ln.model }}</span>{% else %}<span class="dl-c">{{ ln.title }}</span>{% endif %}</div>
+  <div class="dl-nums">отправлено {{ ln.sent|q }} · принято {{ ln.got|q }} · <b class="diff-neg">не хватает {{ ln.short|q }} {{ ln.unit }}</b></div>
+</div>
+{% if ln.note %}<div class="small dl-note">{{ ln.note }}</div>{% endif %}
+{% endmacro %}
+
+{# строки для показа: живые строки, а для закрытых — снимок из итогов #}
+{% macro view_lines(x, p) %}
+  {% if x.lines %}{% for ln in x.lines %}{% set v = p.get(ln.id|string, {}) %}
+    <div class="dl">{{ line_head(ln) }}{% if v %}<div class="dl-res">{{ res_text(v, ln.short) }}</div>{% endif %}</div>
+  {% endfor %}{% else %}{% for sid, v in p.items() %}{% if v._t %}
+    <div class="dl">{{ line_head(dict(customer=v._c, model=v._m, title=v._t, sent=v._sent, got=v._got, short=v._short, unit=v._u)) }}<div class="dl-res">{{ res_text(v, v._short) }}</div></div>
+  {% endif %}{% endfor %}{% endif %}
+{% endmacro %}
+
+{# выбор итога: три кнопки на строку + «Разделить по количеству» #}
+{% macro pick_lines(x, pre, p) %}
+  {% for ln in x.lines %}{% set v = p.get(ln.id|string, {}) %}
+  {% set nz = [] %}{% for k, n in parts %}{% if (v.get(k) or 0) > 0 %}{% set _ = nz.append(k) %}{% endif %}{% endfor %}
+  {% set split = nz|length > 1 %}
+  <div class="dl dl-pick" data-short="{{ ln.short }}">
+    {{ line_head(ln) }}
+    <input type="hidden" name="split_{{ ln.id }}" value="{{ '1' if split else '' }}" class="dl-split-flag">
+    <div class="seg seg-wrap dl-seg" {{ 'hidden' if split }}>{% for k, name in parts %}<label class="seg-opt"><input type="radio" name="pick_{{ ln.id }}" value="{{ k }}" {{ 'checked' if (not split and nz and nz[0]==k) }}><span>{{ name }}</span></label>{% endfor %}</div>
+    <div class="dl-split" {{ '' if split else 'hidden' }}>
+      {% for k, name in parts %}<label class="dl-split-f"><span>{{ name }}</span><input class="disc-in" name="{{ k }}_{{ ln.id }}" inputmode="decimal" placeholder="0" value="{{ (v.get(k)|q) if split and v.get(k) else '' }}"></label>{% endfor %}
+    </div>
+    <button type="button" class="linkbtn dl-split-t">{{ 'Одним итогом' if split else 'Разделить по количеству' }}</button>
+  </div>
+  {% endfor %}
+{% endmacro %}
+
+{% macro propose_form(x, action, btn, p, extra='') %}
+<form method="post" action="{{ action }}" class="disc-form" novalidate {{ extra|safe }}>
+  <input type="hidden" name="back" value="{{ request.full_path }}">
+  {{ pick_lines(x, '', p) }}
+  <input name="note" placeholder="Комментарий (необязательно)" value="{{ x.case.note if x.case and x.case.note and x.state!='closed' else '' }}" style="margin-top:12px">
+  <div class="form-err" hidden style="margin-top:10px"></div>
+  <button class="btn" type="submit" style="margin-top:12px">{{ btn }}</button>
+</form>
+{% endmacro %}
+
+{% for x in items %}
+{% set mine = needs(x, role) %}
+{% set other = (x.receiver if x.case and x.case.proposed_by==x.sender else x.sender) if x.case else None %}
+<details class="disc-row" {{ 'open' if mine or items|length==1 }}>
+  <summary><span><b>Передача №{{ x.id }}</b> · {{ x.direction }} <span class="small">· принята {{ x.at|dt }}</span></span>
+    {% if x.state=='closed' %}<span class="tag d-done">Закрыто</span>
+    {% elif mine %}<span class="tag d-you">{{ 'Решите спор' if role=='director' else 'Ждёт вашего ответа' }}</span>
+    {% elif x.state=='dispute' %}<span class="tag d-wait">У директора</span>
+    {% elif x.state=='proposed' %}<span class="tag d-wait">Ждёт ответа: {{ side_name[other] }}</span>
+    {% else %}<span class="tag d-wait">Ждёт разбора</span>{% endif %}</summary>
+  <div class="disc-body">
+
+  {% if x.state=='closed' %}
+    {% if x.case %}{{ view_lines(x, x.prop) }}{% if x.case.note %}<div class="placed-note">{{ x.case.note }}</div>{% endif %}
+    {% else %}{{ view_lines(x, {}) }}<div class="small">{{ x.legacy.resolution }}{% if x.legacy.note %} · {{ x.legacy.note }}{% endif %}</div>{% endif %}
+
+  {% elif x.state=='open' %}
+    {% if role in [x.sender, x.receiver] %}
+      <div class="dl-hint">Выберите, что стало с недостающим, — другая сторона подтвердит.</div>
+      {{ propose_form(x, url_for('disc_propose', ref_type=x.t, ref_id=x.id), 'Отправить на согласие', {}) }}
+    {% else %}{{ view_lines(x, {}) }}{% endif %}
+
+  {% elif x.state=='proposed' %}
+    <div class="dl-hint">Предложил{{ 'о' if x.case.proposed_by=='proizv' else '' }} {{ side_name[x.case.proposed_by] }}:</div>
+    {{ view_lines(x, x.prop) }}
+    {% if x.case.note %}<div class="placed-note">{{ x.case.note }}</div>{% endif %}
+    {% if mine %}
+      <div class="disc-answer">
+        <form method="post" action="{{ url_for('disc_answer', ref_type=x.t, ref_id=x.id) }}" data-confirm="Согласиться?" data-ok="Согласен" data-sub="Остатки исправятся по этим итогам, расхождение закроется.">
+          <input type="hidden" name="back" value="{{ request.full_path }}"><input type="hidden" name="action" value="agree">
+          <button class="btn green" type="submit">Согласен</button>
+        </form>
+        <button class="btn grey" type="button" data-open="no-{{ x.t }}-{{ x.id }}">Не согласен</button>
+      </div>
+      <div class="disc-no-box" id="no-{{ x.t }}-{{ x.id }}" hidden>
+        <form method="post" action="{{ url_for('disc_answer', ref_type=x.t, ref_id=x.id) }}" class="disc-form disc-no-form" novalidate data-optional="1">
+          <input type="hidden" name="back" value="{{ request.full_path }}"><input type="hidden" name="action" value="disagree">
+          <label>Почему не согласны</label>
+          <input name="comment" class="dl-reason" placeholder="Например: недогруза не было, всё отгрузили">
+          <div class="dl-hint" style="margin-top:12px">Ваш вариант (необязательно) — директор увидит оба:</div>
+          {{ pick_lines(x, '', {}) }}
+          <div class="form-err" hidden style="margin-top:10px"></div>
+          <button class="btn" type="submit" style="margin-top:12px">Передать директору</button>
+        </form>
+      </div>
+    {% elif role == x.case.proposed_by %}
+      <details class="disc-edit"><summary>Изменить</summary>{{ propose_form(x, url_for('disc_propose', ref_type=x.t, ref_id=x.id), 'Отправить заново', x.prop) }}</details>
+    {% endif %}
+
+  {% elif x.state=='dispute' %}
+    <div class="disc-two">
+      <div class="disc-var">
+        <div class="dl-hint">Вариант: {{ side_name[x.case.proposed_by] }}</div>
+        {{ view_lines(x, x.prop) }}
+        {% if x.case.note %}<div class="placed-note">{{ x.case.note }}</div>{% endif %}
+        {% if role=='director' %}
+        <form method="post" action="{{ url_for('disc_decide', ref_type=x.t, ref_id=x.id) }}" data-confirm="Принять этот вариант?" data-ok="Принять" data-sub="Остатки исправятся, расхождение закроется.">
+          <input type="hidden" name="back" value="{{ request.full_path }}"><input type="hidden" name="which" value="proposal">
+          <button class="btn" type="submit">Принять вариант: {{ side_name[x.case.proposed_by] }}</button>
+        </form>{% endif %}
+      </div>
+      <div class="disc-var">
+        {% set cb = x.receiver if x.case.proposed_by==x.sender else x.sender %}
+        <div class="dl-hint">Не согласен: {{ side_name[cb] }}</div>
+        <div class="disc-comment">{{ x.case.comment }}</div>
+        {% if x.counter %}
+          {{ view_lines(x, x.counter) }}
+          {% if role=='director' %}
+          <form method="post" action="{{ url_for('disc_decide', ref_type=x.t, ref_id=x.id) }}" data-confirm="Принять этот вариант?" data-ok="Принять" data-sub="Остатки исправятся, расхождение закроется.">
+            <input type="hidden" name="back" value="{{ request.full_path }}"><input type="hidden" name="which" value="counter">
+            <button class="btn" type="submit">Принять вариант: {{ side_name[cb] }}</button>
+          </form>{% endif %}
+        {% else %}<div class="small">Свой вариант не предложил{{ 'о' if cb=='proizv' else '' }}.</div>{% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if role=='director' and x.state!='closed' %}
+    <details class="disc-edit"><summary>Расписать своё решение</summary>
+      {{ propose_form(x, url_for('disc_decide', ref_type=x.t, ref_id=x.id), 'Закрыть моим решением', {}, 'data-confirm="Закрыть расхождение вашим решением?" data-ok="Закрыть" data-sub="Остатки исправятся по этим итогам."') }}
+    </details>
+  {% endif %}
+  <a class="small" href="{{ url_of(x) }}">Открыть передачу</a>
+  </div>
+</details>
+{% endfor %}
+
+<script>
+(function(){
+  function num(v){v=(v||"").replace(",",".").replace(/\s/g,"");return v===""?0:parseFloat(v)||0;}
+  // «Разделить по количеству» ↔ «Одним итогом»
+  document.querySelectorAll(".dl-pick").forEach(function(d){
+    var t=d.querySelector(".dl-split-t"),flag=d.querySelector(".dl-split-flag"),seg=d.querySelector(".dl-seg"),sp=d.querySelector(".dl-split");
+    t.addEventListener("click",function(){
+      var on=flag.value!=="1";flag.value=on?"1":"";seg.hidden=on;sp.hidden=!on;t.textContent=on?"Одним итогом":"Разделить по количеству";
+      d.classList.remove("invalid");
+      if(on){var i=sp.querySelector("input");if(i)i.focus();}
+    });
+    seg.addEventListener("change",function(){d.classList.remove("invalid");});
+  });
+  document.querySelectorAll("[data-open]").forEach(function(b){b.addEventListener("click",function(){
+    var box=document.getElementById(b.dataset.open);box.hidden=!box.hidden;if(!box.hidden)box.querySelector(".dl-reason").focus();});});
+  // проверка перед отправкой
+  document.querySelectorAll("form.disc-form").forEach(function(f){
+    f.addEventListener("submit",function(e){
+      var err=f.querySelector(".form-err"),msg="",bad=0,any=0,opt=f.dataset.optional==="1";
+      err.hidden=true;
+      var rs=f.querySelector(".dl-reason");
+      if(rs){rs.classList.remove("invalid");if(!rs.value.trim()){rs.classList.add("invalid");msg="Напишите, почему не согласны.";}}
+      var rows=f.querySelectorAll(".dl-pick");
+      rows.forEach(function(d){
+        if(d.querySelector(".dl-split-flag").value==="1"||d.querySelector("input[type=radio]:checked"))any++;});
+      rows.forEach(function(d){
+        d.classList.remove("invalid");
+        if(opt&&!any)return;
+        if(d.querySelector(".dl-split-flag").value==="1"){
+          var s=0;d.querySelectorAll(".disc-in").forEach(function(i){s+=num(i.value);});
+          if(Math.abs(s-parseFloat(d.dataset.short))>1e-6){d.classList.add("invalid");bad++;msg=msg||"Сумма по строке должна быть равна недостаче.";}
+        }else if(!d.querySelector("input[type=radio]:checked")){d.classList.add("invalid");bad++;msg=msg||"Выберите итог по каждой строке.";}
+      });
+      if(msg){e.preventDefault();e.stopImmediatePropagation();err.textContent=msg;err.hidden=false;}
+    },true);
+  });
+})();
+</script>

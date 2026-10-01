@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} — склад производства{% endblock %}
+{% block content %}
+{% include "_wh_switch.html" %}
+
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <b>{{ title }}</b>
+    <a class="small" href="{{ url_for('stock', tab=('pairs' if is_pair else 'mats')) }}">к складу</a>
+  </div>
+</div>
+
+<div class="card hero {{ 'warn' if qty < 0 }}">
+  <div class="big">{{ qty|q }}</div>
+  <div class="lbl">{{ unit }} на производстве</div>
+</div>
+
+{% if can_edit %}
+<div class="card">
+  <div class="seg" style="margin-bottom:14px">
+    <label class="seg-opt"><input type="radio" name="actsel" value="writeoff" checked><span>Списать</span></label>
+    <label class="seg-opt"><input type="radio" name="actsel" value="inv"><span>Инвентаризация</span></label>
+  </div>
+  <form method="post" action="{{ url_for('stock_act') }}" class="grid act-form" data-act="writeoff">
+    <input type="hidden" name="k" value="{{ k }}"><input type="hidden" name="act" value="writeoff">
+    <div class="grid">
+      <div style="max-width:200px"><label>Сколько списать</label><input name="qty" inputmode="decimal" placeholder="0"></div>
+      <div><label>Причина</label><div class="seg seg-wrap">{% for r in reasons %}<label class="seg-opt"><input type="radio" name="reason" value="{{ r }}" {{ 'checked' if loop.first }}><span>{{ r }}</span></label>{% endfor %}</div></div>
+    </div>
+    <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
+    <button class="btn block" type="submit">Списать</button>
+  </form>
+  <form method="post" action="{{ url_for('stock_act') }}" class="grid act-form" data-act="inv" hidden>
+    <input type="hidden" name="k" value="{{ k }}"><input type="hidden" name="act" value="inv">
+    <div style="max-width:220px"><label>Сколько есть по факту</label><input name="fact" inputmode="decimal" placeholder="{{ qty|q }}"></div>
+    <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
+    <button class="btn block" type="submit">Сохранить пересчёт</button>
+  </form>
+</div>
+{% endif %}
+
+<details open>
+  <summary>История движений ({{ moves|length }})</summary>
+  <div class="body" style="padding:0 6px">
+    <table>
+      {% for m in moves %}
+      <tr>
+        <td class="small" style="white-space:nowrap">{{ m.created_at|dt }}</td>
+        <td><span class="tag mv-{{ m.kind }}">{{ STOCK_KINDS[m.kind] }}</span>
+          {% if m.kind=='writeoff' %}<span class="small">{{ m.reason }}</span>{% endif %}
+          {% if m.ref_type=='req' %}<a class="small" href="{{ url_for('request_view', req_id=m.ref_id) }}">№{{ m.ref_id }}</a>
+          {% elif m.ref_type=='doc' %}<a class="small" href="{{ url_for('doc_view', doc_id=m.ref_id) }}">№{{ m.ref_id }}</a>{% endif %}
+          {% if m.note %}<div class="small">{{ m.note }}</div>{% endif %}</td>
+        <td class="num"><b class="{{ 'diff-zero' if m.qty > 0 else 'diff-neg' }}">{{ '+' if m.qty > 0 }}{{ m.qty|q }}</b></td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</details>
+<a class="btn grey block" href="{{ url_for('stock', tab=('pairs' if is_pair else 'mats')) }}">← К складу</a>
+
+<script>
+document.querySelectorAll("[name=actsel]").forEach(function(r){r.addEventListener("change",function(){
+  document.querySelectorAll(".act-form").forEach(function(f){f.hidden=f.dataset.act!==r.value;});
+});});
+</script>
+{% endblock %}

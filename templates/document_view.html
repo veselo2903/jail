@@ -1,74 +1,200 @@
 {% extends "base.html" %}
-{% block title %}Передача №{{ d.id }} — jail{% endblock %}
+{% block title %}Документ №{{ d.id }} — jail{% endblock %}
 {% block content %}
 
 <div class="card">
-  <div class="row row-between">
+  <div class="row" style="justify-content:space-between">
     <div>
       <b>Передача №{{ d.id }}</b>
-      <span class="tag {{ d.status }}">{{ STATUS_LABEL[d.status] }}</span>
+      <span class="tag {{ d.status }}">{{ PROD_DOC_STATUS[d.status] if role=='proizv' and d.kind=='RETURN' else STATUS_LABEL[d.status] }}</span>
+      <span class="doc-pairs">{% if has_recv %}принято {{ recv }} из {{ sent }} пар{% else %}{{ sent }} пар{% endif %}</span>
+      {% if has_recv and diff!=0 %}<span class="tag d">расхождение</span>{% endif %}
     </div>
-    <a class="btn grey" href="{{ url_for('supplies') }}">к списку</a>
+    <a class="small" href="{{ url_for('documents', tab=('shoes' if role=='proizv' else None)) }}">к списку</a>
   </div>
-  <div class="small mt-xs">{{ KINDS[d.kind][0] }}</div>
-  {% if d.note %}<div class="small">Примечание: {{ d.note }}</div>{% endif %}
-  <div class="small mt-xs">
-    Создан {{ d.created_at }}{% if d.sent_at %} · отправлен {{ d.sent_at }}{% endif %}{% if d.accepted_at %} · принят {{ d.accepted_at }}{% endif %}
-  </div>
+  <div class="small" style="margin-top:6px">{{ KINDS[d.kind][0] }}{% if d.sent_at %} · отправлена {{ d.sent_at|dt }}{% endif %}{% if d.accepted_at %} · принята {{ d.accepted_at|dt }}{% endif %}</div>
+  {% if d.note %}<div class="placed-note" style="margin-top:6px">{{ d.note }}</div>{% endif %}
 </div>
 
-{# ---- РЕЗУЛЬТАТ (крупно) ---- #}
-{% if has_recv %}
-<div class="card hero {{ 'ok' if diff==0 else 'warn' }}">
-  <div class="big">{{ recv }}</div>
-  <div class="lbl">пар принято из {{ sent }}{% if diff!=0 %} · расхождение {{ diff }}{% endif %}</div>
+{# ================= ЧЕРНОВИК (создатель) ================= #}
+{% if can_edit %}
+{% if lines %}
+<div class="card" style="padding:6px 12px">
+  <table>
+    <tr><th>Заказчик</th><th>Модель</th><th class="num">Пары</th><th></th></tr>
+    {% for l in lines %}
+    <tr>
+      <td class="nw">{{ l.customer }}</td>
+      <td>{{ l.model }}
+        {% set os = ops_by_item.get(l.id, []) or (l.lot|lot_ops) %}{% if os %} {{ os|ops_short }}{% elif l.status %}<span class="st {{ l.status }}">{{ LINE_STATUSES[l.status] }}</span>{% endif %}{% if l.note %}<div class="placed-note">{{ l.note }}</div>{% endif %}
+      </td>
+      <td class="num">{{ l.pairs_sent }}</td>
+      <td class="num">
+        <form method="post" action="{{ url_for('line_del', doc_id=d.id, line_id=l.id) }}">
+          <button class="btn grey sm" type="submit">удалить</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
 </div>
-{% else %}
-<div class="card hero">
-  <div class="big">{{ sent }}</div>
-  <div class="lbl">пар в передаче</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="{{ url_for('line_add', doc_id=d.id) }}" class="grid">
+    {% if d.kind=='RETURN' %}
+    {% if stock_choices %}
+    <div>
+      <label>Обувь с производства — выберите партию</label>
+      <div class="lot-pick">
+        {% for c in stock_choices %}
+        <label class="lot-opt">
+          <input type="radio" name="stock_key" value="{{ c.key }}" {{ 'checked' if loop.first }}>
+          <span class="lot-card">
+            <span class="lot-cm"><b>{{ c.customer }}</b><b>{{ c.model }}</b></span>
+            <span class="lot-ops">{% if c.ops %}{{ c.ops|ops_short }}{% else %}<span class="small">без операций</span>{% endif %}</span>
+            <span class="lot-q">{{ c.qty|q }} <span class="small">пар</span></span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="empty" style="padding:12px">На производстве нет обуви, которую можно отправить.</div>
+    {% endif %}
+    {% endif %}
+    <input type="hidden" name="status" value="gotovoe">
+    <div class="grid" style="grid-template-columns:140px 1fr">
+      <div><label>Пары</label><input name="pairs" type="number" min="1" inputmode="numeric" placeholder="0"></div>
+      <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
+    </div>
+    <div class="row" style="gap:10px">
+      <button class="btn add" type="submit" {{ "disabled" if d.kind=="RETURN" and not stock_choices }}>+ Добавить готовую обувь</button>
+      {% if d.kind=='RETURN' and stock_choices %}<button class="btn grey" type="button" id="brak-open">Добавить брак</button>{% endif %}
+    </div>
+  </form>
+</div>
+
+{% if d.kind=='RETURN' and stock_choices %}
+<div class="sheet-back" id="brak-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" style="max-width:640px">
+    <div class="sheet-t" style="color:var(--ink)">Добавить брак</div>
+    <div class="sheet-sub">Брак сразу списывается с остатка производства и уходит на склад этой передачей.</div>
+    <form method="post" action="{{ url_for('line_add', doc_id=d.id) }}" class="grid" id="brak-form" novalidate>
+      <input type="hidden" name="status" value="brak">
+      <div class="lot-pick brak-pick">
+        {% for c in stock_choices %}
+        <label class="lot-opt">
+          <input type="radio" name="stock_key" value="{{ c.key }}">
+          <span class="lot-card">
+            <span class="lot-cm"><b>{{ c.customer }}</b><b>{{ c.model }}</b></span>
+            <span class="lot-ops">{% if c.ops %}{{ c.ops|ops_short }}{% else %}<span class="small">без операций</span>{% endif %}</span>
+            <span class="lot-q">{{ c.qty|q }} <span class="small">пар</span></span>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+      <div class="grid" style="grid-template-columns:140px 1fr">
+        <div><label>Пар брака</label><input name="pairs" type="number" min="1" inputmode="numeric" placeholder="—"></div>
+        <div><label>Причина брака</label><input name="note" placeholder="Обязательно: что не так"></div>
+      </div>
+      <div class="form-err" hidden></div>
+      <button class="btn block" type="submit">Добавить брак</button>
+      <button class="btn grey block" type="button" id="brak-close">Отмена</button>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  var sh=document.getElementById("brak-sheet"),f=document.getElementById("brak-form");
+  function open(){sh.hidden=false;requestAnimationFrame(function(){sh.classList.add("open");});}
+  function close(){sh.classList.remove("open");setTimeout(function(){sh.hidden=true;},220);}
+  document.getElementById("brak-open").addEventListener("click",open);
+  document.getElementById("brak-close").addEventListener("click",close);
+  sh.addEventListener("click",function(e){if(e.target===sh)close();});
+  f.addEventListener("input",function(e){e.target.classList.remove("invalid");var p=e.target.closest(".invalid");if(p)p.classList.remove("invalid");});
+  f.addEventListener("change",function(e){var p=e.target.closest(".invalid");if(p)p.classList.remove("invalid");});
+  f.addEventListener("submit",function(e){
+    var bad=[],err=f.querySelector(".form-err");
+    if(!f.querySelector("[name=stock_key]:checked"))bad.push(f.querySelector(".brak-pick"));
+    ["pairs","note"].forEach(function(n){var i=f.querySelector("[name="+n+"]");if(!i.value.trim())bad.push(i);});
+    if(bad.length){e.preventDefault();e.stopImmediatePropagation();bad.forEach(function(x){x.classList.add("invalid");});
+      err.textContent="Выберите обувь, укажите количество и причину брака.";err.hidden=false;}
+  },true);
+})();
+</script>
+{% endif %}
+
+{% if can_send %}
+<div class="card">
+  <form method="post" action="{{ url_for('doc_send', doc_id=d.id) }}">
+    <div style="margin-bottom:12px">
+      <label>Примечание ко всей передаче</label>
+      <input name="note" value="{{ d.note or '' }}" placeholder="Необязательно">
+    </div>
+    <button class="btn green block" type="submit" style="font-size:16px;padding:14px">{{ 'Отправить на склад →' if d.kind=='RETURN' else 'Отправить на производство →' }}</button>
+  </form>
 </div>
 {% endif %}
 
 {# ================= ПРИЁМКА (приёмщик) ================= #}
-{% if can_accept %}
+{% elif can_accept %}
 <div class="card">
-  <h3>{{ 'Дополнить получение обуви' if d.status=='accepted' else 'Приёмка' }}</h3>
-  <p class="small">Проверьте построчно. Поле «принято» уже заполнено — исправьте, если пришло другое количество.</p>
-  <form method="post" action="{{ url_for('doc_accept', doc_id=d.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <h3 style="margin-top:0">Приёмка</h3>
+  <form method="post" action="{{ url_for('doc_accept', doc_id=d.id) }}">
     <table>
-      <tr><th>Заказчик — модель</th><th class="num">Отдано</th><th class="num">Получено всего</th><th>Пояснение</th></tr>
+      <tr><th>Заказчик</th><th>Модель</th><th class="num">Отдано</th><th class="num">Принято</th><th>Расхождение</th></tr>
       {% for l in lines %}
       <tr>
-        <td>{{ l.customer }} — {{ l.model }}
-          {% if l.status %}<span class="st {{ l.status }}">{{ LINE_STATUSES[l.status] }}</span>{% endif %}
+        <td class="nw">{{ l.customer }}</td>
+        <td>{{ l.model }}
+          {% set os = ops_by_item.get(l.id, []) or (l.lot|lot_ops) %}{% if os %} {{ os|ops_short }}{% elif l.status %}<span class="st {{ l.status }}">{{ LINE_STATUSES[l.status] }}</span>{% endif %}{% if l.note %}<div class="placed-note">{{ l.note }}</div>{% endif %}
         </td>
         <td class="num">{{ l.pairs_sent }}</td>
-        <td class="num acc-recv-cell">
-          <input name="recv_{{ l.id }}" type="number" min="0" inputmode="numeric" value="{{ l.pairs_sent }}">
+        <td class="num" style="width:110px">
+          <input class="ret-in" data-sent="{{ l.pairs_sent }}" name="recv_{{ l.id }}" type="number" min="0" inputmode="numeric" value="" placeholder="—">
+          <div class="ret-mark small"></div>
         </td>
-        <td class="acc-note-cell">
+        <td style="min-width:160px">
           <input name="note_{{ l.id }}" placeholder="причина, если есть">
         </td>
       </tr>
       {% endfor %}
     </table>
-    <button class="btn green block mt-md" type="submit">{{ 'Записать общее полученное количество' if d.status=='accepted' else 'Подтвердить приёмку' }}</button>
+    <div class="recv-total" id="ret-total" hidden></div>
+    <button class="btn green block" type="submit" style="margin-top:12px">Подтвердить приёмку</button>
   </form>
+<script>
+(function(){   // разница по строке и итог — видны до подтверждения
+  var ins=document.querySelectorAll(".ret-in"),tot=document.getElementById("ret-total");
+  var af=ins.length?ins[0].form:null;
+  if(af)af.addEventListener("submit",function(e){   // без пересчёта принять нельзя: каждая строка вписывается
+    var empty=[].filter.call(ins,function(i){return i.value.trim()==="";});
+    if(empty.length){e.preventDefault();e.stopImmediatePropagation();empty.forEach(function(i){i.classList.add("invalid");});
+      empty[0].focus();uiAlert("Впишите, сколько пришло","Пересчитайте и впишите количество по каждой строке.");}
+  },true);
+  ins.forEach(function(i){i.addEventListener("input",function(){i.classList.remove("invalid");});});
+  function upd(){var s=0;ins.forEach(function(i){if(i.value.trim()===""){i.nextElementSibling.innerHTML="";return;}var d=(parseInt(i.value,10)||0)-parseInt(i.dataset.sent,10),m=i.nextElementSibling;
+      m.innerHTML=d?'<span class="diff-neg">'+(d>0?"+":"")+d+' пар</span>':"";s+=d;});
+    tot.hidden=!s;tot.innerHTML=s?'Расхождение: <b class="diff-neg">'+(s>0?"+":"")+s+' пар</b>':"";}
+  ins.forEach(function(i){i.addEventListener("change",upd);i.addEventListener("input",function(){i.nextElementSibling.innerHTML="";});});upd();
+})();
+</script>
 </div>
 
 {# ================= ПРОСМОТР (отправлен / принят) ================= #}
 {% else %}
-<div class="card flush">
+<div class="card" style="padding:6px 12px">
   <table>
     <tr>
-      <th>Заказчик — модель</th><th class="num">Отдано</th>
+      <th>Заказчик</th><th>Модель</th><th class="num">Отдано</th>
       {% if has_recv %}<th class="num">Принято</th><th class="num">Δ</th>{% endif %}
     </tr>
     {% for l in lines %}
     <tr>
-      <td>{{ l.customer }} — {{ l.model }}
-        {% if l.status %}<span class="st {{ l.status }}">{{ LINE_STATUSES[l.status] }}</span>{% endif %}
+      <td class="nw">{{ l.customer }}</td>
+      <td>{{ l.model }}
+        {% set os = ops_by_item.get(l.id, []) or (l.lot|lot_ops) %}{% if os %} {{ os|ops_short }}{% elif l.status %}<span class="st {{ l.status }}">{{ LINE_STATUSES[l.status] }}</span>{% endif %}{% if l.note %}<div class="placed-note">{{ l.note }}</div>{% endif %}
         {% if l.discrepancy_note %}<div class="small">{{ l.discrepancy_note }}</div>{% endif %}
       </td>
       <td class="num">{{ l.pairs_sent }}</td>
@@ -84,17 +210,18 @@
   </table>
 </div>
 {% if d.status=='sent' %}
-<div class="card small">Передача отправлена. Ожидает приёмки другой стороной.</div>
 {% endif %}
 {% endif %}
 
+{% if d.status!='draft' %}
+<a class="btn block" href="{{ url_for('documents') }}" style="margin-bottom:12px">← К заявкам</a>
+{% endif %}
+
 {% if can_delete %}
-<div class="card">
-  <form method="post" action="{{ url_for('doc_delete', doc_id=d.id) }}"
-        onsubmit="return confirm('Удалить передачу №{{ d.id }} безвозвратно?')"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="btn danger" type="submit">Удалить передачу</button>
-  </form>
-</div>
+<form method="post" action="{{ url_for('doc_delete', doc_id=d.id) }}"
+      data-confirm="{{ 'Отменить передачу?' if d.status=='draft' else 'Удалить передачу №%s безвозвратно?' % d.id }}" data-ok="{{ 'Отменить' if d.status=='draft' else 'Удалить' }}" data-danger>
+  <button class="btn danger" type="submit">{{ 'Отменить' if d.status=='draft' else 'Удалить передачу' }}</button>
+</form>
 {% endif %}
 
 {% endblock %}

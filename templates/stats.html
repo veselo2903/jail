@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Статистика — jail{% endblock %}
+{% block content %}
+
+{% macro delta(d, good_up=true, unit='%') %}{% if d is not none %}
+  {% set up = d > 0 %}{% set good = (up and good_up) or (not up and not good_up) %}
+  <span class="st-delta {{ 'flat' if d == 0 else ('good' if good else 'bad') }}">{{ '▲' if up else ('▼' if d < 0 else '•') }} {{ (d|abs)|q }}{{ unit }}</span>
+{% endif %}{% endmacro %}
+
+{% macro bars(items, key, max, color='var(--blue)', fmt='q') %}
+<div class="st-chart">
+  {% for b in items %}
+  <div class="st-col" title="{{ b.label }}: {{ b[key]|rub if fmt=='rub' else b[key]|q }}">
+    <div class="st-val">{% if items|length <= 16 and b[key] %}{{ b[key]|rub if fmt=='rub' else b[key]|q }}{% endif %}</div>
+    <div class="st-barwrap"><div class="st-b" style="height:{{ ((b[key]|abs) * 100 / max)|round(1) }}%;background:{{ color if b[key] >= 0 else 'var(--warn)' }}"></div></div>
+    <div class="st-lab">{% if items|length <= 16 or loop.index0 % ((items|length // 12) + 1) == 0 %}{{ b.label }}{% endif %}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+<div class="subtabs" style="justify-content:center">
+  {% for k, v in periods.items() %}<a href="{{ url_for('stats', p=k, tab=tab, g=group) }}" class="{{ 'active' if period==k }}">{{ v }}</a>{% endfor %}
+</div>
+
+<div class="subtabs">
+  <a href="{{ url_for('stats', p=period, tab='out', g=group) }}" class="{{ 'active' if tab=='out' }}">Выпуск</a>
+  <a href="{{ url_for('stats', p=period, tab='brak', g=group) }}" class="{{ 'active' if tab=='brak' }}">Брак</a>
+  {% if role=='director' %}<a href="{{ url_for('stats', p=period, tab='money', g=group) }}" class="{{ 'active' if tab=='money' }}">Деньги</a>{% endif %}
+</div>
+
+{% if tab=='out' %}
+<div class="card hero ok">
+  <div class="big">{{ ready|q }}</div>
+  <div class="lbl">готовых пар сделано и принято складом {{ delta(d_ready) }}</div>
+</div>
+<div class="two">
+  <div class="card mini-card"><div class="mini-n" style="color:var(--blue-d)">{{ avg|q }}</div><div class="mini-l">пар в среднем за день</div></div>
+  <div class="card mini-card"><div class="mini-n" style="color:var(--muted)">{{ p_ready|q if p_ready is not none else '—' }}</div><div class="mini-l">за прошлый такой же период</div></div>
+</div>
+<div class="card">
+  <div class="row" style="justify-content:space-between;margin-bottom:10px">
+    <b>Выпуск {{ 'по дням' if group=='day' else 'по неделям' }}</b>
+    <div class="seg">
+      <a class="seg-link {{ 'on' if group=='day' }}" href="{{ url_for('stats', p=period, tab=tab, g='day') }}">Дни</a>
+      <a class="seg-link {{ 'on' if group=='week' }}" href="{{ url_for('stats', p=period, tab=tab, g='week') }}">Недели</a>
+    </div>
+  </div>
+  {{ bars(out_bars, 'value', out_max, 'var(--green)') }}
+</div>
+
+{% elif tab=='brak' %}
+<div class="card hero {{ 'ok' if rate == 0 else 'warn' }}">
+  <div class="big">{{ rate|q }}%</div>
+  <div class="lbl">брака · {{ brak|q }} из {{ (ready + brak)|q }} пар {{ delta(d_rate, false, ' п.п.') }}</div>
+</div>
+<div class="card">
+  <div class="row" style="justify-content:space-between;margin-bottom:10px">
+    <b>Брак {{ 'по дням' if group=='day' else 'по неделям' }}, %</b>
+    <div class="seg">
+      <a class="seg-link {{ 'on' if group=='day' }}" href="{{ url_for('stats', p=period, tab=tab, g='day') }}">Дни</a>
+      <a class="seg-link {{ 'on' if group=='week' }}" href="{{ url_for('stats', p=period, tab=tab, g='week') }}">Недели</a>
+    </div>
+  </div>
+  {{ bars(out_bars, 'rate', rate_max, 'var(--warn)') }}
+</div>
+<div class="subtabs">
+  <a href="#b-models" class="st-tab active" data-t="b-models">По моделям</a>
+  <a href="#b-cust" class="st-tab" data-t="b-cust">По заказчикам</a>
+</div>
+<div class="card flush st-pane" id="b-models">
+  {% if brak_models %}
+  <table>
+    <tr><th>Заказчик</th><th>Модель</th><th class="num">Готово</th><th class="num">Брак</th><th class="num">Брак, %</th></tr>
+    {% for e in brak_models %}<tr><td class="nw">{{ e.customer }}</td><td>{{ e.model }}</td><td class="num">{{ e.ready|q }}</td>
+      <td class="num">{{ e.brak|q if e.brak else '—' }}</td><td class="num"><b class="{{ 'diff-neg' if e.rate else 'diff-zero' }}">{{ e.rate|q }}%</b></td></tr>{% endfor %}
+  </table>
+  {% else %}<div class="empty">За этот период ничего не принято.</div>{% endif %}
+</div>
+<div class="card flush st-pane" id="b-cust" hidden>
+  {% if brak_customers %}
+  <table>
+    <tr><th>Заказчик</th><th class="num">Готово</th><th class="num">Брак</th><th class="num">Брак, %</th></tr>
+    {% for e in brak_customers %}<tr><td class="nw">{{ e.customer }}</td><td class="num">{{ e.ready|q }}</td>
+      <td class="num">{{ e.brak|q if e.brak else '—' }}</td><td class="num"><b class="{{ 'diff-neg' if e.rate else 'diff-zero' }}">{{ e.rate|q }}%</b></td></tr>{% endfor %}
+  </table>
+  {% else %}<div class="empty">За этот период ничего не принято.</div>{% endif %}
+</div>
+
+{% else %}
+<div class="card hero {{ 'ok' if debt_now <= 0 }}">
+  <div class="big">{{ debt_now|rub }}</div>
+  <div class="lbl">долг производству сейчас</div>
+</div>
+<div class="two">
+  <div class="card mini-card"><div class="mini-n" style="color:var(--blue-d)">{{ accrued|rub }}</div><div class="mini-l">начислено за период {{ delta(d_accrued, false) }}</div></div>
+  <div class="card mini-card"><div class="mini-n" style="color:#0f7a3d">{{ paid|rub }}</div><div class="mini-l">оплачено за период</div></div>
+</div>
+<div class="card">
+  <b>Долг на конец недели</b>
+  <div style="margin-top:10px">{{ bars(weeks, 'debt', debt_max, 'var(--blue)', 'rub') }}</div>
+</div>
+<details>
+  <summary>По неделям: начислено и оплачено</summary>
+  <div class="body" style="padding:0 6px">
+  <table>
+    <tr><th>Неделя</th><th class="num">Начислено</th><th class="num">Оплачено</th><th class="num">Долг на конец</th></tr>
+    {% for w in weeks|reverse %}<tr><td>{{ w.label }}</td><td class="num">{{ w.accrued|rub }}</td><td class="num">{{ w.paid|rub }}</td><td class="num"><b>{{ w.debt|rub }}</b></td></tr>{% endfor %}
+  </table>
+  </div>
+</details>
+{% endif %}
+
+<style>
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+.two .card{margin-bottom:0}
+.mini-card{padding:18px 20px}
+.mini-n{font-size:30px;font-weight:900;line-height:1.1;font-variant-numeric:tabular-nums}
+.mini-l{color:var(--muted);font-size:14px;margin-top:4px}
+.st-delta{display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;font-size:13px;font-weight:700}
+.st-delta.good{background:var(--green-bg);color:#0f7a3d}
+.st-delta.bad{background:var(--warn-bg);color:var(--warn)}
+.st-delta.flat{background:var(--surface2);color:var(--muted)}
+.st-chart{display:flex;align-items:stretch;gap:4px;height:200px}
+.st-col{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center}
+.st-val{font-size:11px;font-weight:700;color:var(--ink);height:16px;white-space:nowrap}
+.st-barwrap{flex:1;width:100%;display:flex;align-items:flex-end;justify-content:center;border-bottom:1px solid var(--line)}
+.st-b{width:72%;max-width:38px;min-height:2px;border-radius:6px 6px 0 0}
+.st-lab{font-size:10.5px;color:var(--muted);height:16px;margin-top:4px;white-space:nowrap}
+.seg-link{display:block;padding:6px 14px;border-radius:8px;font-size:13.5px;font-weight:650;color:var(--muted);text-decoration:none}
+.seg-link.on{background:#fff;color:var(--blue-d);box-shadow:var(--shadow-sm)}
+</style>
+<script>
+document.querySelectorAll(".st-tab").forEach(function(a){a.addEventListener("click",function(e){e.preventDefault();
+  document.querySelectorAll(".st-tab").forEach(function(x){x.classList.toggle("active",x===a);});
+  document.querySelectorAll(".st-pane").forEach(function(p){p.hidden=p.id!==a.dataset.t;});});});
+</script>
+{% endblock %}

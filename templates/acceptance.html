@@ -2,17 +2,18 @@
 {% block title %}Приёмка — jail{% endblock %}
 {% block content %}
 
-<header class="biz-header"><h2>Приёмка переданной обуви</h2></header>
-{% if not pending and not done %}<p class="small">Передачи появятся здесь после отправки другой стороной. Материалы и задания партии доступны в разделе «Партии».</p>{% endif %}
-{% if pending %}<div class="card hero warn">
-  <div class="big">{{ pending|length }}</div>
+{% set n_wait = pending|length %}
+<div class="card hero {{ '' if n_wait else 'ok' }}">
+  <div class="big">{{ n_wait }}</div>
   <div class="lbl">
-    передач ждут приёмки · {{ total_pending_pairs }} пар
+    {% if n_wait %}{{ 'передача ждёт' if n_wait==1 else 'передач ждут' }} приёмки{% else %}всё принято{% endif %}
   </div>
 </div>
 
+{% if true %}
 <h3>Ждут приёмки</h3>
 <div class="card flush">
+{% if pending %}
 <table>
   <tr><th>№</th><th>Тип</th><th class="num">Пар</th><th>Отправлен</th><th></th></tr>
   {% for r in pending %}
@@ -20,18 +21,21 @@
     <td>{{ r.d.id }}</td>
     <td>{{ KIND_SHORT[r.d.kind] }}</td>
     <td class="num">{{ r.sent }}</td>
-    <td class="small">{{ r.d.sent_at or r.d.created_at }}</td>
+    <td class="small">{{ (r.d.sent_at or r.d.created_at)|dt }}</td>
     <td class="num"><span class="btn green sm">Принять</span></td>
   </tr>
   {% endfor %}
 </table>
+{% else %}
+<div class="empty">Новых документов на приёмку нет.</div>
+{% endif %}
 </div>
 {% endif %}
 
 {% if done %}
 <details>
   <summary>Недавно принятые ({{ done|length }})</summary>
-  <div class="body flush">
+  <div class="body" style="padding:0">
     <table>
       <tr><th>№</th><th>Тип</th><th class="num">Отдано → Принято</th><th>Расхождение</th><th>Принят</th></tr>
       {% for r in done %}
@@ -40,12 +44,13 @@
         <td>{{ KIND_SHORT[r.d.kind] }}</td>
         <td class="num">{{ r.sent }} → {{ r.recv }}</td>
         <td>{% if r.diff!=0 %}<span class="tag d">{{ r.diff }}</span>{% else %}<span class="diff-zero">0</span>{% endif %}</td>
-        <td class="small">{{ r.d.accepted_at }}</td>
+        <td class="small">{{ r.d.accepted_at|dt }}</td>
       </tr>
       {% endfor %}
     </table>
   </div>
 </details>
 {% endif %}
+
 
 {% endblock %}

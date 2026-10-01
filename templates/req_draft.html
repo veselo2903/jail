@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Заявка №{{ r.id }} — jail{% endblock %}
+{% block content %}
+{% set need_items = items|selectattr('line_kind','equalto','need')|list %}
+
+<h2 class="page-h">Заявка №{{ r.id }}</h2>
+
+<div class="card placed-card" id="items-card" {{ 'hidden' if not need_items }}>
+  <h4 class="placed-sub" style="margin-top:0">Материалы в заявке</h4>
+  <table class="placed-table">
+    <thead><tr><th>Материал</th><th class="num">Кол-во</th><th></th></tr></thead>
+    <tbody id="items-list">{% for i in need_items %}{% set editable = true %}{% include "_need_row.html" %}{% endfor %}</tbody>
+  </table>
+</div>
+
+<div class="card">
+  <div class="addwrap">
+    <div class="addhead">Добавить материал</div>
+    <form method="post" action="{{ url_for('request_item_add', req_id=r.id) }}" class="grid ajax-add" id="need-form" novalidate>
+      <div class="grid mat-grid">
+        <div><label>Материал</label><input class="combo" name="item" data-ref="materials" placeholder="Название материала"
+          data-options='{{ materials|map(attribute="name")|list|tojson|forceescape }}' data-units='{{ dict(materials|map("list")|list)|tojson|forceescape }}'></div>
+        <div><label>Кол-во</label><input name="qty" inputmode="decimal" placeholder="—"></div>
+        <div><label>Ед. изм.</label><div class="seg seg-wrap" data-field="unit">{% for u in units %}<label class="seg-opt"><input type="radio" name="unit" value="{{ u }}"><span>{{ u }}</span></label>{% endfor %}</div></div>
+      </div>
+      <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
+      <label class="chk"><input type="checkbox" name="urgent" value="1"><span>Срочно</span></label>
+      <div class="form-err" hidden></div>
+      <div class="form-ok" hidden></div>
+      <button class="btn add" type="submit">+ Добавить материал</button>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <form method="post" action="{{ url_for('request_submit', req_id=r.id) }}" id="submit-form">
+    <div style="margin-bottom:12px">
+      <label>Примечание к заявке</label>
+      <input name="note" value="{{ r.note or '' }}" placeholder="Необязательно">
+    </div>
+    <button class="btn block" type="submit" style="font-size:17px;padding:15px">Отправить складу →</button>
+  </form>
+</div>
+
+{% if can_delete %}
+<form method="post" action="{{ url_for('request_delete', req_id=r.id) }}" style="margin-top:18px"
+      data-confirm="Удалить заявку №{{ r.id }}?" data-ok="Удалить" data-danger data-sub="Заявка и всё, что в неё добавлено, будут удалены.">
+  <button class="btn red" type="submit">Удалить</button>
+</form>
+{% endif %}
+
+<script>
+(function(){
+  var f=document.getElementById("need-form"),card=document.getElementById("items-card"),list=document.getElementById("items-list");
+  function count(){card.hidden=!list.querySelector("tr");}
+  function bindDel(root){root.querySelectorAll("form.ajax-del").forEach(function(df){df.addEventListener("submit",function(e){
+    e.preventDefault();var tr=df.closest("tr");
+    fetch(df.action,{method:"POST",headers:{"X-Requested-With":"fetch"}}).then(function(r){return r.json();})
+      .then(function(d){if(d.ok){tr.remove();count();}}).catch(function(){df.submit();});});});}
+  bindDel(document);
+  function mark(names){
+    f.querySelectorAll(".invalid").forEach(function(x){x.classList.remove("invalid");});
+    (names||[]).forEach(function(n){var el=f.querySelector('[data-field="'+n+'"]')||f.querySelector('[name="'+n+'"]');if(el)el.classList.add("invalid");});
+    var first=f.querySelector("input.invalid");if(first)first.focus();
+  }
+  f.addEventListener("input",function(e){var c=e.target.closest(".invalid")||(e.target.classList.contains("invalid")&&e.target);if(c)c.classList.remove("invalid");});
+  f.addEventListener("change",function(e){var c=e.target.closest(".invalid");if(c)c.classList.remove("invalid");});
+  f.addEventListener("submit",function(e){
+    e.preventDefault();
+    var err=f.querySelector(".form-err"),btn=f.querySelector("button[type=submit]");err.hidden=true;
+    var miss=[];["item","qty"].forEach(function(n){if(!f.querySelector('[name="'+n+'"]').value.trim())miss.push(n);});
+    if(!f.querySelector("[name=unit]:checked"))miss.push("unit");
+    if(miss.length){mark(miss);err.textContent="Заполните выделенные поля.";err.hidden=false;return;}
+    mark([]);btn.classList.add("busy");
+    fetch(f.action,{method:"POST",body:new FormData(f),headers:{"X-Requested-With":"fetch"}})
+      .then(function(r){return r.json();}).then(function(d){
+        btn.classList.remove("busy");
+        if(!d.ok){err.textContent=d.error||"Ошибка";err.hidden=false;mark(d.fields);return;}
+        list.insertAdjacentHTML("beforeend",d.html);var row=list.lastElementChild;row.classList.add("fresh");bindDel(row);count();
+        f.querySelectorAll("input[type=text],input:not([type])").forEach(function(i){i.value="";});
+        f.querySelectorAll("input[type=checkbox],input[type=radio]").forEach(function(c){c.checked=false;c.disabled=false;});
+        var ok=f.querySelector(".form-ok");ok.textContent="Добавлено: "+row.querySelector("td b").textContent;ok.hidden=false;
+        clearTimeout(ok._t);ok._t=setTimeout(function(){ok.hidden=true;},4000);
+        setTimeout(function(){f.querySelector("[name=item]").focus();},0);
+      }).catch(function(){btn.classList.remove("busy");});
+  });
+  document.getElementById("submit-form").addEventListener("submit",function(e){
+    if(list.querySelector("tr"))return;
+    e.preventDefault();uiAlert("Сначала добавьте материалы в заявку.");
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Заявки — jail{% endblock %}
+{% block content %}
+
+<div class="pr-tabs">
+  <a href="{{ url_for('documents', tab='shoes') }}" class="pr-tab {{ 'on' if tab=='shoes' }}">{{ 'Готовая обувь с производства' if role=='director' else 'Отправка готовой обуви' }}{% if n_act_shoe %}<span class="pr-n">{{ n_act_shoe }}</span>{% endif %}</a>
+  <a href="{{ url_for('documents', tab='mat') }}" class="pr-tab {{ 'on' if tab=='mat' }}">{{ 'Материалы на производство' if role=='director' else 'Материалы' }}{% if n_act_mat %}<span class="pr-n">{{ n_act_mat }}</span>{% endif %}</a>
+</div>
+
+<div class="pr-bar">
+  {% if role!='proizv' %}<span></span>
+  {% elif tab=='mat' %}
+  <form method="post" action="{{ url_for('request_new') }}" class="pr-create">
+    <button class="btn" type="submit">+ Заказать материалы</button>
+  </form>
+  {% else %}
+  <a class="btn pr-create" href="{{ url_for('doc_new') }}">+ Отправить обувь</a>
+  {% endif %}
+  <div class="subtabs pr-sub">
+    <a href="{{ url_for('documents', tab=tab, sub='work') }}" class="{{ 'active' if sub=='work' }}">В работе <span class="n">{{ n_work }}</span></a>
+    <a href="{{ url_for('documents', tab=tab, sub='done') }}" class="{{ 'active' if sub=='done' }}">Выполненные <span class="n">{{ n_done }}</span></a>
+  </div>
+</div>
+
+<div class="card flush">
+{% if rows %}
+<table class="pr-table">
+  {% if tab=='mat' %}
+  <tr><th style="width:60px">№</th><th>Что заказано</th><th style="width:220px">Статус</th><th style="width:130px">Создана</th></tr>
+  {% else %}
+  <tr><th style="width:60px">№</th><th>Заказчик</th><th>Модель</th><th class="num" style="width:90px">Пар</th><th style="width:220px">Статус</th><th style="width:130px">Создана</th></tr>
+  {% endif %}
+  {% for x in rows %}
+  <tr class="linkrow {{ 'pr-act' if x.action }}" onclick="location='{{ x.url }}'">
+    <td>{{ x.id }}</td>
+    {% if tab=='mat' %}
+    <td><b>{{ x.first }}</b>{% if x.more %} <span class="small">ещё {{ x.more }}</span>{% endif %}{% if x.urgent %} <span class="tag urgent">Срочно</span>{% endif %}</td>
+    {% else %}
+    <td class="nw"><b>{{ x.customer }}</b></td>
+    <td><b>{{ x.model }}</b>{% if x.more %} <span class="small">ещё {{ x.more }}</span>{% endif %}{% if x.brak %} <span class="tag d">брак {{ x.brak }} пар</span>{% endif %}</td>
+    <td class="num"><b>{{ x.pairs }}</b></td>
+    {% endif %}
+    <td><span class="tag {{ 'you' if x.action else ('d' if x.disc else 'sent') }}">{{ x.status }}</span></td>
+    <td class="small">{{ (x.created_at|dt)[:10] }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="empty">{% if sub=='done' %}Выполненных пока нет.{% elif tab=='mat' %}Заказов материалов в работе нет.{% else %}Передач обуви в работе нет.{% endif %}</div>
+{% endif %}
+</div>
+
+
+{% endblock %}

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Приёмка — jail{% endblock %}
+{% block content %}
+
+<div class="subtabs">
+  <a href="{{ url_for('acceptance') }}" class="{{ 'active' if tab=='wait' }}">Ждут приёмки{% if n_wait %} <span class="n">{{ mats|length + pairs|length }}</span>{% endif %}</a>
+  <a href="{{ url_for('acceptance', tab='done') }}" class="{{ 'active' if tab=='done' }}">Принятые</a>
+</div>
+
+{% if tab=='wait' %}
+{% if mats or pairs %}
+<form method="post" action="{{ url_for('prod_accept') }}" id="acc-form" novalidate>
+  {% if pairs %}
+  <div class="card">
+    <h3 class="acc-h">Обувь</h3>
+    <table class="acc-table">
+      <tr><th>Заказчик</th><th>Модель</th><th>Операции</th><th class="num" style="width:120px">Отправлено</th><th class="num" style="width:150px">Пришло</th><th class="num" style="width:110px"></th></tr>
+      {% for x in pairs %}{% set i = x.i %}
+      <tr data-sent="{{ i.collected or 0 }}" data-name="{{ i.customer }} — {{ i.model }}" data-unit="пар">
+        <td class="nw"><b>{{ i.customer }}</b></td>
+        <td><b>{{ i.model }}</b>{% if i.note %}<div class="placed-note">{{ i.note }}</div>{% endif %}</td>
+        <td class="ops-text">{{ x.ops|ops_short }}</td>
+        <td class="num placed-qty">{{ i.collected }} <span class="small">пар</span></td>
+        <td class="num"><input class="recv-in" name="recv_{{ i.id }}" inputmode="numeric" autocomplete="off" value="{{ ('%g' % i.recv) if i.recv is not none else '' }}" placeholder="—"></td>
+        <td class="num recv-mark"></td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+
+  {% if mats %}
+  <div class="card">
+    <h3 class="acc-h">Материалы</h3>
+    <table class="acc-table">
+      <tr><th>Материал</th><th class="num" style="width:140px">Отправлено</th><th class="num" style="width:150px">Пришло</th><th class="num" style="width:110px"></th></tr>
+      {% for x in mats %}{% set i = x.i %}
+      <tr data-sent="{{ '%g' % (i.collected or 0) }}" data-name="{{ i.item }}" data-unit="{{ i.unit or '' }}">
+        <td><b>{{ i.item }}</b>{% if i.note %}<div class="placed-note">{{ i.note }}</div>{% endif %}</td>
+        <td class="num placed-qty">{{ ('%g' % (i.collected or 0))|replace('.', ',') }} <span class="small">{{ i.unit or '' }}</span></td>
+        <td class="num"><input class="recv-in" name="recv_{{ i.id }}" inputmode="decimal" autocomplete="off" value="{{ ('%g' % i.recv)|replace('.', ',') if i.recv is not none else '' }}" placeholder="—"></td>
+        <td class="num recv-mark"></td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="recv-total" id="acc-total" hidden></div>
+  <div class="form-err" id="acc-err" hidden></div>
+  <button class="btn block acc-btn" type="submit">Принять</button>
+</form>
+{% else %}
+<div class="card"><div class="empty">Сейчас к вам ничего не едет.</div></div>
+{% endif %}
+
+{% if legacy %}
+<div class="card flush" style="margin-top:16px">
+  <table>
+    <tr><th>№</th><th class="num">Пар</th><th>Отправлен</th></tr>
+    {% for r in legacy %}
+    <tr class="linkrow" onclick="location='{{ url_for('doc_view', doc_id=r.d.id) }}'"><td>{{ r.d.id }}</td><td class="num">{{ r.sent }}</td><td class="small">{{ (r.d.sent_at or r.d.created_at)|dt }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<div class="sheet-back" id="sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-t">
+    <div class="sheet-t" id="sheet-t">Пришло меньше, чем отправили</div>
+    <div class="sheet-sub">Пересчитайте ещё раз. Если не нашли — подтвердите, и склад увидит расхождение.</div>
+    <div class="sheet-list" id="sheet-list"></div>
+    <button class="btn red block" type="button" id="sheet-ok">Подтвердить расхождение</button>
+    <button class="btn grey block" type="button" id="sheet-no" style="margin-top:8px">Перепроверю</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  var f=document.getElementById("acc-form");if(!f)return;
+  var rows=[].slice.call(f.querySelectorAll("tr[data-sent]")),sheet=document.getElementById("sheet");
+  function num(v){v=(v||"").replace(",",".").replace(/\s/g,"");return v===""?null:parseFloat(v);}
+  function fmt(v){return String(Math.round(v*1000)/1000).replace(".",",");}
+  function check(){
+    var empty=0,filled=0,bad=[],over=false,tot={};
+    rows.forEach(function(tr){
+      var sent=parseFloat(tr.dataset.sent),inp=tr.querySelector(".recv-in"),v=num(inp.value),m=tr.querySelector(".recv-mark");
+      tr.classList.remove("ok","bad");inp.classList.remove("invalid");
+      if(v===null||isNaN(v)){empty++;m.innerHTML="";return;}
+      filled++;var d=v-sent;
+      if(Math.abs(d)<1e-9){m.innerHTML='<span class="diff-zero">✓</span>';tr.classList.add("ok");return;}
+      m.innerHTML='<span class="diff-neg">'+(d>0?"+":"")+fmt(d)+'</span>';tr.classList.add("bad");
+      if(d>0){over=true;inp.classList.add("invalid");}
+      bad.push({name:tr.dataset.name,unit:tr.dataset.unit,sent:sent,got:v,d:d});
+      tot[tr.dataset.unit]=(tot[tr.dataset.unit]||0)+d;
+    });
+    var t=document.getElementById("acc-total"),parts=Object.keys(tot).filter(function(u){return Math.abs(tot[u])>1e-9;})
+      .map(function(u){return '<b class="diff-neg">'+(tot[u]>0?"+":"")+fmt(tot[u])+' '+u+'</b>';});
+    t.hidden=!parts.length;t.innerHTML=parts.length?"Расхождение: "+parts.join(" · "):"";
+    return {empty:empty,filled:filled,bad:bad,over:over};
+  }
+  var timer;
+  // пока человек печатает — строку не оцениваем; разница появляется, когда он ушёл из поля
+  f.addEventListener("input",function(e){var tr=e.target.closest("tr");if(tr){tr.classList.remove("ok","bad");
+      e.target.classList.remove("invalid");tr.querySelector(".recv-mark").innerHTML="";}
+    clearTimeout(timer);timer=setTimeout(function(){
+    fetch("{{ url_for('prod_accept_save') }}",{method:"POST",body:new FormData(f)}).catch(function(){});},600);});
+  f.addEventListener("change",check);
+  check();
+  function go(diff){f.dataset.go=1;f.submit();}
+  function openSheet(c){
+    document.getElementById("sheet-list").innerHTML=c.bad.map(function(b){
+      return '<div class="sheet-row"><span>'+b.name.replace(/</g,"&lt;")+'</span><span>отправлено '+fmt(b.sent)+' · пришло '+fmt(b.got)+' <b class="diff-neg">'+fmt(b.d)+' '+b.unit+'</b></span></div>';}).join("");
+    sheet.hidden=false;requestAnimationFrame(function(){sheet.classList.add("open");});
+  }
+  function close(){sheet.classList.remove("open");setTimeout(function(){sheet.hidden=true;},220);}
+  document.getElementById("sheet-no").addEventListener("click",function(){close();var i=f.querySelector("tr.bad .recv-in");if(i){i.focus();i.select();}});
+  document.getElementById("sheet-ok").addEventListener("click",function(){close();go();});
+  sheet.addEventListener("click",function(e){if(e.target===sheet)close();});
+  f.addEventListener("submit",function(e){
+    if(f.dataset.go)return;
+    e.preventDefault();
+    var c=check(),err=document.getElementById("acc-err");err.hidden=true;
+    if(c.over){err.textContent="Нельзя принять больше, чем отправили — проверьте выделенные строки.";err.hidden=false;return;}
+    if(!c.filled){rows.forEach(function(tr){tr.querySelector(".recv-in").classList.add("invalid");});
+      err.textContent="Впишите, сколько пришло.";err.hidden=false;rows[0].querySelector(".recv-in").focus();return;}
+    function next(){if(c.bad.length)openSheet(c);else go();}
+    if(c.empty){
+      uiConfirm("Принять только вписанное?",{ok:"Принять вписанное",
+        sub:"Строк вписано: "+c.filled+". Остальные ("+c.empty+") будут ждать приёмки."}).then(function(y){if(y)next();});
+      return;
+    }
+    next();
+  });
+})();
+</script>
+
+{% else %}
+<div class="card flush">
+{% if done %}
+<table>
+  <tr><th>№</th><th class="num">Пар</th><th class="num">Материалов</th><th>Итог</th><th>Принята</th></tr>
+  {% for x in done %}
+  <tr class="linkrow" onclick="location='{{ url_for('request_view', req_id=x.r.id) }}'">
+    <td>{{ x.r.id }}</td>
+    <td class="num">{{ x.pairs|q }}</td>
+    <td class="num">{{ x.mats }}</td>
+    <td>{% if x.r.discr %}<span class="tag d">расхождение {{ x.diff }}</span>{% else %}<span class="tag sent">всё сошлось</span>{% endif %}</td>
+    <td class="small">{{ x.r.accepted_at|dt }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<div class="empty">Принятых передач пока нет.</div>
+{% endif %}
+</div>
+{% endif %}
+{% endblock %}

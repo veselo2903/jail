@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Долг — jail{% endblock %}
+{% block content %}
+
+<div class="card hero {{ 'ok' if left <= 0 else '' }}">
+  <div class="big">{{ left|rub }}</div>
+  <div class="lbl">{% if left < 0 %}переплата производству{% else %}должны производству{% endif %}</div>
+  <button class="btn green" type="button" id="pay-open" style="margin-top:16px">Оплатили производству</button>
+</div>
+
+<details open>
+  <summary>За что долг</summary>
+  <div class="body" style="padding:0 6px">
+  {% if by_model %}
+  <table>
+    <tr><th>Заказчик</th><th>Модель</th><th class="num">Принято пар</th><th class="num">Сумма</th></tr>
+    {% for e in by_model %}
+    <tr class="linkrow" onclick="location='{{ url_for('doc_view', doc_id=e.docs[0]) }}'">
+      <td class="nw">{{ e.customer }}</td><td>{{ e.model }}</td>
+      <td class="num">{{ e.pairs|q }}</td><td class="num placed-qty">{{ e.sum|rub }}</td>
+    </tr>
+    {% endfor %}
+    <tr><td colspan="3"><b>Всего начислено</b></td><td class="num placed-qty">{{ accrued|rub }}</td></tr>
+  </table>
+  {% else %}
+  <div class="empty">Склад ещё не принимал обувь от производства.</div>
+  {% endif %}
+  </div>
+</details>
+
+{% if pays %}
+<details>
+  <summary>Оплаты · {{ paid|rub }}</summary>
+  <div class="body" style="padding:0 6px">
+  <table>
+    {% for p in pays %}
+    <tr>
+      <td class="small" style="white-space:nowrap">{{ p.created_at|dt }}</td>
+      <td>{{ p.note or '' }}</td>
+      <td class="num placed-qty">{{ p.amount|rub }}</td>
+      <td class="num" style="width:60px">
+        <form method="post" action="{{ url_for('debt_pay_delete', pid=p.id) }}" data-confirm="Удалить эту оплату?" data-ok="Удалить" data-danger>
+          <button class="btn grey icon sm" type="submit" aria-label="Удалить">×</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</details>
+{% endif %}
+
+<div class="sheet-back" id="pay-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-t" style="color:var(--ink)">Оплатили производству</div>
+    <div class="sheet-sub">Долг сейчас {{ left|rub }}</div>
+    <form method="post" action="{{ url_for('debt_pay') }}" class="grid">
+      <div><label>Сумма, ₽</label><input name="amount" inputmode="decimal" placeholder="0" id="pay-amount"></div>
+      <div><label>Примечание</label><input name="note" placeholder="например, перевод на карту"></div>
+      <button class="btn green block" type="submit">Записать оплату</button>
+      <button class="btn grey block" type="button" id="pay-close">Отмена</button>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  var sh=document.getElementById("pay-sheet");
+  function close(){sh.classList.remove("open");setTimeout(function(){sh.hidden=true;},220);}
+  document.getElementById("pay-open").addEventListener("click",function(){sh.hidden=false;
+    requestAnimationFrame(function(){sh.classList.add("open");});
+    setTimeout(function(){document.getElementById("pay-amount").focus();},250);});
+  document.getElementById("pay-close").addEventListener("click",close);
+  sh.addEventListener("click",function(e){if(e.target===sh)close();});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!sh.hidden)close();});
+})();
+</script>
+{% endblock %}
