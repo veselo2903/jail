@@ -1252,7 +1252,7 @@ def _prod_requests():
 
 def _sklad_requests():
     """Раздел «Заявки» склада: заказы производства + свои передачи без заказа, одним списком."""
-    sub = "done" if request.args.get("sub") == "done" else "work"
+    sub = request.args.get("sub")
     rows = []
     for r in g.db.execute("SELECT * FROM requests ORDER BY id").fetchall():
         by_sklad = r["created_role"] == "sklad"
@@ -1277,17 +1277,27 @@ def _sklad_requests():
             url = url_for("request_view", req_id=r["id"])
         disc = bool(r["status"] == "accepted" and r["discr"])
         part = (not by_sklad) and r["status"] == "open" and any((i["delivered"] or 0) > 0 for i in its)
+        remaining = [dict(item=i["item"], qty=max(0,i["qty"]-(i["delivered"] or 0)-(i["collected"] or 0)), unit=i["unit"] or "шт")
+                     for i in its if not by_sklad and i["qty"] is not None
+                     and i["qty"]-(i["delivered"] or 0)-(i["collected"] or 0)>1e-9]
+        partial = bool(remaining) and any((i["delivered"] or 0)>0 or (i["collected"] or 0)>0 for i in its)
         rows.append(dict(
             id=r["id"], first=first, more=max(0, len(its) - 1), urgent=r["urgent"], created_at=r["created_at"],
-            status=("Нужно дособрать" if part else SKLAD_REQ_STATUS.get(r["status"], r["status"]) + (" с расхождением" if disc else "")),
+            status=(("Нужно дособрать · часть в пути" if r["status"]=="shipped" else "Нужно дособрать") if partial else SKLAD_REQ_STATUS.get(r["status"], r["status"]) + (" с расхождением" if disc else "")),
             action=(r["status"] in ("open", "progress", "done")), disc=disc, done=(r["status"] == "accepted"),
-            url=url, items=its, note=r["note"], by_sklad=by_sklad, number=r["number"], in_transit=r["status"]=="shipped"))
-    work = [x for x in rows if not x["done"]]
-    # срочные → нужно собрать → по дате (старые первыми — их собирать раньше)
-    work.sort(key=lambda x: (not (x["urgent"] and x["action"]), not x["action"], x["id"]))
-    done = sorted([x for x in rows if x["done"]], key=lambda x: -x["id"])
-    return render_template("sklad_requests.html", sub=sub, rows=(done if sub == "done" else work),
-                           n_work=len(work), n_done=len(done), n_act=sum(1 for x in work if x["action"]))
+            url=url, remaining=remaining, partial=partial, items=its, note=r["note"], by_sklad=by_sklad, number=r["number"], in_transit=r["status"]=="shipped"))
+    work = sorted([x for x in rows if not x["done"]], key=lambda x:(not x["urgent"],x["id"]))
+    groups = {
+        "collect": [x for x in work if not x["partial"] and not x["in_transit"]],
+        "remaining": [x for x in work if x["partial"]],
+        "transit": [x for x in work if x["in_transit"]],
+        "done": sorted([x for x in rows if x["done"]],key=lambda x:-x["id"]),
+    }
+    if sub not in groups:
+        sub = next((name for name in ("remaining","collect","transit") if groups[name]),"collect")
+    tabs=[("collect","Нужно собрать"),("remaining","Нужно дособрать"),("transit","В пути"),("done","Выполненные")]
+    return render_template("sklad_requests.html", sub=sub, rows=groups[sub], tabs=tabs,
+                           counts={name:len(items) for name,items in groups.items()})
 
 
 @app.route("/docs/collect")

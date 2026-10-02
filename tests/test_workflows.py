@@ -188,4 +188,17 @@ class Workflows(unittest.TestCase):
   self.assertNotIn('onclick="location',view)
   self.assertEqual(self.sql('select status from requests where id=1')[0][0],'open')
 
+ def test_warehouse_filters_partial_and_transit(self):
+  for rid,status,name,got,sent in [(1,'open','NewItem',0,None),(2,'open','PartialItem',5,None),(3,'shipped','SentPartialItem',0,5),(4,'shipped','SentFullItem',0,10)]:
+   self.sql("INSERT INTO requests(id,status,created_role,created_at) VALUES(?,?,'proizv',?)",(rid,status,db.now_str()))
+   self.sql("INSERT INTO request_items(request_id,item,line_kind,qty,delivered,collected,unit) VALUES(?,?,'need',10,?,?,'шт')",(rid,name,got,sent))
+  self.role('sklad')
+  collect=self.client.get('/docs?sub=collect').text
+  self.assertIn('NewItem',collect);self.assertNotIn('PartialItem',collect)
+  remaining=self.client.get('/docs?sub=remaining').text
+  self.assertIn('PartialItem',remaining);self.assertIn('SentPartialItem',remaining);self.assertNotIn('SentFullItem',remaining)
+  self.assertIn('sklad-shortage-preview',remaining);self.assertIn('5 шт',remaining)
+  transit=self.client.get('/docs?sub=transit').text
+  self.assertIn('SentPartialItem',transit);self.assertIn('SentFullItem',transit);self.assertNotIn('NewItem',transit)
+
 if __name__=='__main__':unittest.main(verbosity=2)

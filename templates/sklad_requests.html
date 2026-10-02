@@ -5,8 +5,7 @@
 <div class="pr-bar">
   <a class="btn pr-create" href="{{ url_for('docs_collect') }}">Собрать передачу</a>
   <div class="subtabs pr-sub">
-    <a href="{{ url_for('documents', sub='work') }}" class="{{ 'active' if sub=='work' }}">В работе <span class="n">{{ n_work }}</span></a>
-    <a href="{{ url_for('documents', sub='done') }}" class="{{ 'active' if sub=='done' }}">Выполненные <span class="n">{{ n_done }}</span></a>
+    {% for key,label in tabs %}<a href="{{ url_for('documents', sub=key) }}" class="{{ 'active' if sub==key }}">{{ label }} <span class="n">{{ counts[key] }}</span></a>{% endfor %}
   </div>
 </div>
 
@@ -25,7 +24,9 @@
   <details class="sklad-request-spoiler">
     <summary class="sklad-request-grid {{ 'pr-act' if x.action }}">
       <span>{{ x.number or x.id }}</span>
-      <span><b>{{ x.first }}</b>{% if x.more %} <span class="small">ещё {{ x.more }}</span>{% endif %}{% if x.urgent and not x.done %} <span class="tag urgent">Срочно</span>{% endif %}</span>
+      <span><b>{{ x.first }}</b>{% if x.more %} <span class="small">ещё {{ x.more }}</span>{% endif %}{% if x.urgent and not x.done %} <span class="tag urgent">Срочно</span>{% endif %}
+        {% if x.partial %}<span class="sklad-shortage-preview">{% for item in x.remaining %}<span>{{ item.item }} — <b>{{ item.qty|q }} {{ item.unit }}</b></span>{% endfor %}</span>{% endif %}
+      </span>
       <span><span class="tag {{ 'you' if x.action else ('d' if x.disc else 'sent') }}">{{ x.status }}</span></span>
       <span class="small">{{ (x.created_at|dt)[:10] }}</span>
     </summary>
@@ -58,6 +59,6 @@ var expand=entries.some(function(entry){return !entry.open;});entries.forEach(fu
 })();
 </script>
 {% else %}
-<div class="card flush"><div class="empty">{{ 'Выполненных пока нет.' if sub=='done' else 'Заказов от производства нет.' }}</div></div>
+<div class="card flush"><div class="empty">{{ {'collect':'Заявок для сборки нет.','remaining':'Всё собрано — недоложенных материалов нет.','transit':'Передач в пути нет.','done':'Выполненных пока нет.'}[sub] }}</div></div>
 {% endif %}
 {% endblock %}
