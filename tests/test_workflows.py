@@ -144,4 +144,25 @@ class Workflows(unittest.TestCase):
   self.assertTrue(module._can_delete_req({'created_role':'sklad','status':'progress'},'sklad'))
   self.assertTrue(module._can_delete_req({'created_role':'proizv','status':'open','transfer_id':None},'proizv'))
 
+ def test_partial_production_order_keeps_remainder(self):
+  self.sql("INSERT INTO requests(id,status,created_role,created_at,urgent,note) VALUES(1,'open','proizv',?,1,'Order comment')",(db.now_str(),))
+  self.sql("INSERT INTO request_items(id,request_id,item,line_kind,qty,unit,urgent,note) VALUES(1,1,'Leather','need',10,'м2',1,'Item comment')")
+  self.role('sklad');view=self.client.get('/requests/1').text
+  self.assertNotIn('Подробнее',view);self.assertIn('10 м2',view);self.assertIn('Item comment',view);self.assertIn('Order comment',view)
+  self.client.post('/docs/collect/save',data={'placed_1':'1','col_1':'5'})
+  transfer=self.sql("select id from requests where created_role='sklad'")[0][0]
+  self.client.post(f'/requests/{transfer}/ship')
+  view=self.client.get('/requests/1').text;self.assertIn('5 м2',view);self.assertIn('В пути',view)
+  item=self.sql('select id from request_items where request_id=?',(transfer,))[0][0]
+  self.role('proizv');self.client.post('/acceptance/accept',data={f'recv_{item}':'5'})
+  self.assertEqual(self.sql('select status from requests where id=1')[0][0],'open')
+  self.assertEqual(self.sql('select delivered from request_items where id=1')[0][0],5)
+  self.role('sklad');view=self.client.get('/requests/1').text;self.assertIn('5 м2',view);self.assertIn('Получено 5 м2',view)
+  self.client.post('/docs/collect/save',data={'placed_1':'1','col_1':'5'})
+  transfer=self.sql("select id from requests where created_role='sklad' and status='progress'")[0][0]
+  self.client.post(f'/requests/{transfer}/ship');item=self.sql('select id from request_items where request_id=?',(transfer,))[0][0]
+  self.role('proizv');self.client.post('/acceptance/accept',data={f'recv_{item}':'5'})
+  self.assertEqual(self.sql('select delivered from request_items where id=1')[0][0],10)
+  self.assertEqual(self.sql('select status from requests where id=1')[0][0],'accepted')
+
 if __name__=='__main__':unittest.main(verbosity=2)

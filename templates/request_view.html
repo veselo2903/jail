@@ -2,6 +2,7 @@
 {% block title %}{{ 'Передача' if r.created_role=='sklad' else 'Заявка' }} №{{ r.number|default(r.id, true) }} — jail{% endblock %}
 {% block content %}
 
+{% set warehouse_request = role=='sklad' and r.created_role=='proizv' %}
 {% set need_items = items|selectattr('line_kind','equalto','need')|list %}
 {% set pair_items = items|selectattr('line_kind','equalto','pair')|list %}
 {% set mat_items = items|selectattr('line_kind','equalto','material')|list %}
@@ -19,6 +20,10 @@
     </div>
     <a class="btn back" href="{{ url_for('documents', tab=('mat' if role=='proizv' else 'need')) }}">← К списку</a>
   </div>
+  {% if warehouse_request %}
+  <div class="small" style="margin-top:10px">Создана {{ r.created_at|dt }}</div>
+  {% if r.note %}<div class="placed-note" style="margin-top:8px">{{ r.note }}</div>{% endif %}
+  {% else %}
   <div class="small" style="margin-top:6px">{{ 'Склад → Производство' if r.created_role=='sklad' else 'Производство → Склад' }}</div>
   {% if r.note %}<div class="small">Примечание производства: {{ r.note }}</div>{% endif %}
   <details class="meta-more">
@@ -29,6 +34,7 @@
     Создана {{ r.created_at|dt }}{% if r.sent_at %} · отправлена {{ r.sent_at|dt }}{% endif %}{% if r.taken_at %} · собирает с {{ r.taken_at|dt }}{% endif %}{% if r.done_at %} · отправлено {{ r.done_at|dt }}{% endif %}
     </div>
   </details>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -220,6 +226,29 @@
 {# ==================== ПРОСМОТР (производство / отправлено) ==================== #}
 {% else %}
 {% if need_items %}
+{% if warehouse_request %}
+<div class="card flush sklad-request-details">
+  <table>
+    <tr><th>Что запросили</th><th class="num">Нужно отправить</th></tr>
+    {% for i in need_items %}
+    {% set delivered = i.delivered or 0 %}
+    {% set collected = i.collected or 0 %}
+    {% set remaining = ([0, i.qty - delivered - collected]|max) if i.qty is not none else none %}
+    <tr>
+      <td><b>{{ i.item }}</b>{% if i.urgent %} <span class="tag urgent">Срочно</span>{% endif %}{% if i.note %}<div class="placed-note">{{ i.note }}</div>{% endif %}</td>
+      <td class="num">
+        <b>{{ remaining|q if remaining is not none else 'Количество не указано' }}{% if remaining is not none %} {{ i.unit or 'шт' }}{% endif %}</b>
+        {% if delivered or collected %}
+        <div class="small">Запросили {{ i.qty|q if i.qty is not none else 'без количества' }}{% if i.qty is not none %} {{ i.unit or 'шт' }}{% endif %}</div>
+        {% if delivered %}<div class="small">Получено {{ delivered|q }} {{ i.unit or 'шт' }}</div>{% endif %}
+        {% if collected %}<div class="small">{{ 'В пути' if r.status=='shipped' else 'Положено в передачу' }} {{ collected|q }} {{ i.unit or 'шт' }}</div>{% endif %}
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% else %}
 <div class="card flush">
   <table>
     <tr><th>Что заказано</th><th class="num">Заказано</th><th class="num">Пришло</th><th class="num">Сейчас в передаче</th></tr>
@@ -233,6 +262,7 @@
     {% endfor %}
   </table>
 </div>
+{% endif %}
 {% endif %}
 
 {% if pair_items or mat_items %}
