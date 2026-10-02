@@ -3589,7 +3589,9 @@ def _req_in_transit(r):
     if r["transfer_id"]:
         t = g.db.execute("SELECT status FROM requests WHERE id=?", (r["transfer_id"],)).fetchone()
         return bool(t and t["status"] in ("shipped", "accepted"))
-    return False
+    return bool(g.db.execute("SELECT 1 FROM request_items n JOIN request_items i ON i.from_item=n.id "
+                             "JOIN requests t ON t.id=i.request_id WHERE n.request_id=? "
+                             "AND t.status IN ('shipped','accepted') LIMIT 1", (r["id"],)).fetchone())
 
 
 def _can_delete_req(r, role):

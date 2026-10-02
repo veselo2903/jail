@@ -216,7 +216,9 @@ class Workflows(unittest.TestCase):
   view=self.client.get('/docs?sub=collect').text
   self.assertNotIn('FullySent',view);self.assertIn('15 шт',view);self.assertIn('Remaining',view)
   view=self.client.get('/docs/collect').text;self.assertNotIn('FullySent',view);self.assertIn('data-quantity="15"',view)
-  self.client.post('/docs/collect/save',data={'quantity_selection':'1','col_2':'15'})
+  self.role('proizv');self.client.post('/requests/1/delete')
+  self.assertEqual(self.sql('select count(*) from requests where id=1')[0][0],1)
+  self.role('sklad');self.client.post('/docs/collect/save',data={'quantity_selection':'1','col_2':'15'})
   second=self.sql("select id from requests where created_role='sklad' and status='progress'")[0][0]
   self.client.post(f'/requests/{second}/ship');self.assertNotIn('Remaining',self.client.get('/docs?sub=collect').text)
   self.role('proizv')
