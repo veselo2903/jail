@@ -147,7 +147,7 @@ td .ops-tags{margin-left:0}
 .meta-more>summary::after{content:none}
 .meta-more>summary:hover{color:var(--ink)}
 /* Кнопка после нажатия ждёт ответа сервера */
-.btn.busy{opacity:.6;cursor:progress}
+.btn.busy{opacity:.6;cursor:progress;pointer-events:none}
 /* Сообщения внизу экрана */
 .toasts{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:8px;
   align-items:center;pointer-events:none;width:min(560px,calc(100vw - 32px))}
@@ -214,7 +214,6 @@ td.nw{white-space:nowrap}
 .addhead{font-weight:700;margin-bottom:10px}
 .form-err{color:var(--warn);background:var(--warn-bg);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:600}
 .form-ok{color:#0f7a3d;background:var(--green-bg);border-radius:10px;padding:10px 12px;font-size:14px;font-weight:700}
-.btn.busy{pointer-events:none}
 
 /* Операции коротко: «4 операции», список по клику / при наведении */
 .ops-n{display:inline-block;position:relative;margin:0;border:0;box-shadow:none;background:none;vertical-align:middle}

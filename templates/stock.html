@@ -24,7 +24,7 @@
 <div class="card hero">
   <div class="big">{{ wsum|q }}</div>
   <div class="lbl">пар в работе у цеха</div>
-  {% if role=='proizv' and work %}<div class="hero-acts"><a class="btn" href="{{ url_for('stock_intake') }}">Принять готовую обувь</a><a class="btn grey" href="{{ url_for('stock_intake_brak') }}">Принять брак</a></div>{% endif %}
+  {% if role=='proizv' and work %}<div class="hero-acts"><a class="btn" href="{{ url_for('stock_intake') }}">Записать готовое из цеха</a><a class="btn grey" href="{{ url_for('stock_intake_brak') }}">Записать брак из цеха</a></div>{% endif %}
 </div>
 {% else %}
 <div class="card hero">
@@ -64,7 +64,7 @@
   </table>
   <div class="empty" id="stock-none" hidden>Ничего не найдено.</div>
   {% else %}
-  <div class="empty">{% if tab=='work' %}В работе ничего нет.{% elif tab=='fready' %}Готовое ещё не переписано. Когда цех сдаёт пары — «В работе» → «Принять готовую обувь».{% else %}Брака к отправке нет.{% endif %}</div>
+  <div class="empty">{% if tab=='work' %}В работе ничего нет.{% elif tab=='fready' %}Готовое ещё не переписано. Когда цех сдаёт пары — «В работе» → «Записать готовое из цеха».{% else %}Брака к отправке нет.{% endif %}</div>
   {% endif %}
 </div>
 

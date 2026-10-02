@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Документ №{{ d.id }} — jail{% endblock %}
+{% block title %}Документ №{{ d.number|default(d.id, true) }} — jail{% endblock %}
 {% block content %}
 
 <div class="card">
   <div class="row" style="justify-content:space-between">
     <div>
-      <b>Передача №{{ d.id }}</b>
+      <b>Передача №{{ d.number|default(d.id, true) }}</b>
       <span class="tag {{ d.status }}">{{ PROD_DOC_STATUS[d.status] if role=='proizv' and d.kind=='RETURN' else STATUS_LABEL[d.status] }}</span>
       <span class="doc-pairs">{% if has_recv %}принято {{ recv }} из {{ sent }} пар{% else %}{{ sent }} пар{% endif %}</span>
       {% if has_recv and diff!=0 %}<span class="tag d">расхождение</span>{% endif %}

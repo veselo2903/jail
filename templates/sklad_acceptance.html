@@ -22,7 +22,7 @@
         <td class="ops-text">{{ x.ops|ops_short }}</td>
         {% if part is sameas brak %}<td>{{ l.note or '—' }}</td>{% endif %}
         <td class="num placed-qty">{{ l.pairs_sent }} <span class="small">пар</span></td>
-        <td class="num"><input class="recv-in" name="recv_{{ l.id }}" inputmode="numeric" autocomplete="off" value="{{ l.recv_draft if l.recv_draft is not none else '' }}" placeholder="—"></td>
+        <td class="num"><input type="hidden" name="rev_{{ l.id }}" value="{{ l.recv_version }}"><input class="recv-in" name="recv_{{ l.id }}" inputmode="numeric" autocomplete="off" value="{{ l.recv_draft if l.recv_draft is not none else '' }}" placeholder="—"></td>
         <td class="num recv-mark"></td>
       </tr>
       {% endfor %}
@@ -72,15 +72,14 @@
     t.hidden=!parts.length;t.innerHTML=parts.length?"Расхождение: "+parts.join(" · "):"";
     return {empty:empty,filled:filled,bad:bad,over:over};
   }
-  var timer;
+  var saver=window.jailAutoSave(f,"{{ url_for('sklad_accept_save') }}");
   // пока человек печатает — строку не оцениваем; разница появляется, когда он ушёл из поля
   f.addEventListener("input",function(e){var tr=e.target.closest("tr");if(tr){tr.classList.remove("ok","bad");
       e.target.classList.remove("invalid");tr.querySelector(".recv-mark").innerHTML="";}
-    clearTimeout(timer);timer=setTimeout(function(){
-    fetch("{{ url_for('sklad_accept_save') }}",{method:"POST",body:new FormData(f)}).catch(function(){});},600);});
+    saver.schedule();});
   f.addEventListener("change",check);
   check();
-  function go(diff){f.dataset.go=1;f.submit();}
+  async function go(diff){if(await saver.flush()){f.dataset.go=1;f.submit();}}
   function openSheet(c){
     document.getElementById("sheet-list").innerHTML=c.bad.map(function(b){
       return '<div class="sheet-row"><span>'+b.name.replace(/</g,"&lt;")+'</span><span>отправлено '+fmt(b.sent)+' · пришло '+fmt(b.got)+' <b class="diff-neg">'+fmt(b.d)+' '+b.unit+'</b></span></div>';}).join("");

@@ -52,7 +52,7 @@
 {% set mine = needs(x, role) %}
 {% set other = (x.receiver if x.case and x.case.proposed_by==x.sender else x.sender) if x.case else None %}
 <details class="disc-row" {{ 'open' if mine or items|length==1 }}>
-  <summary><span><b>Передача №{{ x.id }}</b> · {{ x.direction }} <span class="small">· принята {{ x.at|dt }}</span></span>
+  <summary><span><b>Передача №{{ x.number|default(x.id, true) }}</b> · {{ x.direction }} <span class="small">· принята {{ x.at|dt }}</span></span>
     {% if x.state=='closed' %}<span class="tag d-done">Закрыто</span>
     {% elif mine %}<span class="tag d-you">{{ 'Решите спор' if role=='director' else 'Ждёт вашего ответа' }}</span>
     {% elif x.state=='dispute' %}<span class="tag d-wait">У директора</span>

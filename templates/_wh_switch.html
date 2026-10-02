@@ -1,6 +1,6 @@
 {% if role=='sklad' %}
 <div class="seg wh-switch">
-  <a class="seg-opt" href="{{ url_for('wh') }}"><span class="{{ 'on' if request.endpoint=='wh' }}">Наш</span></a>
-  <a class="seg-opt" href="{{ url_for('stock') }}"><span class="{{ 'on' if request.endpoint in ['stock','stock_item'] }}">Зона</span></a>
+  <a class="seg-opt" href="{{ url_for('wh') }}"><span class="{{ 'on' if request.endpoint=='wh' }}">Готовая обувь</span></a>
+  <a class="seg-opt" href="{{ url_for('stock') }}"><span class="{{ 'on' if request.endpoint in ['stock','stock_item'] }}">На производстве</span></a>
 </div>
 {% endif %}

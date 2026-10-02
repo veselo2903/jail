@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Справочники — jail{% endblock %}
 {% block content %}
+{% set empty_section = (tab=='customers' and not customers) or (tab=='models' and not models) or (tab=='materials' and not materials) or (tab=='workers' and not workers) %}
 
 <div class="subtabs">
   <a href="{{ url_for('refs', tab='customers', arch=('1' if show_arch else None)) }}" class="{{ 'active' if tab=='customers' }}">Заказчики</a>
@@ -23,7 +24,7 @@
 {% if tab in ['customers','models'] %}
   {% set items = customers if tab=='customers' else models %}
   {% if can_edit %}
-  <div class="card">
+  <div class="{{ 'empty-action' if empty_section else 'card' }}">
     <form method="post" action="{{ url_for('ref_add', table=tab) }}" class="row">
       <input name="name" placeholder="{{ 'Новый заказчик' if tab=='customers' else 'Новая модель' }}" style="flex:1" data-req="Впишите название">
       <button class="btn" type="submit">Добавить</button>
@@ -31,7 +32,7 @@
   </div>
   {% endif %}
 
-  <div class="card" style="padding:6px 12px">
+  {% if items %}<div class="card" style="padding:6px 12px">
   {% if items %}
     <table>
       {% for r in items %}
@@ -50,14 +51,14 @@
       {% endfor %}
     </table>
   {% else %}
-    <div class="empty">Список пуст.</div>
+
   {% endif %}
-  </div>
+  </div>{% endif %}
 
 {# ---------- Материалы ---------- #}
 {% elif tab=='materials' %}
   {% if can_edit %}
-  <div class="card">
+  <div class="{{ 'empty-action' if empty_section else 'card' }}">
     <form method="post" action="{{ url_for('ref_add', table='materials') }}" class="row">
       <input name="name" placeholder="Новый материал" style="flex:1;min-width:180px" data-req="Впишите название материала">
       <div class="seg">{% for u in units %}<label class="seg-opt"><input type="radio" name="unit" value="{{ u }}" {{ 'checked' if loop.first }}><span>{{ u }}</span></label>{% endfor %}</div>
@@ -65,7 +66,7 @@
     </form>
   </div>
   {% endif %}
-  <div class="card" style="padding:6px 12px">
+  {% if materials %}<div class="card" style="padding:6px 12px">
   {% if materials %}
     <table>
       {% for r in materials %}
@@ -86,9 +87,9 @@
       {% endfor %}
     </table>
   {% else %}
-    <div class="empty">Список пуст.</div>
+
   {% endif %}
-  </div>
+  </div>{% endif %}
 
 {# ---------- Операции (директор) ---------- #}
 {% elif tab=='operations' %}
@@ -110,7 +111,7 @@
 {# ---------- Работники ---------- #}
 {% else %}
   {% if can_edit %}
-  <div class="card">
+  <div class="{{ 'empty-action' if empty_section else 'card' }}">
     <form method="post" action="{{ url_for('ref_add', table='workers') }}" class="row">
       <input name="number" placeholder="Табельный №" style="width:130px" data-req="Впишите табельный номер">
       <input name="name" placeholder="Имя" style="flex:1" data-req="Впишите имя">
@@ -119,7 +120,7 @@
   </div>
   {% endif %}
 
-  <div class="card" style="padding:6px 12px">
+  {% if workers %}<div class="card" style="padding:6px 12px">
   {% if workers %}
     <table>
       <tr><th style="width:120px">Табельный</th><th>Имя</th>{% if can_edit %}<th></th>{% endif %}</tr>
@@ -141,9 +142,9 @@
       {% endfor %}
     </table>
   {% else %}
-    <div class="empty">Список пуст.</div>
+
   {% endif %}
-  </div>
+  </div>{% endif %}
 {% endif %}
 
 {% endblock %}

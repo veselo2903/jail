@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ 'Передача' if r.created_role=='sklad' else 'Заявка' }} №{{ r.id }} — jail{% endblock %}
+{% block title %}{{ 'Передача' if r.created_role=='sklad' else 'Заявка' }} №{{ r.number|default(r.id, true) }} — jail{% endblock %}
 {% block content %}
 
 {% set need_items = items|selectattr('line_kind','equalto','need')|list %}
@@ -8,12 +8,12 @@
 {% macro opsline(i) %}{% set os = ops_by_item.get(i.id, []) %}{% if os %}{{ os|ops_short }}{% elif i.status %}{{ LINE_STATUSES[i.status] }}{% else %}<span class="small">—</span>{% endif %}{% endmacro %}
 
 {% if can_collect %}
-<h2 class="page-h">Передача №{{ r.id }}</h2>
+<h2 class="page-h">{{ 'Передача №' ~ r.id if r.id else 'Новая передача' }}</h2>
 {% else %}
 <div class="card">
   <div class="row" style="justify-content:space-between">
     <div>
-      <b>{{ 'Передача' if r.created_role=='sklad' else 'Заявка' }} №{{ r.id }}</b>
+      <b>{{ 'Передача' if r.created_role=='sklad' else 'Заявка' }} №{{ r.number|default(r.id, true) }}</b>
       <span class="tag rq-{{ r.status }}">{{ PROD_REQ_STATUS[r.status] if role=='proizv' and r.created_role=='proizv' else (SKLAD_REQ_STATUS.get(r.status, REQ_STATUS[r.status]) if role=='sklad' else REQ_STATUS[r.status]) }}</span>
       {% if r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}
     </div>
@@ -23,7 +23,7 @@
   {% if r.note %}<div class="small">Примечание производства: {{ r.note }}</div>{% endif %}
   <details class="meta-more">
     <summary>Подробнее</summary>
-    {% if linked %}<div class="small" style="margin-top:6px">Собрано по заявкам: {% for x in linked %}<a href="{{ url_for('request_view', req_id=x.id) }}">№{{ x.id }}</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
+    {% if linked %}<div class="small" style="margin-top:6px">Собрано по заявкам: {% for x in linked %}<a href="{{ url_for('request_view', req_id=x.id) }}">№{{ x.number|default(x.id, true) }}</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
   {% if r.transfer_id %}<div class="small" style="margin-top:6px">Собрана в <a href="{{ url_for('request_view', req_id=r.transfer_id) }}">передачу №{{ r.transfer_id }}</a></div>{% endif %}
   <div class="small" style="margin-top:6px">
     Создана {{ r.created_at|dt }}{% if r.sent_at %} · отправлена {{ r.sent_at|dt }}{% endif %}{% if r.taken_at %} · собирает с {{ r.taken_at|dt }}{% endif %}{% if r.done_at %} · отправлено {{ r.done_at|dt }}{% endif %}
@@ -169,7 +169,7 @@
     root.querySelectorAll("form.ajax-del").forEach(function(f){f.addEventListener("submit",function(e){
       e.preventDefault();var tr=f.closest("tr");
       fetch(f.action,{method:"POST",headers:{"X-Requested-With":"fetch"}}).then(function(r){return r.json();})
-        .then(function(d){if(d.ok){tr.remove();refreshCount(d.count,d.pairs);}}).catch(function(){f.submit();});
+        .then(function(d){if(d.redirect){location.href=d.redirect;return;}if(d.ok){tr.remove();refreshCount(d.count,d.pairs);}}).catch(function(){f.submit();});
     });});
   }
   bindDel(document);
@@ -185,6 +185,7 @@
       .then(function(r){return r.json();})
       .then(function(d){
         btn.classList.remove("busy");
+        if(d.redirect){location.href=d.redirect;return;}
         if(!d.ok){err.textContent=d.error||"Ошибка";err.hidden=false;mark(f,d.fields);return;}
         var tb=document.getElementById(f.id==="mat-form"?"mats-list":"pairs-list");
         tb.insertAdjacentHTML("beforeend",d.html);
@@ -290,7 +291,7 @@
 
 {% if can_delete %}
 <form method="post" action="{{ url_for('request_delete', req_id=r.id) }}" style="margin-top:18px"
-      data-confirm="Удалить {{ 'передачу' if r.created_role=='sklad' else 'заявку' }} №{{ r.id }}?" data-ok="Удалить" data-danger
+      data-confirm="Удалить {{ 'передачу' if r.created_role=='sklad' else 'заявку' }} №{{ r.number|default(r.id, true) }}?" data-ok="Удалить" data-danger
       data-sub="{% if r.created_role=='sklad' %}Всё, что в неё положено, будет удалено.{% if linked %} Заказы производства снова будут ждать сборки.{% endif %}{% else %}Заявка исчезнет у склада и производства. Отменить это нельзя.{% endif %}">
   <button class="btn red" type="submit">Удалить</button>
 </form>

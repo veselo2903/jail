@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Заявка №{{ r.id }} — jail{% endblock %}
+{% block title %}{{ 'Заявка №' ~ r.id if r.id else 'Новая заявка' }} — jail{% endblock %}
 {% block content %}
 {% set need_items = items|selectattr('line_kind','equalto','need')|list %}
 
-<h2 class="page-h">Заявка №{{ r.id }}</h2>
+<h2 class="page-h">{{ 'Заявка №' ~ r.id if r.id else 'Новая заявка' }}</h2>
 
 <div class="card placed-card" id="items-card" {{ 'hidden' if not need_items }}>
   <h4 class="placed-sub" style="margin-top:0">Материалы в заявке</h4>
@@ -44,7 +44,7 @@
 
 {% if can_delete %}
 <form method="post" action="{{ url_for('request_delete', req_id=r.id) }}" style="margin-top:18px"
-      data-confirm="Удалить заявку №{{ r.id }}?" data-ok="Удалить" data-danger data-sub="Заявка и всё, что в неё добавлено, будут удалены.">
+      data-confirm="Удалить заявку №{{ r.number|default(r.id, true) }}?" data-ok="Удалить" data-danger data-sub="Заявка и всё, что в неё добавлено, будут удалены.">
   <button class="btn red" type="submit">Удалить</button>
 </form>
 {% endif %}
@@ -56,7 +56,7 @@
   function bindDel(root){root.querySelectorAll("form.ajax-del").forEach(function(df){df.addEventListener("submit",function(e){
     e.preventDefault();var tr=df.closest("tr");
     fetch(df.action,{method:"POST",headers:{"X-Requested-With":"fetch"}}).then(function(r){return r.json();})
-      .then(function(d){if(d.ok){tr.remove();count();}}).catch(function(){df.submit();});});});}
+      .then(function(d){if(d.redirect){location.href=d.redirect;return;}if(d.ok){tr.remove();count();}}).catch(function(){df.submit();});});});}
   bindDel(document);
   function mark(names){
     f.querySelectorAll(".invalid").forEach(function(x){x.classList.remove("invalid");});
@@ -75,6 +75,7 @@
     fetch(f.action,{method:"POST",body:new FormData(f),headers:{"X-Requested-With":"fetch"}})
       .then(function(r){return r.json();}).then(function(d){
         btn.classList.remove("busy");
+        if(d.redirect){location.href=d.redirect;return;}
         if(!d.ok){err.textContent=d.error||"Ошибка";err.hidden=false;mark(d.fields);return;}
         list.insertAdjacentHTML("beforeend",d.html);var row=list.lastElementChild;row.classList.add("fresh");bindDel(row);count();
         f.querySelectorAll("input[type=text],input:not([type])").forEach(function(i){i.value="";});

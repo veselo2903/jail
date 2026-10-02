@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='app.css', v=VERSION) }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='legacy.css', v=VERSION) }}">
 <script src="{{ url_for('static', filename='ui.js', v=VERSION) }}" defer></script>
+<script src="{{ url_for('static', filename='navigation.js', v=VERSION) }}" defer></script>
+<script src="{{ url_for('static', filename='autosave.js', v=VERSION) }}"></script>
 </head>
 <body data-root="{{ url_for('index') }}">
 {% set ep = request.endpoint %}
@@ -24,7 +26,7 @@
     <svg viewBox="0 0 24 24"><path d="M3 21V9l9-6 9 6v12"/><path d="M7 21v-8h10v8M7 17h10"/></svg>Склад</a>
   {% endif %}
   {% set acc_link %}<a class="nav {{ 'on' if ep=='acceptance' }}" href="{{ url_for('acceptance') }}">
-    <svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 5 9-5M12 12v9"/></svg>Приёмка{% if pending_accept %}<span class="b">{{ pending_accept }}</span>{% endif %}</a>{% endset %}
+    <svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 5 9-5M12 12v9"/></svg>{{ "Принять со склада" if role=="proizv" else "Принять с производства" }}{% if pending_accept %}<span class="b">{{ pending_accept }}</span>{% endif %}</a>{% endset %}
   {% if role=='proizv' %}{{ acc_link }}{% endif %}
   <a class="nav {{ 'on' if ep in ['documents','doc_view','doc_new','requests_list','request_view','docs_collect'] }}" href="{{ url_for('documents') }}">
     <svg viewBox="0 0 24 24"><path d="M5 3h14v18H5zM8 8h8M8 12h8M8 16h5"/></svg>Заявки{% if req_todo %}<span class="b">{{ req_todo }}</span>{% endif %}</a>

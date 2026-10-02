@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import fcntl
 from datetime import datetime, timezone, timedelta
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,6 +33,7 @@ def parse_dt(sv):
 def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
+    conn.create_function("jail_norm", 1, lambda x: " ".join((x or "").split()).lower(), deterministic=True)
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -320,16 +322,16 @@ def _migrate(conn):
         if rcols and "discr" not in rcols:
             conn.execute("ALTER TABLE requests ADD COLUMN discr INTEGER NOT NULL DEFAULT 0")
     except Exception:
-        pass
+        raise
     # Черновиков больше нет: пустые недооформленные документы и заявки удаляем.
-    # Только старше суток: иначе перезапуск сайта убирал бы передачу, которую человек только что открыл.
+    # Новые пустые формы виртуальны; чистим только действительно пустые документы.
     conn.execute("""DELETE FROM documents WHERE status='draft'
                     AND id NOT IN (SELECT document_id FROM lines)
-                    AND created_at < strftime('%Y-%m-%d %H:%M', 'now', '-1 day')""")
+                    """)
     conn.execute("""DELETE FROM requests WHERE (status='draft' OR (created_role='sklad' AND status!='shipped'))
                     AND id NOT IN (SELECT request_id FROM request_items)
                     AND id NOT IN (SELECT transfer_id FROM requests WHERE transfer_id IS NOT NULL)
-                    AND created_at < strftime('%Y-%m-%d %H:%M', 'now', '-1 day')""")
+                    """)
     # старые типы документов A/B -> OUT, строкам проставляем статус
     conn.execute("""UPDATE lines SET status='zagotovka'
                     WHERE (status IS NULL OR status='') AND document_id IN
@@ -346,7 +348,7 @@ def _migrate(conn):
         try:
             conn.execute(sql)
         except sqlite3.Error:
-            pass
+            raise
     _migrate_dates(conn)
 
 
@@ -403,13 +405,10 @@ REAL_OPERATIONS = [
 ]
 
 
-def init_db():
+def _init_db():
     conn = get_db()
-    # Обычный журнал вместо WAL: на сетевом диске PythonAnywhere WAL заметно тормозит.
-    try:
-        conn.execute("PRAGMA journal_mode = DELETE")
-    except sqlite3.Error:
-        pass
+    # Сохраняем режим журнала текущей установки.
+    conn.execute("PRAGMA journal_mode = DELETE")
     conn.executescript(SCHEMA)
     _migrate(conn)
 
@@ -423,7 +422,18 @@ def init_db():
         conn.execute("INSERT INTO meta (key, value) VALUES ('real_operations_v1', ?)", (now_str(),))
 
     conn.commit()
+    if __package__:
+        from .schema_hardening import migrate
+    else:
+        from schema_hardening import migrate
+    migrate(conn)
     conn.close()
+
+
+def init_db():
+    with open(DB_PATH + ".migration.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        _init_db()
 
 
 if __name__ == "__main__":

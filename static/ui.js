@@ -193,6 +193,7 @@
   });
   window.uiCombo=initCombo;
   function scan(){document.querySelectorAll("input.combo").forEach(initCombo);initToasts();initFocus();}
+  window.addEventListener("jail-page",scan);
   if(document.readyState!=="loading")scan();else document.addEventListener("DOMContentLoaded",scan);
 })();
 

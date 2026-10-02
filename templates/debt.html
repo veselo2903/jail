@@ -35,13 +35,20 @@
   <table>
     {% for p in pays %}
     <tr>
-      <td class="small" style="white-space:nowrap">{{ p.created_at|dt }}</td>
+      <td class="small" style="white-space:nowrap">{{ p.payment_date }}</td>
       <td>{{ p.note or '' }}</td>
       <td class="num placed-qty">{{ p.amount|rub }}</td>
       <td class="num" style="width:60px">
-        <form method="post" action="{{ url_for('debt_pay_delete', pid=p.id) }}" data-confirm="Удалить эту оплату?" data-ok="Удалить" data-danger>
-          <button class="btn grey icon sm" type="submit" aria-label="Удалить">×</button>
-        </form>
+        {% if p.cancelled_at %}
+        <span class="small">Отменена {{ p.cancelled_at|dt }} · {{ p.cancel_reason }}</span>
+        {% else %}
+        <details class="payment-cancel"><summary>Отменить</summary>
+          <form method="post" action="{{ url_for('debt_pay_delete', pid=p.id) }}" class="grid" data-confirm="Отменить оплату?" data-ok="Отменить оплату" data-danger>
+            <input name="reason" placeholder="Причина отмены" required data-req="Укажите причину">
+            <button class="btn danger" type="submit">Отменить оплату</button>
+          </form>
+        </details>
+        {% endif %}
       </td>
     </tr>
     {% endfor %}
@@ -55,6 +62,8 @@
     <div class="sheet-t" style="color:var(--ink)">Оплатили производству</div>
     <div class="sheet-sub">{% if left < 0 %}Уже переплачено {{ (-left)|rub }}{% else %}Долг сейчас {{ left|rub }}{% endif %}</div>
     <form method="post" action="{{ url_for('debt_pay') }}" class="grid" id="pay-form" data-left="{{ left }}">
+      <input type="hidden" name="action_token" value="{{ payment_token }}">
+      <div><label>Дата оплаты</label><input type="date" name="payment_date" value="{{ today }}" required></div>
       <div><label>Сумма, ₽</label><input name="amount" inputmode="decimal" placeholder="0" id="pay-amount"></div>
       <div><label>Примечание</label><input name="note" placeholder="например, перевод на карту"></div>
       <button class="btn green block" type="submit">Записать оплату</button>
