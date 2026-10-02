@@ -3,24 +3,44 @@
 {% block content %}
 
 <div class="pr-bar">
-  <a class="btn pr-create" href="{{ url_for('docs_collect') }}">Собрать передачу</a>
+  {% if not drafts %}<a class="btn pr-create" href="{{ url_for('docs_collect') }}">Собрать передачу</a>{% endif %}
   <div class="subtabs pr-sub">
     {% for key,label in tabs %}<a href="{{ url_for('documents', sub=key) }}" class="{{ 'active' if sub==key }}">{{ label }} <span class="n">{{ counts[key] }}</span></a>{% endfor %}
   </div>
 </div>
 
-{% if rows %}
-{% if rows|rejectattr('by_sklad')|list %}<div class="sklad-list-tools"><button class="btn back" type="button" id="requests-expand-all">Развернуть все</button></div>{% endif %}
+{% if drafts %}
+<section class="sklad-draft-transfers">
+  <h3>Передачи в сборке</h3>
+  {% for x in drafts %}
+  <div class="card sklad-draft-transfer">
+    <div><b>Передача №{{ x.number or x.id }}</b><div class="sklad-draft-description">{{ x.first }}{% if x.more %} · ещё {{ x.more }}{% endif %}</div></div>
+    <a class="btn" href="{{ x.url }}">Продолжить сборку</a>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% set transfers = rows|selectattr('by_sklad')|list %}
+{% set incoming = rows|rejectattr('by_sklad')|list %}
+{% if transfers %}
+<section class="sklad-transfer-list">
+  <h3>Передачи склада</h3>
+  <div class="card flush">
+    {% for x in transfers %}
+    <div class="sklad-transfer-row">
+      <div><b>Передача №{{ x.number or x.id }}</b><div class="sklad-draft-description">{{ x.first }}{% if x.more %} · ещё {{ x.more }}{% endif %}</div></div>
+      <span class="tag {{ 'd' if x.disc else 'sent' }}">{{ x.status }}</span>
+      <a class="btn back" href="{{ x.url }}">Открыть передачу</a>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% if incoming %}
+<div class="sklad-incoming-list-head"><h3>Заявки производства</h3><button class="btn back" type="button" id="requests-expand-all">Развернуть все</button></div>
 <div class="card flush sklad-requests-list">
   <div class="sklad-request-grid sklad-request-labels"><span>№</span><span>Что заказано</span><span>Статус</span><span>Создана</span><span></span></div>
-  {% for x in rows %}
-  {% if x.by_sklad %}
-  <a class="sklad-request-grid sklad-transfer-link" href="{{ x.url }}">
-    <span>{{ x.number or x.id }}</span><span><b>{{ x.first }}</b>{% if x.more %} <span class="small">ещё {{ x.more }}</span>{% endif %}</span>
-    <span><span class="tag {{ 'you' if x.action else ('d' if x.disc else 'sent') }}">{{ x.status }}</span></span>
-    <span class="small">{{ (x.created_at|dt)[:10] }}</span><span>→</span>
-  </a>
-  {% else %}
+  {% for x in incoming %}
   <details class="sklad-request-spoiler">
     <summary class="sklad-request-grid {{ 'pr-act' if x.action }}">
       <span>{{ x.number or x.id }}</span>
@@ -45,7 +65,6 @@
       </table>
     </div>
   </details>
-  {% endif %}
   {% endfor %}
 </div>
 <script>
@@ -54,7 +73,8 @@ button.addEventListener('click',function(){var entries=Array.from(document.query
 var expand=entries.some(function(entry){return !entry.open;});entries.forEach(function(entry){entry.open=expand;});button.textContent=expand?'Свернуть все':'Развернуть все';});
 })();
 </script>
-{% else %}
+{% endif %}
+{% if not rows and not drafts %}
 <div class="card flush"><div class="empty">{{ {'collect':'Заявок для сборки нет.','transit':'Передач в пути нет.','done':'Выполненных пока нет.'}[sub] }}</div></div>
 {% endif %}
 {% endblock %}

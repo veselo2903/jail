@@ -1260,7 +1260,7 @@ def _warehouse_need(i):
 
 
 def _sklad_requests():
-    """Раздел «Заявки» склада: заказы производства + свои передачи без заказа, одним списком."""
+    """Incoming requests and warehouse transfers are shown separately."""
     sub = request.args.get("sub")
     if sub=="remaining":
         sub="collect"
@@ -1268,9 +1268,6 @@ def _sklad_requests():
     for r in g.db.execute("SELECT * FROM requests ORDER BY id").fetchall():
         by_sklad = r["created_role"] == "sklad"
         if by_sklad:
-            # передача склада: показываем, только если она без заказов (заказы видны сами по себе)
-            if g.db.execute("SELECT 1 FROM requests WHERE transfer_id=? LIMIT 1", (r["id"],)).fetchone():
-                continue
             its = g.db.execute("SELECT ri.*, c.name AS customer, m.name AS model FROM request_items ri "
                                "LEFT JOIN customers c ON c.id=ri.customer_id LEFT JOIN models m ON m.id=ri.model_id "
                                "WHERE ri.request_id=? AND ri.line_kind IN ('pair','material') ORDER BY ri.id",
@@ -1305,7 +1302,8 @@ def _sklad_requests():
     if sub not in groups:
         sub = next((name for name in ("collect","transit") if groups[name]),"collect")
     tabs=[("collect","Нужно собрать"),("transit","В пути"),("done","Выполненные")]
-    return render_template("sklad_requests.html", sub=sub, rows=groups[sub], tabs=tabs,
+    drafts=[x for x in work if x["by_sklad"] and x["action"]]
+    return render_template("sklad_requests.html", sub=sub, rows=[x for x in groups[sub] if x not in drafts], drafts=drafts, tabs=tabs,
                            counts={name:len(items) for name,items in groups.items()})
 
 

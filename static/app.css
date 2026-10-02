@@ -460,3 +460,12 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-heigh
 .sklad-request-items th:first-child{width:55%}
 .sklad-transfer-link{color:var(--ink)}
 @media(max-width:800px){.sklad-request-grid{grid-template-columns:36px minmax(0,1fr) 145px 90px 14px;gap:8px;padding-inline:12px}.sklad-request-content{padding-left:12px}}
+
+.sklad-draft-transfer,.sklad-transfer-row{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.sklad-draft-transfer{border-color:#bdcfea;background:#f5f8fd}
+.sklad-draft-description{margin-top:6px;color:var(--muted);font-size:14px}
+.sklad-transfer-row{padding:14px 16px}
+.sklad-transfer-row+.sklad-transfer-row{border-top:1px solid var(--line)}
+.sklad-transfer-row>div{flex:1}
+.sklad-incoming-list-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 10px}
+.sklad-incoming-list-head h3{margin:0}

@@ -243,4 +243,15 @@ class Workflows(unittest.TestCase):
    self.assertIn('Наш склад',response.text);self.assertIn('Склад зоны',response.text)
   self.assertEqual(self.client.get('/stock?tab=ready').status_code,302)
 
+ def test_linked_draft_has_explicit_continue_button(self):
+  self.sql("INSERT INTO requests(id,status,created_role,created_at) VALUES(1,'open','proizv',?)",(db.now_str(),))
+  self.sql("INSERT INTO request_items(id,request_id,item,line_kind,qty,unit) VALUES(1,1,'Leather','need',10,'шт')")
+  self.role('sklad');self.client.post('/docs/collect/save',data={'quantity_selection':'1','col_1':'5'})
+  transfer=self.sql("select id from requests where created_role='sklad'")[0][0]
+  view=self.client.get('/docs?sub=collect').text
+  self.assertIn('Передачи в сборке',view);self.assertIn('Продолжить сборку',view);self.assertIn('Заявки производства',view)
+  self.assertLess(view.index('Передачи в сборке'),view.index('Заявки производства'))
+  self.assertIn(f'href="/requests/{transfer}?step=2"',view)
+  self.assertEqual(self.client.get(f'/requests/{transfer}?step=2').status_code,200)
+
 if __name__=='__main__':unittest.main(verbosity=2)
