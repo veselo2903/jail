@@ -469,3 +469,5 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-heigh
 .sklad-transfer-row>div{flex:1}
 .sklad-incoming-list-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 10px}
 .sklad-incoming-list-head h3{margin:0}
+
+.transfer-act-actions{display:flex;justify-content:flex-end;margin:0 0 14px}

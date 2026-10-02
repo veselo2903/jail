@@ -249,6 +249,13 @@ CREATE TABLE IF NOT EXISTS mat_moves (
     role       TEXT
 );
 
+-- Снимок акта при отправке сохраняет исходный состав при частичной приёмке.
+CREATE TABLE IF NOT EXISTS transfer_acts (
+    request_id INTEGER PRIMARY KEY REFERENCES requests(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    payload TEXT NOT NULL
+);
+
 -- Задел под сдельную оплату по работникам (этап «зарплата по номерам»)
 CREATE TABLE IF NOT EXISTS work_records (
     id           INTEGER PRIMARY KEY,

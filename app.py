@@ -3540,6 +3540,32 @@ def request_submit(req_id):
     return redirect(url_for("documents", tab="mat"))
 
 
+def _transfer_act_data(r):
+    items=[]
+    for i in _placed_items(r["id"]):
+        name=f"{i['customer']} — {i['model']}" if i['line_kind']=='pair' else i['item']
+        items.append(dict(name=name,qty=i['collected'] or i['qty'] or 0,
+                          unit='пар' if i['line_kind']=='pair' else (i['unit'] or 'шт'),note=i['note'] or ''))
+    return dict(number=r['number'] or r['id'],date=r['done_at'] or r['created_at'],
+                items=items,note=r['ship_note'] or r['note'] or '')
+
+
+@app.route('/requests/<int:req_id>/act')
+@login_required
+def transfer_act(req_id):
+    r=g.db.execute('SELECT * FROM requests WHERE id=?',(req_id,)).fetchone()
+    if not r or r['created_role']!='sklad':
+        abort(404)
+    if session['role']=='proizv' and r['status'] not in ('shipped','accepted'):
+        abort(403)
+    saved=g.db.execute('SELECT payload FROM transfer_acts WHERE request_id=?',(req_id,)).fetchone()
+    act=json.loads(saved['payload']) if saved else _transfer_act_data(r)
+    if not act['items']:
+        flash('Сначала добавьте материалы или обувь в передачу. После этого можно распечатать акт.')
+        return redirect(url_for('request_view',req_id=req_id))
+    return render_template('transfer_act.html',act=act,r=r)
+
+
 @app.route("/requests/<int:req_id>/ship", methods=["POST"])
 @login_required
 def request_ship(req_id):
@@ -3575,6 +3601,9 @@ def request_ship(req_id):
             _mat_move("out", it["item"], it["unit"], -it["collected"], f"Передача №{req_id} на производство", ref_id=req_id)
     g.db.execute("UPDATE requests SET status='shipped', done_at=?, ship_note=? WHERE id=?",
                  (now, ship_note, req_id))
+    sent=g.db.execute('SELECT * FROM requests WHERE id=?',(req_id,)).fetchone()
+    g.db.execute('INSERT OR IGNORE INTO transfer_acts(request_id,created_at,payload) VALUES(?,?,?)',
+                 (req_id,now,json.dumps(_transfer_act_data(sent),ensure_ascii=False)))
     # Demand is reduced on dispatch; receipts remain attached to the delivery.
     linked=[x[0] for x in g.db.execute("SELECT id FROM requests WHERE transfer_id=?",(req_id,))]
     for rid in linked:

@@ -39,6 +39,10 @@
 </div>
 {% endif %}
 
+{% if r.created_role=='sklad' and r.id and (pair_items or mat_items) %}
+<div class="transfer-act-actions"><a class="btn back" href="{{ url_for('transfer_act',req_id=r.id) }}" target="_blank" rel="noopener">Распечатать акт</a></div>
+{% endif %}
+
 {# ==================== КЛАДОВЩИК СОБИРАЕТ (пошаговый мастер) ==================== #}
 {% if can_collect %}
 

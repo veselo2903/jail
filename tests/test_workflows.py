@@ -254,4 +254,22 @@ class Workflows(unittest.TestCase):
   self.assertIn(f'href="/requests/{transfer}?step=2"',view)
   self.assertEqual(self.client.get(f'/requests/{transfer}?step=2').status_code,200)
 
+ def test_transfer_act_print_and_snapshot_survives_partial_receipt(self):
+  self.role('sklad')
+  self.sql("INSERT INTO requests(id,status,created_role,created_at) VALUES(1,'progress','sklad',?)",(db.now_str(),))
+  for iid,name,qty in [(1,'Leather',10),(2,'Soles',5)]:
+   self.sql("INSERT INTO request_items(id,request_id,item,line_kind,collected,unit,note) VALUES(?,1,?,'material',?,'шт','Act note')",(iid,name,qty))
+  response=self.client.get('/requests/1/act');self.assertEqual(response.status_code,200)
+  for text in ('Leather','Soles','Act note','window.print()','Материалы передал','Материалы получил'):
+   self.assertIn(text,response.text)
+  self.assertIn('Распечатать акт',self.client.get('/requests/1').text)
+  self.role('proizv');self.assertEqual(self.client.get('/requests/1/act').status_code,403)
+  self.role('sklad');self.client.post('/requests/1/ship',data={'ship_note':'Shipment note'})
+  snapshot=self.sql('select payload from transfer_acts where request_id=1')[0][0]
+  self.role('proizv');self.client.post('/acceptance/accept',data={'recv_1':'10'})
+  self.role('sklad');response=self.client.get('/requests/1/act')
+  self.assertIn('Soles',response.text);self.assertIn('Shipment note',response.text)
+  self.assertEqual(self.sql('select payload from transfer_acts where request_id=1')[0][0],snapshot)
+  self.assertEqual(len(json.loads(snapshot)['items']),2)
+
 if __name__=='__main__':unittest.main(verbosity=2)
