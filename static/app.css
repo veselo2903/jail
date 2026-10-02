@@ -437,3 +437,10 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-heigh
 .empty-create>summary{display:flex;max-width:280px;margin:auto;list-style:none;padding:10px 16px}
 .empty-create>summary::after{display:none}
 .empty-create>form{margin-top:20px}
+
+/* Secondary navigation: compact, quieter than the main action. */
+.btn.back{
+  --btn-bg:#f5f8fc;--btn-color:#47658b;--btn-border:#d8e2ef;
+  --btn-hover-bg:#eaf0f8;--btn-hover-color:#294f80;--btn-hover-border:#b9cce3;
+  min-height:36px;padding:6px 12px;font-size:14px;line-height:22px;border-radius:9px;
+}
