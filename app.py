@@ -3551,7 +3551,7 @@ def _req_in_transit(r):
 
 def _can_delete_req(r, role):
     """Кто может удалить: директор — всё, кроме принятого; производство — свою, пока склад не начал;
-    склад — заказ производства, пока он не уехал, и свою неотправленную передачу."""
+    склад — только свою неотправленную передачу."""
     if r["status"] in ("accepted", "shipped"):
         return False
     if r["created_role"] == "proizv" and _req_in_transit(r):
@@ -3561,9 +3561,7 @@ def _can_delete_req(r, role):
     if role == "proizv":
         return r["created_role"] == "proizv" and r["status"] in ("draft", "open")
     if role == "sklad":
-        if r["created_role"] == "proizv":
-            return r["status"] in ("open", "progress", "done")
-        return r["status"] == "progress"
+        return r["created_role"] == "sklad" and r["status"] == "progress"
     return False
 
 
@@ -3574,6 +3572,8 @@ def request_delete(req_id):
     r = g.db.execute("SELECT * FROM requests WHERE id=?", (req_id,)).fetchone()
     if not r:
         abort(404)
+    if role == "sklad" and r["created_role"] == "proizv":
+        abort(403)
     if r["status"] in ("accepted", "shipped"):
         flash("Отправленную или принятую передачу нельзя удалить. Исправление — через приёмку и расхождение.")
         return redirect(url_for("request_view", req_id=req_id))

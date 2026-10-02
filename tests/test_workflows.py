@@ -133,4 +133,15 @@ class Workflows(unittest.TestCase):
   self.assertEqual(len(self.sql('select * from requests')),1)
   self.assertEqual(self.sql('select placed from request_items')[0][0],0)
 
+ def test_sklad_cannot_delete_production_request(self):
+  self.role('sklad')
+  for rid,status in enumerate(('open','progress','done'),start=1):
+   self.sql("INSERT INTO requests(id,status,created_role,created_at) VALUES(?,?,'proizv',?)",(rid,status,db.now_str()))
+   self.sql("INSERT INTO request_items(request_id,item,line_kind,qty) VALUES(?,'Material','need',5)",(rid,))
+   self.assertNotIn(f'action="/requests/{rid}/delete"',self.client.get(f'/requests/{rid}').text)
+   self.assertEqual(self.client.post(f'/requests/{rid}/delete').status_code,403)
+   self.assertEqual(self.sql('select status from requests where id=?',(rid,))[0][0],status)
+  self.assertTrue(module._can_delete_req({'created_role':'sklad','status':'progress'},'sklad'))
+  self.assertTrue(module._can_delete_req({'created_role':'proizv','status':'open','transfer_id':None},'proizv'))
+
 if __name__=='__main__':unittest.main(verbosity=2)
