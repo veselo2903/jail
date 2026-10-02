@@ -1337,6 +1337,13 @@ def docs_collect_save():
                 val = rest if placed else it["collected"]
             else:
                 val = _num(raw) or 0
+            if request.form.get("quantity_selection") == "1":
+                val = _recv_value(raw) if raw else None
+                if raw and val is None:
+                    g.db.rollback()
+                    flash(f"{it['item']}: впишите количество не меньше нуля.")
+                    return redirect(url_for("docs_collect"))
+                placed = 1 if val and val > 0 else 0
             if placed and not val:
                 missing.append(it["item"])
             g.db.execute("UPDATE request_items SET collected=?, placed=? WHERE id=?",
@@ -1357,10 +1364,12 @@ def docs_collect_save():
         g.db.rollback()
         flash("Впишите, сколько положили: " + ", ".join(missing) + ".")
         return redirect(url_for("docs_collect"))
+    if t and not g.db.execute("SELECT 1 FROM request_items WHERE request_id=?", (t,)).fetchone():
+        g.db.execute("DELETE FROM requests WHERE id=?", (t,))
     g.db.commit()
     if any_placed:
         return redirect(url_for("request_view", req_id=t, step=2))
-    flash("Отметьте галочкой, что положили, — тогда откроется следующий шаг.")
+    flash("Впишите, сколько положили, — тогда откроется следующий шаг.")
     return redirect(url_for("docs_collect"))
 
 

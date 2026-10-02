@@ -165,4 +165,16 @@ class Workflows(unittest.TestCase):
   self.assertEqual(self.sql('select delivered from request_items where id=1')[0][0],10)
   self.assertEqual(self.sql('select status from requests where id=1')[0][0],'accepted')
 
+ def test_collect_quantity_without_checkbox(self):
+  self.sql("INSERT INTO requests(id,status,created_role,created_at) VALUES(1,'open','proizv',?)",(db.now_str(),))
+  self.sql("INSERT INTO request_items(id,request_id,item,line_kind,qty,delivered,unit) VALUES(1,1,'Leather','need',10,5,'шт')")
+  self.role('sklad');view=self.client.get('/docs/collect').text
+  self.assertNotIn('type="checkbox"',view);self.assertIn('data-quantity="5"',view)
+  self.client.post('/docs/collect/save',data={'quantity_selection':'1','col_1':'3'})
+  self.assertEqual(self.sql('select collected,placed from request_items where id=1')[0]['collected'],3)
+  self.assertEqual(self.sql("select collected from request_items where line_kind='material'")[0][0],3)
+  self.client.post('/docs/collect/save',data={'quantity_selection':'1','col_1':''})
+  self.assertEqual(self.sql('select placed from request_items where id=1')[0][0],0)
+  self.assertEqual(len(self.sql("select * from request_items where line_kind='material'")),0)
+
 if __name__=='__main__':unittest.main(verbosity=2)
