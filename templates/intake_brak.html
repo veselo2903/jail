@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Принять брак — jail{% endblock %}
+{% block content %}
+<div style="margin-bottom:4px"><a class="small" href="{{ url_for('stock', tab='work') }}">← К складу</a></div>
+
+{% if work %}
+<form method="post" id="bk-form" novalidate>
+  <input type="hidden" name="k" id="bk-k">
+  <input type="search" id="bk-q" class="stock-q" placeholder="Поиск: заказчик или модель" autocomplete="off">
+  <div class="card flush">
+    <div class="bk-scroll">
+    <table class="bk-t">
+      <tr><th>Заказчик</th><th>Модель</th><th>Операции</th><th class="num">В работе</th></tr>
+      {% for e in work %}
+      <tr class="bk-row" data-k="{{ e|fin_key('brak') }}" data-qty="{{ e.qty|int }}" data-q="{{ (e.customer ~ ' ' ~ e.model)|lower }}" tabindex="0">
+        <td class="nw"><b>{{ e.customer }}</b></td><td><b>{{ e.model }}</b></td>
+        <td>{% if e.ops %}{{ e.ops|ops_short }}{% else %}<span class="small">без операций</span>{% endif %}</td>
+        <td class="num placed-qty">{{ e.qty|q }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div class="empty" id="bk-none" hidden>Ничего не найдено.</div>
+    </div>
+  </div>
+  <div class="card bk-fields">
+    <div class="bk-sel" id="bk-sel">Выберите обувь в списке</div>
+    <div class="grid" style="grid-template-columns:180px 1fr;gap:14px">
+      <div><label>Сколько пар</label><input name="pairs" id="bk-pairs" inputmode="numeric" autocomplete="off" placeholder="—"></div>
+      <div><label>Причина брака</label><input name="note" id="bk-note" placeholder="—" autocomplete="off"></div>
+    </div>
+    <div class="form-err" hidden style="margin-top:12px"></div>
+    <button class="btn block" type="submit" style="margin-top:12px">Записать брак</button>
+  </div>
+</form>
+<script>
+(function(){
+  var f=document.getElementById("bk-form"),rows=[].slice.call(f.querySelectorAll(".bk-row")),k=document.getElementById("bk-k"),
+      sel=document.getElementById("bk-sel"),pairs=document.getElementById("bk-pairs"),note=document.getElementById("bk-note"),
+      err=f.querySelector(".form-err"),q=document.getElementById("bk-q"),cur=null;
+  function pick(tr){rows.forEach(function(r){r.classList.toggle("on",r===tr);});cur=tr;k.value=tr.dataset.k;
+    var c=tr.children;sel.innerHTML="<b>"+c[0].textContent+"</b> · "+c[1].textContent+' <span class="small">· в работе '+tr.dataset.qty+" пар</span>";
+    sel.classList.add("on");f.querySelector(".bk-scroll").classList.remove("invalid");err.hidden=true;pairs.focus();}
+  rows.forEach(function(tr){tr.addEventListener("click",function(e){if(e.target.closest(".ops-n"))return;pick(tr);});
+    tr.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();pick(tr);}});});
+  q.addEventListener("input",function(){var v=q.value.trim().toLowerCase(),n=0,last=null;
+    rows.forEach(function(tr){var on=!v||tr.dataset.q.indexOf(v)>=0;tr.hidden=!on;if(on){n++;last=tr;}});
+    document.getElementById("bk-none").hidden=n>0;});
+  q.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();
+    var vis=rows.filter(function(tr){return !tr.hidden;});if(vis.length===1)pick(vis[0]);else if(vis.length)vis[0].focus();}});
+  f.addEventListener("submit",function(e){
+    var msg="",n=parseInt(pairs.value,10)||0;[pairs,note].forEach(function(i){i.classList.remove("invalid");});
+    if(!cur){msg="Выберите обувь в списке.";f.querySelector(".bk-scroll").classList.add("invalid");}
+    else if(!n){msg="Впишите, сколько пар брака.";pairs.classList.add("invalid");pairs.focus();}
+    else if(n>parseInt(cur.dataset.qty,10)){msg="В работе только "+cur.dataset.qty+" пар.";pairs.classList.add("invalid");pairs.focus();}
+    else if(!note.value.trim()){msg="Укажите причину брака.";note.classList.add("invalid");note.focus();}
+    if(msg){e.preventDefault();e.stopImmediatePropagation();err.textContent=msg;err.hidden=false;}
+  },true);
+  q.focus();
+})();
+</script>
+{% else %}
+<div class="card"><div class="empty">В работе ничего нет — принимать нечего.</div></div>
+{% endif %}
+{% endblock %}

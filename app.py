@@ -1,3 +1,4 @@
+import math
 import os
 import json
 from functools import wraps
@@ -5,7 +6,6 @@ from flask import (
     Flask, g, session, request, redirect, url_for,
     render_template, abort, flash
 )
-from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Работает и как отдельное приложение (python app.py),
 # и как раздел /jail внутри основной системы (from jail.app import app).
@@ -14,8 +14,11 @@ if __package__:
 else:
     import db
 
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_prefix=1)
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024   # архив обновления — не больше 50 МБ
 app.secret_key = os.environ.get("JAIL_SECRET_KEY") or "jail-dev-secret-change-before-launch"
 # Отдельное имя cookie, чтобы сессии jail и основной системы не пересекались.
 app.config["SESSION_COOKIE_NAME"] = "jail_session"
@@ -357,6 +360,8 @@ def wh_repair():
         abort(403)
     try:
         cid, mid = int(request.form["cid"]), int(request.form["mid"])
+        if not (0 < cid < 2**62 and 0 < mid < 2**62):
+            raise ValueError
     except (KeyError, ValueError):
         abort(400)
     qty = _num(request.form.get("qty"))
@@ -385,6 +390,8 @@ def wh_writeoff():
         abort(403)
     try:
         cid, mid = int(request.form["cid"]), int(request.form["mid"])
+        if not (0 < cid < 2**62 and 0 < mid < 2**62):
+            raise ValueError
     except (KeyError, ValueError):
         abort(400)
     quality = request.form.get("quality") if request.form.get("quality") in WH_QUALITY else "ready"
@@ -481,8 +488,11 @@ def stock():
         return redirect(url_for("login"))
     if not _can_stock():
         abort(403)
-    tab = request.args.get("tab", "ready" if session.get("role") == "director" else "pairs")
+    tab = request.args.get("tab", "ready" if session.get("role") == "director" else "work")
+    if tab == "pairs":
+        tab = "work"
     items = stock_balances()
+    work, fin_ready, fin_brak = _prod_view()
     pairs = [e for e in items if e["type"] == "pair"]
     mats = [e for e in items if e["type"] == "material"]
     moves = []
@@ -493,6 +503,7 @@ def stock():
                ORDER BY s.id DESC LIMIT 200""").fetchall()
     ready = wh_balances() if session.get("role") == "director" else []
     return render_template("stock.html", tab=tab, pairs=pairs, mats=mats, moves=moves, ready=ready,
+                           work=work, fin_ready=fin_ready, fin_brak=fin_brak, fin_kinds=FIN_KINDS,
                            can_edit=_can_stock_edit(),
                            reasons=WRITEOFF_REASONS, units=MAT_UNITS, materials=_materials_catalog(),
                            total_pairs=sum(e["qty"] for e in pairs),
@@ -553,7 +564,10 @@ def stock_act():
         abort(403)
     k = request.form.get("k", "")
     act = request.form.get("act")
-    moves = _item_moves(k)
+    try:
+        moves = _item_moves(k)
+    except (ValueError, IndexError, KeyError):
+        abort(404)
     if not moves:
         abort(404)
     m0 = moves[-1]
@@ -583,6 +597,8 @@ def stock_act():
         try:
             fact = float(raw)
         except ValueError:
+            fact = None
+        if fact is None or not math.isfinite(fact) or fact > MAX_QTY:
             flash("Впишите, сколько есть по факту.")
             return back
         if fact < 0:
@@ -655,6 +671,14 @@ def version_now():
 @app.before_request
 def _open_db():
     g.db = db.get_db()
+    # Любое сохранение — под замком записи с самого начала: проверка («хватает ли остатка», «ещё не
+    # отправлено») и запись идут одним целым. Два нажатия с разных устройств выполняются по очереди,
+    # и второе уже видит результат первого — без двойных отгрузок и списаний в минус.
+    if request.method == "POST" and not request.path.startswith("/update"):
+        try:
+            g.db.execute("BEGIN IMMEDIATE")
+        except Exception:
+            pass
 
 
 @app.teardown_request
@@ -827,16 +851,17 @@ def _lot_ops_filter(sig):
 def _received_chunks():
     """Пары, которые производство получило от склада, по партиям (в порядке поступления)."""
     rows = g.db.execute(
-        """SELECT ri.id, ri.customer_id, ri.model_id, COALESCE(ri.recv, ri.collected) AS q, r.done_at AS t
+        """SELECT ri.id, ri.customer_id, ri.model_id, COALESCE(ri.recv, ri.collected) AS q,
+                  COALESCE(r.accepted_at, r.done_at) AS t
            FROM request_items ri JOIN requests r ON r.id=ri.request_id
-           WHERE ri.line_kind='pair' AND r.status IN ('shipped','accepted')""").fetchall()
+           WHERE ri.line_kind='pair' AND r.status='accepted'""").fetchall()   # только реально принятое
     om = _ops_map("req", [r["id"] for r in rows])
     src = [(r, om[r["id"]]) for r in rows]
     rows = g.db.execute(
         """SELECT l.id, l.customer_id, l.model_id,
                   COALESCE(l.pairs_recv, l.pairs_sent) AS q, d.sent_at AS t
            FROM lines l JOIN documents d ON d.id=l.document_id
-           WHERE d.kind='OUT' AND d.status IN ('sent','accepted')""").fetchall()
+           WHERE d.kind='OUT' AND d.status='accepted'""").fetchall()
     om2 = _ops_map("line", [r["id"] for r in rows])
     src += [(r, om2[r["id"]]) for r in rows]
     src.sort(key=lambda x: _parse_dt(x[0]["t"]))
@@ -944,7 +969,7 @@ def debt_pay():
     """Записать оплату производству (перевели деньги)."""
     if session.get("role") != "director":
         abort(403)
-    amount = _num(request.form.get("amount"))
+    amount = _num(request.form.get("amount"), cap=1e10)
     if not amount:
         flash("Впишите сумму оплаты.")
         return redirect(url_for("debt"))
@@ -1360,10 +1385,289 @@ def docs_collect_blank():
     return redirect(url_for("request_view", req_id=t, step=2))
 
 
+# ---------- Склад производства: «В работе» → «Готово к отправке» / «Брак к отправке» → машина ----------
+# Кладовщик производства в течение дня переписывает то, что цех сдал готовым (или браком). В машину
+# грузится только переписанное — неготовое отправить нельзя. Остаток на производстве не меняется,
+# пока пары не уехали: «В работе» = свободно на производстве − переписано и ещё не уехало.
+FIN_KINDS = {"ready": "Готово к отправке", "brak": "Брак к отправке"}
+
+
+@_cached
+def _finish_bal():
+    """{(заказчик, модель, партия, ready|brak, причина): пар} — переписано и ещё не уехало."""
+    bal = {}
+    for r in g.db.execute("SELECT customer_id c, model_id m, lot, kind, COALESCE(note,'') n, SUM(pairs) p "
+                          "FROM finish GROUP BY 1, 2, 3, 4, 5"):
+        k = (r["c"], r["m"], r["lot"], r["kind"], r["n"] if r["kind"] == "brak" else "")
+        bal[k] = bal.get(k, 0) + (r["p"] or 0)
+    for r in g.db.execute("SELECT l.customer_id c, l.model_id m, l.lot, l.status, COALESCE(l.note,'') n, "
+                          "SUM(l.pairs_sent) p FROM lines l JOIN documents d ON d.id=l.document_id "
+                          "WHERE l.src='ready' GROUP BY 1, 2, 3, 4, 5"):
+        kind = "brak" if r["status"] == "brak" else "ready"
+        k = (r["c"], r["m"], r["lot"], kind, r["n"] if kind == "brak" else "")
+        bal[k] = bal.get(k, 0) - (r["p"] or 0)
+    return {k: v for k, v in bal.items() if v}
+
+
+def _names():
+    return ({r["id"]: r["name"] for r in g.db.execute("SELECT id, name FROM customers")},
+            {r["id"]: r["name"] for r in g.db.execute("SELECT id, name FROM models")})
+
+
+def _prod_view():
+    """Три части склада производства: в работе (по партиям), готово к отправке, брак к отправке."""
+    lots, _ = _return_lots()
+    fb = _finish_bal()
+    cn, mn = _names()
+    held = {}
+    for (c, m, lot, kind, n), q in fb.items():
+        held[(c, m, lot)] = held.get((c, m, lot), 0) + q
+    work = []
+    for (c, m), ls in lots.items():
+        for v in ls:
+            q = v["qty"] - held.get((c, m, v["sig"]), 0)
+            if q > 1e-9:
+                work.append(dict(cid=c, mid=m, lot=v["sig"], ops=v["ops"], qty=q,
+                                 customer=cn.get(c, "?"), model=mn.get(m, "?")))
+    ready, brak = [], []
+    for (c, m, lot, kind, n), q in fb.items():
+        if q <= 0:
+            continue
+        (ready if kind == "ready" else brak).append(dict(cid=c, mid=m, lot=lot, ops=_sig_ops(lot), qty=q, note=n,
+                                                         kind=kind, customer=cn.get(c, "?"), model=mn.get(m, "?")))
+    key = lambda e: ((e["customer"] or "").lower(), (e["model"] or "").lower(), e["lot"], e.get("note") or "")
+    return sorted(work, key=key), sorted(ready, key=key), sorted(brak, key=key)
+
+
+def _fin_key(e, kind=None):
+    """Ключ строки для форм: kind|заказчик|модель|причина|партия (партия — последней, в ней бывают «|»)."""
+    return f"{kind or e.get('kind', '')}|{e['cid']}|{e['mid']}|{e.get('note') or ''}|{e['lot']}"
+
+
+def _parse_fin_key(k):
+    kind, c, m, note, lot = (k or "").split("|", 4)
+    cid, mid = int(c), int(m)
+    if kind not in FIN_KINDS or not (0 < cid < 2**62 and 0 < mid < 2**62):
+        raise ValueError
+    return kind, cid, mid, note, lot
+
+
+@app.template_filter("fin_key")
+def _fin_key_filter(e, kind=None):
+    return _fin_key(e, kind)
+
+
+@app.route("/stock/finish", methods=["POST"])
+@login_required
+def stock_finish():
+    """Кладовщик производства принял от цеха: готово или брак (с причиной)."""
+    if session["role"] != "proizv":
+        abort(403)
+    try:
+        kind, cid, mid, _, lot = _parse_fin_key(request.form.get("k"))
+    except (ValueError, TypeError):
+        abort(400)
+    back = redirect(url_for("stock", tab="work"))
+    pairs = _int_pairs(request.form.get("pairs"))
+    note = " ".join((request.form.get("note") or "").split()) or None
+    if not pairs:
+        flash("Впишите, сколько пар.")
+        return back
+    if kind == "brak" and not note:
+        flash("Укажите причину брака.")
+        return back
+    work, _, _ = _prod_view()
+    w = next((e for e in work if e["cid"] == cid and e["mid"] == mid and e["lot"] == lot), None)
+    if not w or pairs > w["qty"] + 1e-9:
+        flash(f"В работе столько нет: {_fmt(w['qty']) if w else 0} пар.")
+        return back
+    g.db.execute("INSERT INTO finish (created_at, customer_id, model_id, lot, kind, pairs, note, role) "
+                 "VALUES (?, ?, ?, ?, ?, ?, ?, 'proizv')",
+                 (db.now_str(), cid, mid, lot, kind, pairs, note if kind == "brak" else None))
+    g.db.commit()
+    flash(f"{w['customer']} — {w['model']}: {pairs} пар → {'готово к отправке' if kind == 'ready' else 'брак к отправке'}.")
+    return back
+
+
+@app.route("/stock/intake", methods=["GET", "POST"])
+@login_required
+def stock_intake():
+    """«Принять готовую обувь»: таблица всего, что в работе, — по строке вписывают, сколько готово; одна кнопка.
+    Брак — отдельной формой (stock_intake_brak), чтобы его не вносили случайно."""
+    if session["role"] != "proizv":
+        abort(403)
+    if request.method == "POST":
+        back = redirect(url_for("stock_intake"))
+        work, _, _ = _prod_view()
+        avail = {(e["cid"], e["mid"], e["lot"]): e for e in work}
+        rows, total = [], 0
+        for key in request.form:
+            if not key.startswith("k_"):
+                continue
+            i = key[2:]
+            raw = (request.form.get(f"q_{i}") or "").strip()
+            if not raw or raw == "0":
+                continue
+            q = _int_pairs(raw)
+            try:
+                _, cid, mid, _, lot = _parse_fin_key(request.form.get(key))
+            except (ValueError, TypeError):
+                abort(400)
+            w = avail.get((cid, mid, lot))
+            if q is None or not w or q > w["qty"] + 1e-9:
+                flash(f"{w['customer']} — {w['model']}: в работе только {_fmt(w['qty'])} пар." if w and q
+                      else "Проверьте строки: только целые числа, не больше, чем в работе.")
+                return back
+            rows.append((cid, mid, lot, q))
+            total += q
+        if not total:
+            flash("Впишите, сколько пар готово.")
+            return back
+        now = db.now_str()
+        for cid, mid, lot, q in rows:
+            g.db.execute("INSERT INTO finish (created_at, customer_id, model_id, lot, kind, pairs, note, role) "
+                         "VALUES (?, ?, ?, ?, 'ready', ?, NULL, 'proizv')", (now, cid, mid, lot, q))
+        g.db.commit()
+        flash(f"Принято готовой обуви: {total} пар.")
+        return back
+    work, _, _ = _prod_view()
+    return render_template("intake.html", work=work)
+
+
+@app.route("/stock/intake/brak", methods=["GET", "POST"])
+@login_required
+def stock_intake_brak():
+    """«Принять брак»: выбрать в списке (с поиском) обувь из «В работе», вписать пары и причину."""
+    if session["role"] != "proizv":
+        abort(403)
+    work, _, _ = _prod_view()
+    if request.method == "GET":
+        return render_template("intake_brak.html", work=work)
+    back = redirect(url_for("stock_intake_brak"))
+    try:
+        _, cid, mid, _, lot = _parse_fin_key(request.form.get("k"))
+    except (ValueError, TypeError):
+        flash("Выберите обувь в списке.")
+        return back
+    pairs = _int_pairs(request.form.get("pairs"))
+    note = " ".join((request.form.get("note") or "").split()) or None
+    w = next((e for e in work if e["cid"] == cid and e["mid"] == mid and e["lot"] == lot), None)
+    if not pairs:
+        flash("Впишите, сколько пар брака.")
+        return back
+    if not w or pairs > w["qty"] + 1e-9:
+        flash(f"В работе столько нет: {_fmt(w['qty']) if w else 0} пар.")
+        return back
+    if not note:
+        flash("Укажите причину брака.")
+        return back
+    g.db.execute("INSERT INTO finish (created_at, customer_id, model_id, lot, kind, pairs, note, role) "
+                 "VALUES (?, ?, ?, ?, 'brak', ?, ?, 'proizv')", (db.now_str(), cid, mid, lot, pairs, note))
+    g.db.commit()
+    flash(f"Брак записан: {w['customer']} — {w['model']}, {pairs} пар.")
+    return back
+
+
+@app.route("/stock/intake/<int:fid>/undo", methods=["POST"])
+@login_required
+def stock_intake_undo(fid):
+    """Отменить запись «Принять от цеха» (пока эти пары не уехали)."""
+    if session["role"] != "proizv":
+        abort(403)
+    r = g.db.execute("SELECT * FROM finish WHERE id=? AND pairs > 0", (fid,)).fetchone()
+    if not r:
+        abort(404)
+    have = _finish_bal().get((r["customer_id"], r["model_id"], r["lot"], r["kind"],
+                              (r["note"] or "") if r["kind"] == "brak" else ""), 0)
+    if have < r["pairs"]:
+        flash("Эти пары уже погружены — отменить нельзя.")
+        return redirect(url_for("stock_intake"))
+    g.db.execute("DELETE FROM finish WHERE id=?", (fid,))
+    g.db.commit()
+    flash("Запись отменена, пары снова в работе.")
+    return redirect(url_for("stock_intake"))
+
+
+@app.route("/stock/unfinish", methods=["POST"])
+@login_required
+def stock_unfinish():
+    """Ошиблись — вернуть пары из «Готово/Брак к отправке» обратно в работу (пока не уехали)."""
+    if session["role"] != "proizv":
+        abort(403)
+    try:
+        kind, cid, mid, note, lot = _parse_fin_key(request.form.get("k"))
+    except (ValueError, TypeError):
+        abort(400)
+    back = redirect(url_for("stock", tab="fready" if kind == "ready" else "fbrak"))
+    pairs = _int_pairs(request.form.get("pairs"))
+    have = _finish_bal().get((cid, mid, lot, kind, note if kind == "brak" else ""), 0)
+    if not pairs:
+        flash("Впишите, сколько пар вернуть.")
+        return back
+    if pairs > have:
+        flash(f"Столько нет: {_fmt(have)} пар.")
+        return back
+    g.db.execute("INSERT INTO finish (created_at, customer_id, model_id, lot, kind, pairs, note, role) "
+                 "VALUES (?, ?, ?, ?, ?, ?, ?, 'proizv')",
+                 (db.now_str(), cid, mid, lot, kind, -pairs, note or None))
+    g.db.commit()
+    flash(f"{pairs} пар возвращено в работу.")
+    return back
+
+
+@app.route("/docs/load", methods=["GET", "POST"])
+@login_required
+def docs_load():
+    """Приехала машина: кладовщик вписывает, сколько каждой позиции погрузил. Уезжает только вписанное."""
+    if session["role"] != "proizv":
+        abort(403)
+    _, ready, brak = _prod_view()
+    if request.method == "GET":
+        return render_template("load.html", ready=ready, brak=brak)
+    have = _finish_bal()
+    rows, total = [], 0
+    for i in range(len(request.form)):
+        k = request.form.get(f"k_{i}")
+        if k is None:
+            continue
+        raw = (request.form.get(f"q_{i}") or "").strip()
+        if not raw or raw == "0":
+            continue
+        q = _int_pairs(raw)
+        try:
+            kind, cid, mid, note, lot = _parse_fin_key(k)
+        except (ValueError, TypeError):
+            abort(400)
+        bal = have.get((cid, mid, lot, kind, note if kind == "brak" else ""), 0)
+        if q is None or q > bal:
+            flash("Проверьте строки: вписано больше, чем есть, или не целое число.")
+            return redirect(url_for("docs_load"))
+        rows.append((kind, cid, mid, note, lot, q))
+        total += q
+    if not total:
+        flash("Впишите, сколько пар погрузили.")
+        return redirect(url_for("docs_load"))
+    now = db.now_str()
+    cur = g.db.execute("INSERT INTO documents (kind, status, created_role, created_at, sent_at, note) "
+                       "VALUES ('RETURN', 'sent', 'proizv', ?, ?, ?)",
+                       (now, now, (request.form.get("note") or "").strip()))
+    doc_id = cur.lastrowid
+    for kind, cid, mid, note, lot, q in rows:
+        g.db.execute("INSERT INTO lines (document_id, customer_id, model_id, status, pairs_sent, note, lot, src) "
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, 'ready')",
+                     (doc_id, cid, mid, "brak" if kind == "brak" else "gotovoe", q, note or None, lot))
+    stock_from_doc(g.db, doc_id)
+    g.db.commit()
+    flash(f"Отправлено на склад: {total} пар.")
+    return redirect(url_for("doc_view", doc_id=doc_id))
+
+
 @app.route("/docs/new", methods=["GET", "POST"])
 @login_required
 def doc_new():
     role = session["role"]
+    if role == "proizv":
+        return redirect(url_for("docs_load"))   # обувь на склад — только погрузкой переписанного
     # какие типы может создавать эта роль
     creatable = [k for k, v in KINDS.items() if v[1] == role]
     if not creatable:
@@ -1513,13 +1817,19 @@ def line_add(doc_id):
     d = _draft_owner(doc_id)
     if d["kind"] != "RETURN":
         abort(403)
+    flash("Обувь на склад отправляется погрузкой переписанного: «Склад» → «Готово к отправке».")
+    return redirect(url_for("docs_load"))
     try:
         # выбор партии из остатков производства: «заказчик|модель|операции»
         c, m, lot = request.form["stock_key"].split("|", 2)
         cid, mid = int(c), int(m)
-        pairs = int(request.form["pairs"])
+        if not (0 < cid < 2**62 and 0 < mid < 2**62):
+            raise ValueError
+        pairs = _int_pairs(request.form["pairs"])
+        if pairs is None:
+            raise ValueError
     except (KeyError, ValueError):
-        flash("Выберите обувь и впишите число пар.")
+        flash("Выберите обувь и впишите целое число пар.")
         return redirect(url_for("doc_view", doc_id=doc_id))
     if pairs <= 0:
         flash("Число пар должно быть больше нуля.")
@@ -1555,6 +1865,8 @@ def line_add(doc_id):
 @login_required
 def line_del(doc_id, line_id):
     _draft_owner(doc_id)
+    if not g.db.execute("SELECT 1 FROM lines WHERE id=? AND document_id=?", (line_id, doc_id)).fetchone():
+        abort(404)   # строка не из этой передачи — ничего не трогаем
     _del_item_ops("line", [line_id])
     g.db.execute("DELETE FROM stock_moves WHERE ref_type='docbrak' AND ref_id=?", (line_id,))   # брак — обратно
     g.db.execute("DELETE FROM lines WHERE id=? AND document_id=?", (line_id, doc_id))
@@ -1609,33 +1921,33 @@ def doc_accept(doc_id):
         abort(403)
 
     lines = _load_lines(doc_id)
-    if any(not (request.form.get(f"recv_{l['id']}") or "").strip() for l in lines):
-        flash("Пересчитайте и впишите, сколько пришло, по каждой строке.")
+    vals = {}
+    for l in lines:
+        raw = (request.form.get(f"recv_{l['id']}") or "").strip()
+        if not raw:
+            flash("Пересчитайте и впишите, сколько пришло, по каждой строке.")
+            return redirect(url_for("doc_view", doc_id=doc_id))
+        v = _int_pairs(raw)
+        if v is None:
+            flash(f"{l['customer']} — {l['model']}: впишите целое число пар (без дробей и букв).")
+            return redirect(url_for("doc_view", doc_id=doc_id))
+        if v > l["pairs_sent"]:
+            flash(f"Нельзя принять больше, чем отправили: {l['customer']} — {l['model']}, "
+                  f"отправлено {l['pairs_sent']} пар.")
+            return redirect(url_for("doc_view", doc_id=doc_id))
+        vals[l["id"]] = v
+    # статус меняем условием — повторное нажатие (или второе устройство) ничего не задвоит
+    cur = g.db.execute("UPDATE documents SET status='accepted', accepted_at=? WHERE id=? AND status='sent'",
+                       (db.now_str(), doc_id))
+    if cur.rowcount != 1:
+        g.db.rollback()
+        flash("Эта передача уже принята.")
         return redirect(url_for("doc_view", doc_id=doc_id))
     for l in lines:
-        try:
-            if int(request.form.get(f"recv_{l['id']}", "") or l["pairs_sent"]) > l["pairs_sent"]:
-                flash(f"Нельзя принять больше, чем отправили: {l['customer']} — {l['model']}, "
-                      f"отправлено {l['pairs_sent']} пар.")
-                return redirect(url_for("doc_view", doc_id=doc_id))
-        except ValueError:
-            pass
-    for l in lines:
-        raw = request.form.get(f"recv_{l['id']}", "")
-        try:
-            recv = int(raw)
-        except ValueError:
-            recv = l["pairs_sent"]
-        if recv < 0:
-            recv = 0
         note = (request.form.get(f"note_{l['id']}", "") or "").strip()
-        g.db.execute(
-            "UPDATE lines SET pairs_recv=?, discrepancy_note=? WHERE id=?",
-            (recv, note, l["id"]))
-
-    g.db.execute("UPDATE documents SET status='accepted', accepted_at=? WHERE id=?",
-                 (db.now_str(), doc_id))
-    stock_from_doc(g.db, doc_id)
+        g.db.execute("UPDATE lines SET pairs_recv=?, discrepancy_note=? WHERE id=?", (vals[l["id"]], note, l["id"]))
+    if d["kind"] != "RETURN":   # передача на склад списана с производства ещё при отправке
+        stock_from_doc(g.db, doc_id)
     wh_from_doc(g.db, doc_id)
     g.db.commit()
     return redirect(url_for("doc_view", doc_id=doc_id))
@@ -1820,8 +2132,23 @@ def ref_edit(table, rid):
     elif table == "materials":
         name = " ".join((request.form.get("name") or "").split())
         unit = request.form.get("unit")
-        if name and unit in MAT_UNITS:
+        old = g.db.execute("SELECT * FROM materials WHERE id=?", (rid,)).fetchone()
+        if old and name and unit in MAT_UNITS and (name != old["name"] or unit != old["unit"]):
+            dup = any(_mat_key(x["name"]) == _mat_key(name) for x in
+                      g.db.execute("SELECT name FROM materials WHERE id<>?", (rid,)))   # lower() в SQLite не знает кириллицу
+            if dup:
+                flash(f"Материал «{name}» уже есть в справочнике.")
+                return redirect(url_for("refs", tab=table))
             g.db.execute("UPDATE materials SET name=?, unit=? WHERE id=?", (name, unit, rid))
+            # остатки и история привязаны к названию — переименовываем везде, чтобы остаток не «потерялся»
+            o, ou = old["name"], old["unit"]
+            g.db.execute("UPDATE stock_moves SET name=?, unit=? WHERE item_type='material' AND name=? "
+                         "AND COALESCE(unit,'')=COALESCE(?,'')", (name, unit, o, ou))
+            for (nm,) in g.db.execute("SELECT DISTINCT name FROM mat_moves").fetchall():
+                if _mat_key(nm) == _mat_key(o):
+                    g.db.execute("UPDATE mat_moves SET name=?, unit=? WHERE name=?", (name, unit, nm))
+            g.db.execute("UPDATE request_items SET item=?, unit=? WHERE item=? AND COALESCE(unit,'')=COALESCE(?,'') "
+                         "AND (line_kind='material' OR item_type='material')", (name, unit, o, ou))
     else:
         name = (request.form.get("name") or "").strip()
         if name:
@@ -1851,6 +2178,8 @@ def ops_save():
         raw = (request.form.get(f"price_{o['id']}") or "").replace(",", ".").replace(" ", "")
         try:
             price = max(0.0, float(raw))
+            if not math.isfinite(price) or price > MAX_QTY:
+                price = o["price"]
         except ValueError:
             price = o["price"]
         g.db.execute("UPDATE operations SET name=?, price=? WHERE id=?", (name, price, o["id"]))
@@ -2136,6 +2465,8 @@ def _disc_apply(ref_type, r, kind, line_id, found, left, now):
         i = g.db.execute("SELECT * FROM request_items WHERE id=?", (line_id,)).fetchone()
         if found:
             g.db.execute("UPDATE request_items SET recv=recv+? WHERE id=?", (found, line_id))
+            if i["from_item"]:
+                _refresh_need(i["from_item"])
             if i["line_kind"] == "pair":
                 _move(g.db, "in", "pair", found, now, cid=i["customer_id"], mid=i["model_id"],
                       reason=f"Нашлось · {ref}", ref_type="disc", ref_id=r["id"], role=session["role"])
@@ -2332,6 +2663,7 @@ def acceptance():
         abort(403)
     if role == "proizv":
         return _prod_acceptance()
+    return _sklad_acceptance()
     # типы, которые принимает эта роль
     kinds = [k for k, v in KINDS.items() if v[2] == role]
 
@@ -2353,6 +2685,102 @@ def acceptance():
 
     return render_template("acceptance.html", pending=pending, done=done,
                            total_pending_pairs=total_pending_pairs)
+
+
+# ---------- Приёмка на складе: всё, что едет с производства, одним списком (как у производства) ----------
+def _sklad_incoming():
+    return g.db.execute("SELECT * FROM documents WHERE kind='RETURN' AND status='sent' ORDER BY id").fetchall()
+
+
+def _sklad_acceptance():
+    tab = "done" if request.args.get("tab") == "done" else "wait"
+    docs = _sklad_incoming()
+    ready, brak = [], []
+    for d in docs:
+        for l in _load_lines(d["id"]):
+            row = dict(l=l, ops=[o["name"] for o in _sig_ops(l["lot"])] if l["lot"] else [], doc=d["id"])
+            (brak if l["status"] == "brak" else ready).append(row)
+    done = []
+    if tab == "done":
+        for d in g.db.execute("SELECT * FROM documents WHERE kind='RETURN' AND status='accepted' "
+                              "ORDER BY id DESC LIMIT 50").fetchall():
+            sent, recv, diff, has_recv = _doc_totals(d["id"])
+            done.append(dict(d=d, sent=sent, recv=recv, diff=diff))
+    return render_template("sklad_acceptance.html", tab=tab, ready=ready, brak=brak, n_wait=len(docs), done=done)
+
+
+@app.route("/acceptance/sklad/save", methods=["POST"])
+@login_required
+def sklad_accept_save():
+    """Автосохранение вписанного складом (чтобы не потерять при обновлении страницы)."""
+    if session["role"] != "sklad":
+        abort(403)
+    for d in _sklad_incoming():
+        for l in _load_lines(d["id"]):
+            k = f"recv_{l['id']}"
+            if k in request.form:
+                g.db.execute("UPDATE lines SET recv_draft=? WHERE id=?", (_int_pairs(request.form.get(k)), l["id"]))
+    g.db.commit()
+    return {"ok": True}
+
+
+@app.route("/acceptance/sklad/accept", methods=["POST"])
+@login_required
+def sklad_accept():
+    """Склад принимает всё вписанное сразу по всем передачам. Невписанное остаётся ждать приёмки
+    отдельной передачей «Остаток передачи №X»."""
+    if session["role"] != "sklad":
+        abort(403)
+    back = redirect(url_for("acceptance"))
+    docs = _sklad_incoming()
+    vals, any_entered = {}, False
+    for d in docs:
+        for l in _load_lines(d["id"]):
+            raw = (request.form.get(f"recv_{l['id']}") or "").strip()
+            v = _int_pairs(raw) if raw else None
+            if raw and v is None:
+                flash(f"{l['customer']} — {l['model']}: впишите целое число пар.")
+                return back
+            if v is not None and v > l["pairs_sent"]:
+                flash(f"Нельзя принять больше, чем отправили: {l['customer']} — {l['model']}, отправлено {l['pairs_sent']} пар.")
+                return back
+            vals[l["id"]] = v
+            any_entered = any_entered or v is not None
+    if not any_entered:
+        flash("Впишите, сколько пришло.")
+        return back
+    now = db.now_str()
+    left_total = 0
+    for d in docs:
+        lines = _load_lines(d["id"])
+        got = [l for l in lines if vals.get(l["id"]) is not None]
+        rest = [l for l in lines if vals.get(l["id"]) is None]
+        if not got:
+            continue
+        if rest:
+            cur = g.db.execute(
+                "INSERT INTO documents (kind, status, created_role, created_at, sent_at, note) "
+                "VALUES ('RETURN', 'sent', ?, ?, ?, ?)",
+                (d["created_role"], d["created_at"], d["sent_at"],
+                 f"Остаток передачи №{d['id']}" + (f" · {d['note']}" if d["note"] else "")))
+            ids = [l["id"] for l in rest]
+            g.db.execute("UPDATE lines SET document_id=? WHERE id IN (%s)" % ",".join("?" * len(ids)),
+                         [cur.lastrowid] + ids)
+            left_total += len(rest)
+        for l in got:
+            g.db.execute("UPDATE lines SET pairs_recv=?, recv_draft=NULL WHERE id=?", (vals[l["id"]], l["id"]))
+        cur = g.db.execute("UPDATE documents SET status='accepted', accepted_at=? WHERE id=? AND status='sent'", (now, d["id"]))
+        if cur.rowcount != 1:
+            g.db.rollback()
+            flash("Эта передача уже принята.")
+            return back
+        wh_from_doc(g.db, d["id"])   # с производства пары списаны ещё при отправке
+    g.db.commit()
+    msg = "Принято."
+    if left_total:
+        msg += f" Ещё {left_total} " + ("строка ждёт" if left_total == 1 else "строк ждут") + " приёмки."
+    flash(msg)
+    return back
 
 
 # ---------- Приёмка на производстве: всё, что едет, одним списком ----------
@@ -2384,6 +2812,18 @@ def _prod_acceptance():
                            done=done, legacy=legacy)
 
 
+MAX_QTY = 1_000_000   # больше миллиона за раз не бывает — защита от опечаток и «сломанных» чисел
+
+
+def _int_pairs(raw):
+    """Целое число пар 0…MAX_QTY или None (дроби, буквы, минус — ошибка)."""
+    raw = (raw or "").strip().replace(" ", "")
+    if not raw.isdigit():
+        return None
+    v = int(raw)
+    return v if v <= MAX_QTY else None
+
+
 def _recv_value(raw):
     raw = (raw or "").strip().replace(",", ".").replace(" ", "")
     if raw == "":
@@ -2392,21 +2832,53 @@ def _recv_value(raw):
         v = float(raw)
     except ValueError:
         return None
-    v = max(0, v)
+    if not math.isfinite(v) or v > MAX_QTY:
+        return None
+    v = round(max(0, v), 3)
     return int(v) if v == int(v) else v
 
 
+def _need_got(i):
+    """Сколько реально пришло по строке заказа: сумма ПРИНЯТОГО производством (recv) во всех принятых
+    передачах, куда склад клал эту строку. Старые заказы без такой связи — по-старому."""
+    rows = g.db.execute("SELECT ri.recv FROM request_items ri JOIN requests t ON t.id=ri.request_id "
+                        "WHERE ri.from_item=? AND t.status='accepted'", (i["id"],)).fetchall()
+    if rows:
+        return sum((r["recv"] or 0) for r in rows), True
+    return None, False
+
+
 def _settle_request(rid):
-    """Заказ производства после приёмки: сколько пришло по каждой строке. Если чего-то пришло меньше,
-    чем заказали, заказ снова ждёт склад на остаток («Пришла часть» / «Нужно дособрать»)."""
+    """Заказ производства после приёмки: сколько пришло по каждой строке (по факту приёмки, а не по тому,
+    что склад собрал). Если пришло меньше, чем заказали, заказ снова ждёт склад на остаток."""
     left = False
     for i in g.db.execute("SELECT * FROM request_items WHERE request_id=? AND line_kind='need'", (rid,)).fetchall():
-        got = (i["delivered"] or 0) + (i["collected"] or 0)
+        got, linked = _need_got(i)
+        if not linked:   # старая схема: заявка сама ехала
+            got = (i["delivered"] or 0) + (i["recv"] if i["recv"] is not None else (i["collected"] or 0))
         g.db.execute("UPDATE request_items SET delivered=?, collected=NULL, placed=0 WHERE id=?", (got, i["id"]))
         if i["qty"] and got < i["qty"] - 1e-9:
             left = True
     if left:
         g.db.execute("UPDATE requests SET status='open', transfer_id=NULL, taken_at=NULL, accepted_at=NULL WHERE id=?", (rid,))
+
+
+def _refresh_need(need_id):
+    """После разбора расхождения («Нашлось») пересчитать, сколько пришло по строке заказа;
+    если заказ теперь получен полностью и склад ничего не собирает — закрыть его."""
+    i = g.db.execute("SELECT * FROM request_items WHERE id=? AND line_kind='need'", (need_id,)).fetchone()
+    if not i:
+        return
+    got, linked = _need_got(i)
+    if not linked:
+        return
+    g.db.execute("UPDATE request_items SET delivered=? WHERE id=?", (got, need_id))
+    r = g.db.execute("SELECT * FROM requests WHERE id=?", (i["request_id"],)).fetchone()
+    if not r or r["status"] != "open":
+        return
+    items = g.db.execute("SELECT * FROM request_items WHERE request_id=? AND line_kind='need'", (r["id"],)).fetchall()
+    if all((x["delivered"] or 0) >= (x["qty"] or 0) - 1e-9 and not x["collected"] for x in items):
+        g.db.execute("UPDATE requests SET status='accepted', accepted_at=? WHERE id=?", (db.now_str(), r["id"]))
 
 
 def _is_partial(rid):
@@ -2443,7 +2915,10 @@ def prod_accept_save():
         for i in _placed_items(r["id"]):
             k = f"recv_{i['id']}"
             if k in request.form:
-                g.db.execute("UPDATE request_items SET recv=? WHERE id=?", (_recv_value(request.form.get(k)), i["id"]))
+                v = _recv_value(request.form.get(k))
+                if i["line_kind"] == "pair" and v is not None and v != int(v):
+                    v = None   # пары — только целые
+                g.db.execute("UPDATE request_items SET recv=? WHERE id=?", (v, i["id"]))
     g.db.commit()
     return {"ok": True}
 
@@ -2460,7 +2935,17 @@ def prod_accept():
     vals, any_entered, over = {}, False, False
     for r in trs:
         for i in _placed_items(r["id"]):
-            v = _recv_value(request.form.get(f"recv_{i['id']}"))
+            raw = (request.form.get(f"recv_{i['id']}") or "").strip()
+            if i["line_kind"] == "pair":
+                v = _int_pairs(raw) if raw else None
+                bad = bool(raw) and v is None
+            else:
+                v = _recv_value(raw)
+                bad = bool(raw) and v is None
+            if bad:
+                title = f"{i['customer']} — {i['model']}" if i["line_kind"] == "pair" else i["item"]
+                flash(f"{title}: " + ("впишите целое число пар." if i["line_kind"] == "pair" else "впишите число."))
+                return back
             vals[i["id"]] = v
             if v is not None:
                 any_entered = True
@@ -2531,12 +3016,16 @@ def overview():
 
     def row(cid, mid, cust, model):
         return agg.setdefault((cid, mid), dict(customer=cust, model=model, key=f"p-{cid}-{mid}",
-                                               at_prod=0, to_prod=0, to_sklad=0))
+                                               at_prod=0, to_prod=0, to_sklad=0, work=0, fready=0, fbrak=0))
 
     for e in stock_balances():
         if e["type"] == "pair":
             _, c, m = e["key"].split("-")
             row(int(c), int(m), e["customer"], e["model"])["at_prod"] += e["qty"]
+    work, fr, fbk = _prod_view()   # в работе / готово ждёт машину / брак ждёт машину
+    for lst, fld in ((work, "work"), (fr, "fready"), (fbk, "fbrak")):
+        for e in lst:
+            row(e["cid"], e["mid"], e["customer"], e["model"])[fld] += e["qty"]
     # едет на производство: отправленные передачи склада (пары)
     for r in g.db.execute(
             """SELECT ri.customer_id ci, ri.model_id mi, c.name cu, m.name mo, SUM(ri.collected) p FROM request_items ri
@@ -2573,6 +3062,7 @@ def overview():
     return render_template(
         "overview.html", ready_models=len(ready), ready_pairs=sum(e["ready"] for e in ready),
         at_prod_total=sum(v["at_prod"] for v in agg.values()),
+        fready_total=sum(v["fready"] for v in agg.values()),
         to_prod=sum(v["to_prod"] for v in agg.values()),
         to_sklad=sum(v["to_sklad"] for v in agg.values()),
         by_model=by_model, recent=recent[:10])
@@ -2754,14 +3244,15 @@ def _placed_reply(req_id, item_id=None, error=None, fields=None):
     return redirect(url_for("request_view", req_id=req_id, step=2))
 
 
-def _num(raw):
-    """Число из поля: 2,5 → 2.5; целое остаётся целым; пусто/≤0 → None."""
+def _num(raw, cap=None):
+    """Число из поля: 2,5 → 2.5; целое остаётся целым; пусто/≤0/больше предела → None."""
     try:
         v = float((raw or "").replace(",", ".").replace(" ", ""))
     except ValueError:
         return None
-    if v <= 0:
+    if not math.isfinite(v) or v <= 0 or v > (cap or MAX_QTY):
         return None
+    v = round(v, 3)
     return int(v) if v == int(v) else v
 
 
@@ -2788,10 +3279,7 @@ def request_pair_add(req_id):
                              fields=["model_name"])
     if not _selected_ops_ok():
         bad.append("ops"); msgs.append("операции")
-    try:
-        pairs = int(request.form.get("pairs") or 0)
-    except ValueError:
-        pairs = 0
+    pairs = _int_pairs(request.form.get("pairs")) or 0
     if pairs <= 0:
         bad.append("pairs"); msgs.append("число пар")
     if bad:
@@ -2851,6 +3339,9 @@ def request_material_add(req_id):
 @login_required
 def request_placed_del(req_id, item_id):
     _req_progress_sklad(req_id)
+    if not g.db.execute("SELECT 1 FROM request_items WHERE id=? AND request_id=? AND source='sklad'",
+                        (item_id, req_id)).fetchone():
+        abort(404)
     _del_item_ops("req", [item_id])
     g.db.execute("DELETE FROM request_items WHERE id=? AND request_id=? AND source='sklad'",
                  (item_id, req_id))
@@ -2928,11 +3419,23 @@ def request_ship(req_id):
     return redirect(url_for("request_view", req_id=req_id))
 
 
+def _req_in_transit(r):
+    """Заявка производства уже уехала (сама или в передаче склада)."""
+    if r["status"] == "shipped":
+        return True
+    if r["transfer_id"]:
+        t = g.db.execute("SELECT status FROM requests WHERE id=?", (r["transfer_id"],)).fetchone()
+        return bool(t and t["status"] in ("shipped", "accepted"))
+    return False
+
+
 def _can_delete_req(r, role):
     """Кто может удалить: директор — всё, кроме принятого; производство — свою, пока склад не начал;
     склад — заказ производства, пока он не уехал, и свою неотправленную передачу."""
     if r["status"] == "accepted":
         return False
+    if r["created_role"] == "proizv" and _req_in_transit(r):
+        return False   # заявка уже едет в передаче — удалять можно только передачу целиком
     if role == "director":
         return True
     if role == "proizv":
@@ -2953,6 +3456,9 @@ def request_delete(req_id):
         abort(404)
     if r["status"] == "accepted":
         flash("Принятую передачу удалить нельзя — остатки и долг уже посчитаны.")
+        return redirect(url_for("request_view", req_id=req_id))
+    if r["created_role"] == "proizv" and _req_in_transit(r):
+        flash(f"Заявка №{req_id} уже едет в передаче — удалить её нельзя. Можно удалить передачу целиком.")
         return redirect(url_for("request_view", req_id=req_id))
     if not _can_delete_req(r, role):
         abort(403)
@@ -2983,7 +3489,7 @@ def request_delete(req_id):
 
 # ---------- Обновление системы ----------
 UPDATE_LOG = os.path.join(BASE_DIR, "updates.log")
-SKIP_FILES = {"jail.db", "jail.db-wal", "jail.db-shm", "updates.log", "errors.log", "_upload.zip"}
+SKIP_FILES = {"jail.db", "jail.db-wal", "jail.db-shm", "jail.db-journal", "updates.log", "errors.log", "_upload.zip"}
 
 
 BACKUP_DIR = os.path.join(BASE_DIR, "backups")
@@ -3046,19 +3552,27 @@ def _backup_code():
 
 
 def _restore_code(src_dir):
-    """Вернуть код из копии (база не трогается): копия кладётся в _next и применяется при перезапуске."""
+    """Вернуть код из копии (база не трогается): копия целиком собирается во временной папке,
+    потом становится _next и применяется при перезапуске."""
     import shutil
-    shutil.rmtree(STAGE_DIR, ignore_errors=True)
+    tmp_dir = STAGE_DIR + ".tmp"
+    shutil.rmtree(tmp_dir, ignore_errors=True)
     applied = []
-    for root, _, files in os.walk(src_dir):
-        for fn in files:
-            full = os.path.join(root, fn)
-            rel = os.path.relpath(full, src_dir)
-            dest = os.path.join(STAGE_DIR, rel)
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            shutil.copyfile(full, dest)   # новое время изменения — Python точно перечитает код
-            applied.append(rel.replace(os.sep, "/"))
-    # VERSION — последним по смыслу уже записан; удаляем копию, чтобы следующий откат шёл дальше назад
+    try:
+        for root, _, files in os.walk(src_dir):
+            for fn in files:
+                full = os.path.join(root, fn)
+                rel = os.path.relpath(full, src_dir)
+                dest = os.path.join(tmp_dir, rel)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.copyfile(full, dest)   # новое время изменения — Python точно перечитает код
+                applied.append(rel.replace(os.sep, "/"))
+    except Exception:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+    shutil.rmtree(STAGE_DIR, ignore_errors=True)
+    os.rename(tmp_dir, STAGE_DIR)
+    # удаляем копию, чтобы следующий откат шёл дальше назад
     shutil.rmtree(src_dir, ignore_errors=True)
     return applied
 
@@ -3079,8 +3593,25 @@ def _apply_update(zip_path):
     при перезапуске сайта — так старый код и новые файлы никогда не работают вперемешку. БД не трогаем."""
     import zipfile
     import shutil
+    # Сначала раскладываем во временную папку и только целиком готовую переименовываем в _next.
+    # Если архив битый — во временной папке остаётся мусор, который удаляется; _next не трогается,
+    # и при перезапуске не применится «половина» обновления.
+    tmp_dir = STAGE_DIR + ".tmp"
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    try:
+        applied = _unpack_update(zip_path, tmp_dir)
+    except Exception:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
     shutil.rmtree(STAGE_DIR, ignore_errors=True)
-    base = os.path.abspath(STAGE_DIR)
+    os.rename(tmp_dir, STAGE_DIR)
+    return applied
+
+
+def _unpack_update(zip_path, target):
+    import zipfile
+    import shutil
+    base = os.path.abspath(target)
     with zipfile.ZipFile(zip_path) as z:
         names = [n for n in z.namelist() if not n.endswith("/")]
         if not names:
@@ -3102,7 +3633,8 @@ def _apply_update(zip_path):
             rel = n.replace("\\", "/")
             if strip and rel.startswith(strip):
                 rel = rel[len(strip):]
-            if not rel or os.path.basename(rel) in SKIP_FILES or rel.startswith(("backups/", "_next/", "_applying/")):
+            if (not rel or os.path.basename(rel) in SKIP_FILES or os.path.basename(rel).startswith("jail.db")
+                    or rel.startswith(("backups/", "_next/", "_next.tmp/", "_applying/"))):
                 continue
             dest = os.path.abspath(os.path.join(base, rel))
             if not (dest == base or dest.startswith(base + os.sep)):
@@ -3112,8 +3644,9 @@ def _apply_update(zip_path):
                 shutil.copyfileobj(src, out)
             applied.append(rel)
     if not applied:
-        shutil.rmtree(STAGE_DIR, ignore_errors=True)
         raise ValueError("в архиве нет файлов для применения")
+    if not any(os.path.basename(a) == "app.py" for a in applied) and not any(a.startswith("templates/") for a in applied):
+        raise ValueError("это не архив обновления jail (нет app.py и шаблонов)")
     return applied
 
 
@@ -3203,9 +3736,14 @@ def update():
             tmp = os.path.join(BASE_DIR, "_upload.zip")
             f.save(tmp)
             try:
-                _backup_db("before_update")    # база — на случай неудачного обновления
-                _backup_code()                 # код — для кнопки «Вернуть прошлую версию»
-                applied = _apply_update(tmp)
+                applied = _apply_update(tmp)   # сначала проверяем и раскладываем архив целиком
+                try:
+                    _backup_db("before_update")    # база — на случай неудачного обновления
+                    _backup_code()                 # код — для кнопки «Вернуть прошлую версию»
+                except Exception:
+                    import shutil
+                    shutil.rmtree(STAGE_DIR, ignore_errors=True)   # без копий не ставим
+                    raise
                 with open(UPDATE_LOG, "a", encoding="utf-8") as lg:
                     lg.write(f"{db.datetime.now(db.TZ).strftime(db.SHOW_FMT)} · {f.filename} · {len(applied)} файл(ов)\n")
                 reloaded = True    # сам перезапуск — один раз, со страницы результата (/update/reload)

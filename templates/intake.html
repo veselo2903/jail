@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Принять готовую обувь — jail{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:4px">
+  <a class="small" href="{{ url_for('stock', tab='work') }}">← К складу</a>
+</div>
+
+<div class="card hero ok">
+  <div class="big" id="in-total">0</div>
+  <div class="lbl">пар готовой обуви принимаем</div>
+</div>
+
+{% if work %}
+<form method="post" id="in-form" novalidate>
+  {% if work|length > 6 %}<input type="search" id="stock-q" class="stock-q" placeholder="Поиск: заказчик или модель" autocomplete="off">{% endif %}
+  <div class="card flush">
+    <table class="load-t">
+      <tr><th>Заказчик</th><th>Модель</th><th>Операции</th><th class="num">В работе</th><th class="num" style="width:230px">Готово</th></tr>
+      {% for e in work %}
+      <tr class="stock-row" data-q="{{ (e.customer ~ ' ' ~ e.model)|lower }}">
+        <td class="nw"><b>{{ e.customer }}</b></td><td><b>{{ e.model }}</b></td>
+        <td>{% if e.ops %}{{ e.ops|ops_short }}{% else %}<span class="small">без операций</span>{% endif %}</td>
+        <td class="num placed-qty">{{ e.qty|q }}</td>
+        <td class="num nw">
+          <input type="hidden" name="k_{{ loop.index0 }}" value="{{ e|fin_key('ready') }}">
+          <input class="load-in" name="q_{{ loop.index0 }}" inputmode="numeric" autocomplete="off" placeholder="—" data-max="{{ e.qty }}">
+          <button type="button" class="btn grey sm load-all" data-v="{{ e.qty|int }}">всё</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div class="empty" id="stock-none" hidden>Ничего не найдено.</div>
+  </div>
+  <div class="form-err" hidden style="margin-top:12px"></div>
+  <button class="btn block" type="submit" style="margin-top:12px">Записать готовое</button>
+</form>
+{% else %}
+<div class="card"><div class="empty">В работе ничего нет — принимать нечего.</div></div>
+{% endif %}
+
+
+
+
+<script>
+(function(){
+  var f=document.getElementById("in-form");if(!f)return;
+  var tot=document.getElementById("in-total"),err=f.querySelector(".form-err");
+  function n(v){v=(v||"").trim();return v===""?0:parseInt(v,10)||0;}
+  function upd(){var s=0;f.querySelectorAll(".load-in").forEach(function(i){
+      var v=n(i.value);i.classList.toggle("invalid",v>parseFloat(i.dataset.max));s+=v;});
+    tot.textContent=s.toLocaleString("ru-RU");}
+  f.addEventListener("input",upd);
+  f.querySelectorAll(".load-all").forEach(function(b){b.addEventListener("click",function(){
+    var i=b.parentNode.querySelector(".load-in");i.value=i.value===b.dataset.v?"":b.dataset.v;upd();});});
+  f.addEventListener("submit",function(e){
+    var s=0,bad=f.querySelector(".load-in.invalid");f.querySelectorAll(".load-in").forEach(function(i){s+=n(i.value);});
+    var msg=bad?"В строке вписано больше, чем в работе.":(!s?"Впишите, сколько пар готово.":"");
+    if(msg){e.preventDefault();e.stopImmediatePropagation();err.textContent=msg;err.hidden=false;if(bad)bad.focus();}
+  },true);
+  var q=document.getElementById("stock-q");
+  if(q)q.addEventListener("input",function(){var v=q.value.trim().toLowerCase(),k=0;
+    f.querySelectorAll(".stock-row").forEach(function(tr){var on=!v||tr.dataset.q.indexOf(v)>=0;tr.hidden=!on;if(on)k++;});
+    document.getElementById("stock-none").hidden=k>0;});
+  upd();
+})();
+</script>
+{% endblock %}

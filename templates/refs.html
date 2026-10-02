@@ -25,7 +25,7 @@
   {% if can_edit %}
   <div class="card">
     <form method="post" action="{{ url_for('ref_add', table=tab) }}" class="row">
-      <input name="name" placeholder="{{ 'Новый заказчик' if tab=='customers' else 'Новая модель' }}" style="flex:1">
+      <input name="name" placeholder="{{ 'Новый заказчик' if tab=='customers' else 'Новая модель' }}" style="flex:1" data-req="Впишите название">
       <button class="btn" type="submit">Добавить</button>
     </form>
   </div>
@@ -59,7 +59,7 @@
   {% if can_edit %}
   <div class="card">
     <form method="post" action="{{ url_for('ref_add', table='materials') }}" class="row">
-      <input name="name" placeholder="Новый материал" style="flex:1;min-width:180px">
+      <input name="name" placeholder="Новый материал" style="flex:1;min-width:180px" data-req="Впишите название материала">
       <div class="seg">{% for u in units %}<label class="seg-opt"><input type="radio" name="unit" value="{{ u }}" {{ 'checked' if loop.first }}><span>{{ u }}</span></label>{% endfor %}</div>
       <button class="btn" type="submit">Добавить</button>
     </form>
@@ -112,8 +112,8 @@
   {% if can_edit %}
   <div class="card">
     <form method="post" action="{{ url_for('ref_add', table='workers') }}" class="row">
-      <input name="number" placeholder="Табельный №" style="width:130px">
-      <input name="name" placeholder="Имя" style="flex:1">
+      <input name="number" placeholder="Табельный №" style="width:130px" data-req="Впишите табельный номер">
+      <input name="name" placeholder="Имя" style="flex:1" data-req="Впишите имя">
       <button class="btn" type="submit">Добавить</button>
     </form>
   </div>

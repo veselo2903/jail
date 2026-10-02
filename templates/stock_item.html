@@ -6,7 +6,7 @@
 <div class="card">
   <div class="row" style="justify-content:space-between">
     <b>{{ title }}</b>
-    <a class="small" href="{{ url_for('stock', tab=('pairs' if is_pair else 'mats')) }}">к складу</a>
+    <a class="small" href="{{ url_for('stock', tab=('pairs' if is_pair else 'mats')) }}">← К складу</a>
   </div>
 </div>
 
@@ -24,7 +24,7 @@
   <form method="post" action="{{ url_for('stock_act') }}" class="grid act-form" data-act="writeoff">
     <input type="hidden" name="k" value="{{ k }}"><input type="hidden" name="act" value="writeoff">
     <div class="grid">
-      <div style="max-width:200px"><label>Сколько списать</label><input name="qty" inputmode="decimal" placeholder="0"></div>
+      <div style="max-width:200px"><label>Сколько списать</label><input name="qty" inputmode="decimal" placeholder="0" data-req="Впишите, сколько списать" data-num="pos" data-max="{{ qty }}"></div>
       <div><label>Причина</label><div class="seg seg-wrap">{% for r in reasons %}<label class="seg-opt"><input type="radio" name="reason" value="{{ r }}" {{ 'checked' if loop.first }}><span>{{ r }}</span></label>{% endfor %}</div></div>
     </div>
     <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
@@ -32,7 +32,7 @@
   </form>
   <form method="post" action="{{ url_for('stock_act') }}" class="grid act-form" data-act="inv" hidden>
     <input type="hidden" name="k" value="{{ k }}"><input type="hidden" name="act" value="inv">
-    <div style="max-width:220px"><label>Сколько есть по факту</label><input name="fact" inputmode="decimal" placeholder="{{ qty|q }}"></div>
+    <div style="max-width:220px"><label>Сколько есть по факту</label><input name="fact" inputmode="decimal" placeholder="{{ qty|q }}" data-req="Впишите, сколько есть по факту" data-num="zero"></div>
     <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
     <button class="btn block" type="submit">Сохранить пересчёт</button>
   </form>
@@ -57,7 +57,6 @@
     </table>
   </div>
 </details>
-<a class="btn grey block" href="{{ url_for('stock', tab=('pairs' if is_pair else 'mats')) }}">← К складу</a>
 
 <script>
 document.querySelectorAll("[name=actsel]").forEach(function(r){r.addEventListener("change",function(){

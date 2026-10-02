@@ -3,10 +3,28 @@
 {% block content %}
 {% include "_wh_switch.html" %}
 
+{% set wsum = work|sum(attribute='qty') %}{% set rsum = fin_ready|sum(attribute='qty') %}{% set bsum = fin_brak|sum(attribute='qty') %}
 {% if tab=='ready' %}
 <div class="card hero">
   <div class="big">{{ ready|sum(attribute='ready')|q }}</div>
   <div class="lbl">пар готовой обуви на нашем складе</div>
+</div>
+{% elif tab=='fready' %}
+<div class="card hero ok">
+  <div class="big">{{ rsum|q }}</div>
+  <div class="lbl">пар готово к отправке — ждут машину</div>
+  {% if role=='proizv' and fin_ready %}<a class="btn" href="{{ url_for('docs_load') }}" style="margin-top:14px">Погрузить в машину</a>{% endif %}
+</div>
+{% elif tab=='fbrak' %}
+<div class="card hero">
+  <div class="big">{{ bsum|q }}</div>
+  <div class="lbl">пар брака ждут машину</div>
+</div>
+{% elif tab=='work' %}
+<div class="card hero">
+  <div class="big">{{ wsum|q }}</div>
+  <div class="lbl">пар в работе у цеха</div>
+  {% if role=='proizv' and work %}<div class="hero-acts"><a class="btn" href="{{ url_for('stock_intake') }}">Принять готовую обувь</a><a class="btn grey" href="{{ url_for('stock_intake_brak') }}">Принять брак</a></div>{% endif %}
 </div>
 {% else %}
 <div class="card hero">
@@ -17,13 +35,83 @@
 
 <div class="subtabs">
   {% if role=='director' %}<a href="{{ url_for('stock', tab='ready') }}" class="{{ 'active' if tab=='ready' }}">Готовая на складе <span class="n">{{ ready|selectattr('ready')|list|length }}</span></a>{% endif %}
-  <a href="{{ url_for('stock', tab='pairs') }}" class="{{ 'active' if tab=='pairs' }}">{{ 'На производстве' if role=='director' else 'Обувь' }} <span class="n">{{ pairs|length }}</span></a>
+  <a href="{{ url_for('stock', tab='work') }}" class="{{ 'active' if tab=='work' }}">В работе <span class="n">{{ wsum|q }}</span></a>
+  <a href="{{ url_for('stock', tab='fready') }}" class="{{ 'active' if tab=='fready' }}">Готово к отправке <span class="n">{{ rsum|q }}</span></a>
+  <a href="{{ url_for('stock', tab='fbrak') }}" class="{{ 'active' if tab=='fbrak' }}">Брак к отправке <span class="n">{{ bsum|q }}</span></a>
   <a href="{{ url_for('stock', tab='mats') }}" class="{{ 'active' if tab=='mats' }}">Материалы <span class="n">{{ mats|length }}</span></a>
   <a href="{{ url_for('stock', tab='moves') }}" class="{{ 'active' if tab=='moves' }}">Движения</a>
 </div>
 
-{% if tab in ['pairs','mats'] %}
-{% set list = pairs if tab=='pairs' else mats %}
+{% if tab in ['work','fready','fbrak'] %}
+{% set list = work if tab=='work' else (fin_ready if tab=='fready' else fin_brak) %}
+{% set edit = role=='proizv' and tab!='work' %}
+{% if list %}<input type="search" id="stock-q" class="stock-q" placeholder="Поиск: заказчик или модель" autocomplete="off">{% endif %}
+<div class="card flush">
+  {% if list %}
+  <table>
+    <tr><th>Заказчик</th><th>Модель</th><th>Операции</th>{% if tab=='fbrak' %}<th>Причина</th>{% endif %}<th class="num">Пар</th>{% if edit %}<th></th>{% endif %}</tr>
+    {% for e in list %}
+    <tr class="stock-row" data-q="{{ (e.customer ~ ' ' ~ e.model)|lower }}">
+      <td class="nw"><b>{{ e.customer }}</b></td><td><b>{{ e.model }}</b></td>
+      <td>{{ e.ops|ops_short }}</td>
+      {% if tab=='fbrak' %}<td>{{ e.note }}</td>{% endif %}
+      <td class="num placed-qty">{{ e.qty|q }}</td>
+      {% if edit %}<td class="num nw" style="width:1%">
+        <button class="btn grey sm unfin-open" type="button" data-k="{{ e|fin_key }}" data-title="{{ e.customer }} — {{ e.model }}" data-qty="{{ e.qty|q }}">Вернуть в работу</button>
+      </td>{% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="empty" id="stock-none" hidden>Ничего не найдено.</div>
+  {% else %}
+  <div class="empty">{% if tab=='work' %}В работе ничего нет.{% elif tab=='fready' %}Готовое ещё не переписано. Когда цех сдаёт пары — «В работе» → «Принять готовую обувь».{% else %}Брака к отправке нет.{% endif %}</div>
+  {% endif %}
+</div>
+
+{% if edit %}
+<div class="sheet-back" id="fin-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <div class="sheet-t" style="color:var(--ink)" id="fin-t"></div>
+    <div class="sheet-sub" id="fin-sub"></div>
+    <form method="post" id="fin-form" class="grid" action="{{ url_for('stock_finish') }}">
+      <input type="hidden" name="k" id="fin-k">
+      <div><label>Сколько пар</label>
+        <div class="row" style="gap:8px"><input name="pairs" id="fin-q" inputmode="numeric" autocomplete="off" placeholder="0" data-req="Впишите, сколько пар" data-num="int" style="max-width:160px">
+        <button type="button" class="btn grey sm" id="fin-all">Все</button></div></div>
+      <div id="fin-note-w"><label>Причина брака</label><input name="note" id="fin-note" placeholder="Например: порез, клей" data-req="Укажите причину брака"></div>
+      <button class="btn block" type="submit" id="fin-ok">Записать</button>
+      <button class="btn grey block" type="button" id="fin-close">Отмена</button>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  var sh=document.getElementById("fin-sheet"),f=document.getElementById("fin-form"),q=document.getElementById("fin-q"),max="";
+  function open(t,sub,action,k,qty,brak,ok){
+    document.getElementById("fin-t").textContent=t;document.getElementById("fin-sub").textContent=sub;
+    f.action=action;document.getElementById("fin-k").value=k;q.value="";q.dataset.max=qty;max=qty;
+    document.getElementById("fin-note-w").hidden=!brak;document.getElementById("fin-note").value="";
+    document.getElementById("fin-ok").textContent=ok;
+    var er=f.querySelector(".form-err");if(er)er.hidden=true;f.querySelectorAll(".invalid").forEach(function(i){i.classList.remove("invalid");});
+    sh.hidden=false;requestAnimationFrame(function(){sh.classList.add("open");});setTimeout(function(){q.focus();},200);}
+  function close(){sh.classList.remove("open");setTimeout(function(){sh.hidden=true;},220);}
+  document.querySelectorAll(".fin-open").forEach(function(b){b.addEventListener("click",function(){
+    var brak=b.dataset.kind==="brak";
+    open(brak?"Брак от цеха":"Готово от цеха",b.dataset.title+" · в работе "+b.dataset.qty+" пар","{{ url_for('stock_finish') }}",
+      b.dataset.k,b.dataset.qty,brak,brak?"Записать брак":"Записать в готовое");});});
+  document.querySelectorAll(".unfin-open").forEach(function(b){b.addEventListener("click",function(){
+    open("Вернуть в работу",b.dataset.title+" · сейчас "+b.dataset.qty+" пар","{{ url_for('stock_unfinish') }}",
+      b.dataset.k,b.dataset.qty,false,"Вернуть в работу");});});
+  document.getElementById("fin-all").addEventListener("click",function(){q.value=String(max).replace(/\s/g,"");q.focus();});
+  document.getElementById("fin-close").addEventListener("click",close);
+  sh.addEventListener("click",function(e){if(e.target===sh)close();});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!sh.hidden)close();});
+})();
+</script>
+{% endif %}
+
+{% elif tab=='mats' %}
+{% set list = mats %}
 {% if list %}<input type="search" id="stock-q" class="stock-q" placeholder="Поиск: {{ 'заказчик или модель' if tab=='pairs' else 'материал' }}" autocomplete="off">{% endif %}
 <div class="card flush">
   {% if list %}
@@ -52,7 +140,7 @@
       <input type="hidden" name="act" value="writeoff"><input type="hidden" name="k" id="wo-k">
       <input type="hidden" name="back_tab" value="{{ tab }}">
       <div class="grid">
-        <div style="max-width:200px"><label>Сколько</label><input name="qty" id="wo-qty" inputmode="decimal" placeholder="0"></div>
+        <div style="max-width:200px"><label>Сколько</label><input name="qty" id="wo-qty" inputmode="decimal" placeholder="0" data-req="Впишите, сколько списать" data-num="pos"></div>
         <div><label>Причина</label><div class="seg seg-wrap">{% for r in reasons %}<label class="seg-opt"><input type="radio" name="reason" value="{{ r }}" {{ 'checked' if loop.first }}><span>{{ r }}</span></label>{% endfor %}</div></div>
       </div>
       <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
@@ -102,6 +190,7 @@
   document.querySelectorAll(".wo-open").forEach(function(b){b.addEventListener("click",function(){
     document.getElementById("wo-k").value=b.dataset.k;
     document.getElementById("wo-title").textContent=b.dataset.title+" · остаток "+b.dataset.qty+" "+b.dataset.unit;
+    document.getElementById("wo-qty").dataset.max=b.dataset.qty;
     wo.hidden=false;requestAnimationFrame(function(){wo.classList.add("open");});
     setTimeout(function(){document.getElementById("wo-qty").focus();},250);});});
   document.getElementById("wo-close").addEventListener("click",woClose);

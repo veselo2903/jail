@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Погрузка — jail{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between;margin-bottom:4px">
+  <a class="small" href="{{ url_for('stock', tab='fready') }}">← К складу</a>
+</div>
+<div class="card hero" id="load-hero">
+  <div class="big" id="load-total">0</div>
+  <div class="lbl">пар в машине</div>
+</div>
+
+{% if not ready and not brak %}
+<div class="card"><div class="empty">Нечего грузить: готовое ещё не переписано.<br>
+  Когда цех сдаёт пары — «Склад» → «Принять готовую обувь».</div></div>
+{% else %}
+<form method="post" id="load-form" novalidate data-confirm="Отправить на склад?" data-ok="Отправить">
+  {% set ns = namespace(i=0) %}
+  {% for part, title in [(ready, 'Готовая обувь'), (brak, 'Брак')] %}{% if part %}
+  <h3>{{ title }}</h3>
+  <div class="card flush">
+    <table class="load-t">
+      <tr><th>Заказчик</th><th>Модель</th><th>Операции</th>{% if part is sameas brak %}<th>Причина</th>{% endif %}<th class="num">Есть</th><th class="num" style="width:230px">В машину</th></tr>
+      {% for e in part %}
+      <tr class="load-row">
+        <td class="nw"><b>{{ e.customer }}</b></td><td><b>{{ e.model }}</b></td>
+        <td>{{ e.ops|ops_short }}</td>
+        {% if part is sameas brak %}<td>{{ e.note }}</td>{% endif %}
+        <td class="num placed-qty">{{ e.qty|q }}</td>
+        <td class="num nw">
+          <input type="hidden" name="k_{{ ns.i }}" value="{{ e|fin_key }}">
+          <input class="load-in" name="q_{{ ns.i }}" inputmode="numeric" autocomplete="off" placeholder="—" data-max="{{ e.qty }}">
+          <button type="button" class="btn grey sm load-all" data-v="{{ e.qty }}">всё</button>
+        </td>
+      </tr>
+      {% set ns.i = ns.i + 1 %}
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}{% endfor %}
+  <div class="card" style="margin-top:14px">
+    <label>Примечание к передаче</label>
+    <input name="note" placeholder="Необязательно">
+    <div class="form-err" hidden style="margin-top:10px"></div>
+    <button class="btn block" type="submit" style="margin-top:12px">Отправить на склад</button>
+  </div>
+</form>
+<script>
+(function(){
+  var f=document.getElementById("load-form"),tot=document.getElementById("load-total");
+  function n(v){v=(v||"").trim();return v===""?0:parseInt(v,10)||0;}
+  function upd(){var s=0;f.querySelectorAll(".load-in").forEach(function(i){
+      var v=n(i.value),bad=v>parseInt(i.dataset.max,10);i.classList.toggle("invalid",bad);s+=v;});
+    tot.textContent=s.toLocaleString("ru-RU");
+    f.dataset.sub="В машине "+s.toLocaleString("ru-RU")+" пар. Остальное останется ждать следующую машину.";}
+  f.addEventListener("input",upd);
+  f.querySelectorAll(".load-all").forEach(function(b){b.addEventListener("click",function(){
+    var i=b.parentNode.querySelector(".load-in");i.value=i.value===b.dataset.v?"":b.dataset.v;upd();});});
+  f.addEventListener("submit",function(e){
+    var err=f.querySelector(".form-err"),s=0,bad=f.querySelector(".load-in.invalid");
+    f.querySelectorAll(".load-in").forEach(function(i){s+=n(i.value);});
+    var msg=bad?"В строке вписано больше, чем есть.":(!s?"Впишите, сколько пар погрузили.":"");
+    if(msg){e.preventDefault();e.stopImmediatePropagation();err.textContent=msg;err.hidden=false;if(bad)bad.focus();}
+    else err.hidden=true;
+  },true);
+  upd();
+  var first=f.querySelector(".load-in");if(first)first.focus();
+})();
+</script>
+{% endif %}
+{% endblock %}

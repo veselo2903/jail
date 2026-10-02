@@ -21,7 +21,9 @@
       setTimeout(function(){ok.focus();},60);
       function done(v){back.classList.remove("open");document.removeEventListener("keydown",key);
         setTimeout(function(){back.remove();},220);resolve(v);}
-      function key(e){if(e.key==="Escape")done(false);if(e.key==="Enter"){e.preventDefault();done(true);}}
+      // Enter нажимает ту кнопку, на которой стоит фокус: на «Отмена» — отмена, а не подтверждение
+      function key(e){if(e.key==="Escape")done(false);
+        if(e.key==="Enter"){e.preventDefault();done(document.activeElement!==back.querySelector(".ui-cancel"));}}
       document.addEventListener("keydown",key);
       ok.addEventListener("click",function(){done(true);});
       var c=back.querySelector(".ui-cancel");if(c)c.addEventListener("click",function(){done(false);});
@@ -69,18 +71,24 @@
     inp._addOpt=function(name){if(opts.indexOf(name)<0)opts.push(name);};
     inp.addEventListener("focus",render);inp.addEventListener("input",render);
     inp.addEventListener("blur",function(){setTimeout(function(){list.hidden=true;},120);});
+    function pick(v){inp.value=v;list.hidden=true;inp.dispatchEvent(new Event("change",{bubbles:true}));}
     inp.addEventListener("keydown",function(e){
-      var items=list.querySelectorAll(".combo-opt");
-      if(e.key==="Enter"&&inp.dataset.ref&&!list.hidden&&!items.length&&list.querySelector(".combo-create")&&inp.value.trim()){
-        e.preventDefault();list.hidden=true;createRef(inp);return;}
-      if(list.hidden||!items.length)return;
-      if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();
+      var items=list.querySelectorAll(".combo-opt"),open=!list.hidden;
+      if(e.key==="Escape"){list.hidden=true;return;}
+      if(!open)return;
+      if((e.key==="ArrowDown"||e.key==="ArrowUp")&&items.length){e.preventDefault();
         act=(act+(e.key==="ArrowDown"?1:-1)+items.length)%items.length;
-        items.forEach(function(d,i){d.classList.toggle("on",i===act);});}
-      else if(e.key==="Enter"&&act>=0){e.preventDefault();inp.value=items[act].dataset.v;list.hidden=true;}
-      else if(e.key==="Enter"&&inp.dataset.ref&&list.querySelector(".combo-create")&&inp.value.trim()&&!list.hidden){
-        e.preventDefault();list.hidden=true;createRef(inp);}   // Enter на новом названии — сразу «+ Создать»
-      else if(e.key==="Escape"){list.hidden=true;}
+        items.forEach(function(d,i){d.classList.toggle("on",i===act);});return;}
+      if(e.key!=="Enter")return;
+      // Enter: выделенный вариант → он; единственный подходящий → он; ничего не подходит → «+ Создать»;
+      // подходит несколько — подсвечиваем первый, чтобы выбрать стрелками/Enter
+      if(act>=0&&items[act]){e.preventDefault();pick(items[act].dataset.v);return;}
+      var v=norm(inp.value),ex=null;opts.forEach(function(o){if(norm(o)===v)ex=o;});
+      if(ex){pick(ex);return;}   // точное совпадение — выбрать и дальше как обычно (Enter отправит форму)
+      if(items.length===1&&inp.value.trim()){e.preventDefault();pick(items[0].dataset.v);return;}
+      if(items.length>1&&inp.value.trim()){e.preventDefault();act=0;items[0].classList.add("on");return;}
+      if(!items.length&&inp.dataset.ref&&list.querySelector(".combo-create")&&inp.value.trim()){
+        e.preventDefault();list.hidden=true;createRef(inp);}
     });
   }
   // Материал из справочника: единица измерения выбирается сама
@@ -186,4 +194,46 @@
   window.uiCombo=initCombo;
   function scan(){document.querySelectorAll("input.combo").forEach(initCombo);initToasts();initFocus();}
   if(document.readyState!=="loading")scan();else document.addEventListener("DOMContentLoaded",scan);
+})();
+
+// Поля пар (inputmode=numeric) — только цифры: пары принимаются целыми
+document.addEventListener("input",function(e){
+  var t=e.target;
+  if(t&&t.tagName==="INPUT"&&t.getAttribute("inputmode")==="numeric"){
+    var v=t.value.replace(/[^\d]/g,"");if(v!==t.value)t.value=v;}
+},true);
+
+// ---- Проверка формы до отправки: поля с data-req обязательны, data-num — число, data-max — не больше остатка.
+// Ошибка показывается прямо в окне — ничего не теряется и окно не закрывается.
+(function(){
+  function num(v){v=(v||"").replace(",",".").replace(/\s/g,"");return v===""?NaN:Number(v);}
+  document.addEventListener("submit",function(e){
+    var f=e.target;if(!f.querySelectorAll)return;
+    var fs=f.querySelectorAll("[data-req]");if(!fs.length)return;
+    var msg="",first=null;
+    fs.forEach(function(i){
+      i.classList.remove("invalid");
+      if(i.disabled||i.closest("[hidden]"))return;
+      var v=(i.value||"").trim(),bad="",k=i.dataset.num,n=num(v),mx=i.dataset.max!==undefined?num(i.dataset.max):NaN;
+      if(!v)bad=i.dataset.req;
+      else if(k){
+        if(isNaN(n)||!isFinite(n))bad="Впишите число";
+        else if(k==="int"&&(n!==Math.floor(n)||n<=0))bad="Только целое число пар больше нуля";
+        else if(k==="pos"&&n<=0)bad="Число должно быть больше нуля";
+        else if(k==="zero"&&n<0)bad="Число не может быть меньше нуля";
+        else if(!isNaN(mx)&&n>mx+1e-9)bad="Больше, чем есть: остаток "+String(i.dataset.max).replace(".",",");
+      }
+      if(bad){i.classList.add("invalid");if(!first){first=i;msg=bad;}}
+    });
+    if(!first)return;
+    e.preventDefault();e.stopImmediatePropagation();
+    var err=f.querySelector(".form-err");
+    if(!err){err=document.createElement("div");err.className="form-err";
+      var b=f.querySelector("button[type=submit],button:not([type])");
+      if(b&&b.parentNode===f)f.insertBefore(err,b);else f.appendChild(err);}
+    err.textContent=msg+".";err.hidden=false;first.focus();
+  },true);
+  document.addEventListener("input",function(e){var t=e.target;
+    if(t.classList&&t.classList.contains("invalid")&&t.dataset.req!==undefined){t.classList.remove("invalid");
+      var f=t.form,err=f&&f.querySelector(".form-err");if(err&&!f.querySelector("[data-req].invalid"))err.hidden=true;}});
 })();

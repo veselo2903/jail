@@ -219,6 +219,20 @@ CREATE TABLE IF NOT EXISTS discr_case (
     UNIQUE(ref_type, ref_id)
 );
 
+-- Склад производства: что кладовщик принял от цеха как готовое / брак (ждёт машину).
+-- pairs < 0 — «вернуть в работу» (исправление). Уехавшее вычитается по строкам передач с src='ready'.
+CREATE TABLE IF NOT EXISTS finish (
+    id          INTEGER PRIMARY KEY,
+    created_at  TEXT NOT NULL,
+    customer_id INTEGER NOT NULL,
+    model_id    INTEGER NOT NULL,
+    lot         TEXT NOT NULL,           -- партия (операции), как lines.lot
+    kind        TEXT NOT NULL,           -- ready / brak
+    pairs       INTEGER NOT NULL,
+    note        TEXT,                    -- причина брака
+    role        TEXT
+);
+
 -- Материалы на складе склада: приход от поставщиков, расход в передачи на производство
 CREATE TABLE IF NOT EXISTS mat_moves (
     id         INTEGER PRIMARY KEY,
@@ -262,6 +276,10 @@ def _migrate(conn):
         conn.execute("ALTER TABLE lines ADD COLUMN note TEXT")
     if "lot" not in cols:
         conn.execute("ALTER TABLE lines ADD COLUMN lot TEXT")   # партия: какие операции делались (JSON)
+    if "src" not in cols:
+        conn.execute("ALTER TABLE lines ADD COLUMN src TEXT")   # 'ready' — погружено из «Готово к отправке»
+    if "recv_draft" not in cols:
+        conn.execute("ALTER TABLE lines ADD COLUMN recv_draft INTEGER")   # вписано при приёмке, ещё не принято
     # поля сборки в позициях заявки
     try:
         ricols = [r["name"] for r in conn.execute("PRAGMA table_info(request_items)")]
@@ -304,10 +322,14 @@ def _migrate(conn):
     except Exception:
         pass
     # Черновиков больше нет: пустые недооформленные документы и заявки удаляем.
+    # Только старше суток: иначе перезапуск сайта убирал бы передачу, которую человек только что открыл.
     conn.execute("""DELETE FROM documents WHERE status='draft'
-                    AND id NOT IN (SELECT document_id FROM lines)""")
+                    AND id NOT IN (SELECT document_id FROM lines)
+                    AND created_at < strftime('%Y-%m-%d %H:%M', 'now', '-1 day')""")
     conn.execute("""DELETE FROM requests WHERE (status='draft' OR (created_role='sklad' AND status!='shipped'))
-                    AND id NOT IN (SELECT request_id FROM request_items)""")
+                    AND id NOT IN (SELECT request_id FROM request_items)
+                    AND id NOT IN (SELECT transfer_id FROM requests WHERE transfer_id IS NOT NULL)
+                    AND created_at < strftime('%Y-%m-%d %H:%M', 'now', '-1 day')""")
     # старые типы документов A/B -> OUT, строкам проставляем статус
     conn.execute("""UPDATE lines SET status='zagotovka'
                     WHERE (status IS NULL OR status='') AND document_id IN
@@ -349,6 +371,7 @@ DATE_COLS = {
     "discr_close": ["created_at"],
     "discr_case": ["created_at", "updated_at", "closed_at"],
     "mat_moves": ["created_at"],
+    "finish": ["created_at"],
 }
 
 

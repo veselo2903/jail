@@ -3,7 +3,7 @@
 {% block content %}
 
 <div class="card hero {{ 'ok' if left <= 0 else '' }}">
-  <div class="big">{{ left|rub }}</div>
+  <div class="big">{{ (-left if left < 0 else left)|rub }}</div>
   <div class="lbl">{% if left < 0 %}переплата производству{% else %}должны производству{% endif %}</div>
   <button class="btn green" type="button" id="pay-open" style="margin-top:16px">Оплатили производству</button>
 </div>
@@ -53,8 +53,8 @@
 <div class="sheet-back" id="pay-sheet" hidden>
   <div class="sheet" role="dialog" aria-modal="true">
     <div class="sheet-t" style="color:var(--ink)">Оплатили производству</div>
-    <div class="sheet-sub">Долг сейчас {{ left|rub }}</div>
-    <form method="post" action="{{ url_for('debt_pay') }}" class="grid">
+    <div class="sheet-sub">{% if left < 0 %}Уже переплачено {{ (-left)|rub }}{% else %}Долг сейчас {{ left|rub }}{% endif %}</div>
+    <form method="post" action="{{ url_for('debt_pay') }}" class="grid" id="pay-form" data-left="{{ left }}">
       <div><label>Сумма, ₽</label><input name="amount" inputmode="decimal" placeholder="0" id="pay-amount"></div>
       <div><label>Примечание</label><input name="note" placeholder="например, перевод на карту"></div>
       <button class="btn green block" type="submit">Записать оплату</button>
@@ -72,6 +72,17 @@
   document.getElementById("pay-close").addEventListener("click",close);
   sh.addEventListener("click",function(e){if(e.target===sh)close();});
   document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!sh.hidden)close();});
+  // сумма больше долга — переспросить (переплата)
+  var f=document.getElementById("pay-form");
+  f.addEventListener("submit",function(e){
+    if(f.dataset.ok)return;
+    var v=parseFloat((document.getElementById("pay-amount").value||"").replace(",",".").replace(/\s/g,""))||0,
+        left=parseFloat(f.dataset.left)||0;
+    if(v>left+0.005){e.preventDefault();e.stopImmediatePropagation();
+      var over=Math.round((v-Math.max(left,0))*100)/100;
+      uiConfirm("Сумма больше долга",{sub:"Получится переплата "+over.toLocaleString("ru-RU")+" ₽. Записать всё равно?",ok:"Записать"})
+        .then(function(y){if(y){f.dataset.ok=1;f.requestSubmit?f.requestSubmit():f.submit();}});}
+  },true);
 })();
 </script>
 {% endblock %}

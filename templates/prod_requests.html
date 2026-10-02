@@ -14,7 +14,7 @@
     <button class="btn" type="submit">+ Заказать материалы</button>
   </form>
   {% else %}
-  <a class="btn pr-create" href="{{ url_for('doc_new') }}">+ Отправить обувь</a>
+  <a class="btn pr-create" href="{{ url_for('docs_load') }}">Погрузить в машину</a>
   {% endif %}
   <div class="subtabs pr-sub">
     <a href="{{ url_for('documents', tab=tab, sub='work') }}" class="{{ 'active' if sub=='work' }}">В работе <span class="n">{{ n_work }}</span></a>

@@ -4,7 +4,7 @@
 
 <a class="card hero ov-link" href="{{ url_for('stock') }}">
   <div class="big">{{ at_prod_total|q }}</div>
-  <div class="lbl">пар сейчас на производстве <span class="go">→</span></div>
+  <div class="lbl">пар сейчас на производстве{% if fready_total %} · из них {{ fready_total|q }} готово ждёт машину{% endif %} <span class="go">→</span></div>
 </a>
 
 <div class="two">
@@ -33,11 +33,13 @@
   <div class="body" style="padding:0 6px">
   {% if by_model %}
   <table>
-    <tr><th>Заказчик</th><th>Модель</th><th class="num">На производстве</th><th class="num">Едет туда</th><th class="num">Едет назад</th></tr>
+    <tr><th>Заказчик</th><th>Модель</th><th class="num">В работе</th><th class="num">Готово ждёт машину</th><th class="num">Брак ждёт машину</th><th class="num">Едет туда</th><th class="num">Едет назад</th></tr>
     {% for r in by_model %}
     <tr class="linkrow" onclick="location='{{ url_for('stock_item', k=r.key) if r.at_prod else url_for('documents', tab='to_prod') }}'">
       <td class="nw">{{ r.customer }}</td><td>{{ r.model }}</td>
-      <td class="num"><b>{{ r.at_prod|q }}</b></td>
+      <td class="num"><b>{{ r.work|q if r.work else '—' }}</b></td>
+      <td class="num">{% if r.fready %}<b style="color:var(--green)">{{ r.fready|q }}</b>{% else %}—{% endif %}</td>
+      <td class="num">{{ r.fbrak|q if r.fbrak else '—' }}</td>
       <td class="num">{{ r.to_prod|q if r.to_prod else '—' }}</td>
       <td class="num">{{ r.to_sklad|q if r.to_sklad else '—' }}</td>
     </tr>

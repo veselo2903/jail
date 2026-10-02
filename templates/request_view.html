@@ -17,7 +17,7 @@
       <span class="tag rq-{{ r.status }}">{{ PROD_REQ_STATUS[r.status] if role=='proizv' and r.created_role=='proizv' else (SKLAD_REQ_STATUS.get(r.status, REQ_STATUS[r.status]) if role=='sklad' else REQ_STATUS[r.status]) }}</span>
       {% if r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}
     </div>
-    <a class="small" href="{{ url_for('documents', tab=('mat' if role=='proizv' else 'need')) }}">к списку</a>
+    <a class="small" href="{{ url_for('documents', tab=('mat' if role=='proizv' else 'need')) }}">← К списку</a>
   </div>
   <div class="small" style="margin-top:6px">{{ 'Склад → Производство' if r.created_role=='sklad' else 'Производство → Склад' }}</div>
   {% if r.note %}<div class="small">Примечание производства: {{ r.note }}</div>{% endif %}
@@ -69,7 +69,7 @@
         </div>
       </div>
       <div class="grid" style="grid-template-columns:140px 1fr">
-        <div><label>Пары</label><input name="pairs" type="number" min="1" inputmode="numeric" placeholder="—"></div>
+        <div><label>Пары</label><input name="pairs" inputmode="numeric" autocomplete="off" placeholder="—"></div>
         <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
       </div>
       <div class="form-err" hidden></div>
@@ -279,7 +279,6 @@
 {% endif %}
 
 {% if not can_collect %}
-<a class="btn block" href="{{ url_for('documents') }}" style="margin-bottom:12px">← К заявкам</a>
 {% endif %}
 
 {% if partial and role in ['sklad','proizv'] %}

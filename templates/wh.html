@@ -52,7 +52,7 @@
       <input type="hidden" name="cid" id="wo-cid"><input type="hidden" name="mid" id="wo-mid">
       <input type="hidden" name="quality" value="{{ tab }}">
       <div class="grid" style="grid-template-columns:140px 1fr">
-        <div><label>Сколько пар</label><input name="qty" id="wo-qty" inputmode="numeric" placeholder="0"></div>
+        <div><label>Сколько пар</label><input name="qty" id="wo-qty" inputmode="numeric" placeholder="0" data-req="Впишите, сколько пар списать" data-num="int"></div>
         <div><label>Причина</label>
           <div class="seg seg-wrap">{% for r in reasons %}<label class="seg-opt"><input type="radio" name="reason" value="{{ r }}" {{ 'checked' if loop.first }}><span>{{ r }}</span></label>{% endfor %}</div>
         </div>
@@ -69,7 +69,7 @@
     <div class="sheet-sub" id="rp-title"></div>
     <form method="post" action="{{ url_for('wh_repair') }}" class="grid">
       <input type="hidden" name="cid" id="rp-cid"><input type="hidden" name="mid" id="rp-mid">
-      <div style="max-width:200px"><label>Сколько пар</label><input name="qty" id="rp-qty" inputmode="numeric" placeholder="0"></div>
+      <div style="max-width:200px"><label>Сколько пар</label><input name="qty" id="rp-qty" inputmode="numeric" placeholder="0" data-req="Впишите, сколько пар в ремонт" data-num="int"></div>
       <div><label>Операции ремонта (за них будет начислено производству)</label>
         <div class="ops-pick">{% for o in operations %}<label class="op-opt"><input type="checkbox" name="ops" value="{{ o.id }}"><span>{{ o.name }}</span></label>{% endfor %}</div>
       </div>
@@ -86,10 +86,12 @@
   document.querySelectorAll(".rp-open").forEach(function(b){b.addEventListener("click",function(){
     document.getElementById("rp-cid").value=b.dataset.cid;document.getElementById("rp-mid").value=b.dataset.mid;
     document.getElementById("rp-title").textContent=b.dataset.title+" · брака "+b.dataset.qty+" пар";
+    document.getElementById("rp-qty").dataset.max=b.dataset.qty;
     rp.hidden=false;requestAnimationFrame(function(){rp.classList.add("open");});
     setTimeout(function(){document.getElementById("rp-qty").focus();},250);});});
   document.getElementById("rp-close").addEventListener("click",rclose);
   rp.addEventListener("click",function(e){if(e.target===rp)rclose();});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!rp.hidden)rclose();});
 })();
 (function(){
   var wo=document.getElementById("wo-sheet");
@@ -97,6 +99,7 @@
   document.querySelectorAll(".wo-open").forEach(function(b){b.addEventListener("click",function(){
     document.getElementById("wo-cid").value=b.dataset.cid;document.getElementById("wo-mid").value=b.dataset.mid;
     document.getElementById("wo-title").textContent=b.dataset.title+" · остаток "+b.dataset.qty+" пар";
+    document.getElementById("wo-qty").dataset.max=b.dataset.qty;
     wo.hidden=false;requestAnimationFrame(function(){wo.classList.add("open");});
     setTimeout(function(){document.getElementById("wo-qty").focus();},250);});});
   document.getElementById("wo-close").addEventListener("click",close);
@@ -139,10 +142,10 @@
     <div class="sheet-t" style="color:var(--ink)" id="mi-t">Приход материала</div>
     <form method="post" action="{{ url_for('wh_mat') }}" class="grid" id="mi-form">
       <input type="hidden" name="act" id="mi-act" value="in">
-      <div id="mi-name-wrap"><label>Материал</label><input class="combo" name="name" id="mi-name" data-ref="materials" placeholder="Название материала"
+      <div id="mi-name-wrap"><label>Материал</label><input class="combo" name="name" id="mi-name" data-ref="materials" data-req="Выберите материал" placeholder="Название материала"
         data-options='{{ materials|map(attribute="name")|list|tojson|forceescape }}'></div>
       <div class="grid" style="grid-template-columns:160px 1fr">
-        <div><label>Количество</label><input name="qty" inputmode="decimal" placeholder="—" id="mi-qty"></div>
+        <div><label>Количество</label><input name="qty" inputmode="decimal" placeholder="—" id="mi-qty" data-req="Впишите количество" data-num="pos"></div>
         <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
       </div>
       <button class="btn block" type="submit" id="mi-ok">Внести приход</button>
@@ -157,6 +160,7 @@
     document.getElementById("mi-t").textContent=act==="in"?"Приход материала":"Списать: "+name+(info?" · остаток "+info:"");
     document.getElementById("mi-ok").textContent=act==="in"?"Внести приход":"Списать";
     var n=document.getElementById("mi-name");n.value=name||"";document.getElementById("mi-name-wrap").hidden=act!=="in";
+    var q=document.getElementById("mi-qty");if(act==="in")delete q.dataset.max;else q.dataset.max=(info||"").split(" ")[0];
     sh.hidden=false;requestAnimationFrame(function(){sh.classList.add("open");});
     setTimeout(function(){(act==="in"?n:document.getElementById("mi-qty")).focus();},200);}
   function close(){sh.classList.remove("open");setTimeout(function(){sh.hidden=true;},220);}
@@ -164,6 +168,7 @@
   document.querySelectorAll(".mw-open").forEach(function(b){b.addEventListener("click",function(){open("writeoff",b.dataset.name,b.dataset.qty+" "+b.dataset.unit);});});
   document.getElementById("mi-close").addEventListener("click",close);
   sh.addEventListener("click",function(e){if(e.target===sh)close();});
+  document.addEventListener("keydown",function(e){if(e.key==="Escape"&&!sh.hidden)close();});
 })();
 </script>
 {% endif %}

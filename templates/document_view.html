@@ -10,7 +10,7 @@
       <span class="doc-pairs">{% if has_recv %}принято {{ recv }} из {{ sent }} пар{% else %}{{ sent }} пар{% endif %}</span>
       {% if has_recv and diff!=0 %}<span class="tag d">расхождение</span>{% endif %}
     </div>
-    <a class="small" href="{{ url_for('documents', tab=('shoes' if role=='proizv' else None)) }}">к списку</a>
+    <a class="small" href="{{ url_for('documents', tab=('shoes' if role=='proizv' else None)) }}">← К списку</a>
   </div>
   <div class="small" style="margin-top:6px">{{ KINDS[d.kind][0] }}{% if d.sent_at %} · отправлена {{ d.sent_at|dt }}{% endif %}{% if d.accepted_at %} · принята {{ d.accepted_at|dt }}{% endif %}</div>
   {% if d.note %}<div class="placed-note" style="margin-top:6px">{{ d.note }}</div>{% endif %}
@@ -65,7 +65,7 @@
     {% endif %}
     <input type="hidden" name="status" value="gotovoe">
     <div class="grid" style="grid-template-columns:140px 1fr">
-      <div><label>Пары</label><input name="pairs" type="number" min="1" inputmode="numeric" placeholder="0"></div>
+      <div><label>Пары</label><input name="pairs" inputmode="numeric" autocomplete="off" placeholder="0"></div>
       <div><label>Примечание</label><input name="note" placeholder="Необязательно"></div>
     </div>
     <div class="row" style="gap:10px">
@@ -95,7 +95,7 @@
         {% endfor %}
       </div>
       <div class="grid" style="grid-template-columns:140px 1fr">
-        <div><label>Пар брака</label><input name="pairs" type="number" min="1" inputmode="numeric" placeholder="—"></div>
+        <div><label>Пар брака</label><input name="pairs" inputmode="numeric" autocomplete="off" placeholder="—"></div>
         <div><label>Причина брака</label><input name="note" placeholder="Обязательно: что не так"></div>
       </div>
       <div class="form-err" hidden></div>
@@ -138,7 +138,7 @@
 {% endif %}
 
 {# ================= ПРИЁМКА (приёмщик) ================= #}
-{% elif can_accept %}
+{% elif can_accept and d.kind != 'RETURN' %}
 <div class="card">
   <h3 style="margin-top:0">Приёмка</h3>
   <form method="post" action="{{ url_for('doc_accept', doc_id=d.id) }}">
@@ -152,7 +152,7 @@
         </td>
         <td class="num">{{ l.pairs_sent }}</td>
         <td class="num" style="width:110px">
-          <input class="ret-in" data-sent="{{ l.pairs_sent }}" name="recv_{{ l.id }}" type="number" min="0" inputmode="numeric" value="" placeholder="—">
+          <input class="ret-in" data-sent="{{ l.pairs_sent }}" name="recv_{{ l.id }}" inputmode="numeric" autocomplete="off" value="" placeholder="—">
           <div class="ret-mark small"></div>
         </td>
         <td style="min-width:160px">
@@ -209,12 +209,12 @@
     {% endfor %}
   </table>
 </div>
-{% if d.status=='sent' %}
+{% if d.status=='sent' and can_accept %}
+<a class="btn block" href="{{ url_for('acceptance') }}">Принять — на странице «Приёмка»</a>
 {% endif %}
 {% endif %}
 
 {% if d.status!='draft' %}
-<a class="btn block" href="{{ url_for('documents') }}" style="margin-bottom:12px">← К заявкам</a>
 {% endif %}
 
 {% if can_delete %}

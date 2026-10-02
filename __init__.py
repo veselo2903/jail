@@ -52,4 +52,10 @@ def _apply_staged():
 try:
     _apply_staged()
 except Exception:
-    pass
+    # не роняем сайт, но записываем — будет видно на странице «Обновление системы»
+    try:
+        import traceback as _tb
+        with open(_os.path.join(_BASE, "errors.log"), "a", encoding="utf-8") as _f:
+            _f.write("\n==== установка обновления при перезапуске не удалась\n" + _tb.format_exc())
+    except Exception:
+        pass
