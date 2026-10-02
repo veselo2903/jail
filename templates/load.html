@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Погрузка — jail{% endblock %}
 {% block content %}
-<div class="row" style="justify-content:space-between;margin-bottom:4px">
-  <a class="small" href="{{ url_for('stock', tab='fready') }}">← К складу</a>
+<div class="row" style="justify-content:space-between;margin-bottom:12px">
+  <a class="btn back" href="{{ url_for('stock', tab='fready') }}">← К складу</a>
 </div>
 <div class="card hero" id="load-hero">
   <div class="big" id="load-total">0</div>

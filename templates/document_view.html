@@ -10,7 +10,7 @@
       <span class="doc-pairs">{% if has_recv %}принято {{ recv }} из {{ sent }} пар{% else %}{{ sent }} пар{% endif %}</span>
       {% if has_recv and diff!=0 %}<span class="tag d">расхождение</span>{% endif %}
     </div>
-    <a class="small" href="{{ url_for('documents', tab=('shoes' if role=='proizv' else None)) }}">← К списку</a>
+    <a class="btn back" href="{{ url_for('documents', tab=('shoes' if role=='proizv' else None)) }}">← К списку</a>
   </div>
   <div class="small" style="margin-top:6px">{{ KINDS[d.kind][0] }}{% if d.sent_at %} · отправлена {{ d.sent_at|dt }}{% endif %}{% if d.accepted_at %} · принята {{ d.accepted_at|dt }}{% endif %}</div>
   {% if d.note %}<div class="placed-note" style="margin-top:6px">{{ d.note }}</div>{% endif %}

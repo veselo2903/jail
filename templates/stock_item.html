@@ -6,7 +6,7 @@
 <div class="card">
   <div class="row" style="justify-content:space-between">
     <b>{{ title }}</b>
-    <a class="small" href="{{ url_for('stock', tab=('pairs' if is_pair else 'mats')) }}">← К складу</a>
+    <a class="btn back" href="{{ url_for('stock', tab=('pairs' if is_pair else 'mats')) }}">← К складу</a>
   </div>
 </div>
 

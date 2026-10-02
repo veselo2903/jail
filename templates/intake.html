@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Записать готовое из цеха — jail{% endblock %}
 {% block content %}
-<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:4px">
-  <a class="small" href="{{ url_for('stock', tab='work') }}">← К складу</a>
+<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px">
+  <a class="btn back" href="{{ url_for('stock', tab='work') }}">← К складу</a>
 </div>
 
 <div class="card hero ok">

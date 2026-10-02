@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Записать брак из цеха — jail{% endblock %}
 {% block content %}
-<div style="margin-bottom:4px"><a class="small" href="{{ url_for('stock', tab='work') }}">← К складу</a></div>
+<div style="margin-bottom:12px"><a class="btn back" href="{{ url_for('stock', tab='work') }}">← К складу</a></div>
 
 {% if work %}
 <form method="post" id="bk-form" novalidate>

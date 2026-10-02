@@ -17,7 +17,7 @@
       <span class="tag rq-{{ r.status }}">{{ PROD_REQ_STATUS[r.status] if role=='proizv' and r.created_role=='proizv' else (SKLAD_REQ_STATUS.get(r.status, REQ_STATUS[r.status]) if role=='sklad' else REQ_STATUS[r.status]) }}</span>
       {% if r.urgent %}<span class="tag urgent">Срочно</span>{% endif %}
     </div>
-    <a class="small" href="{{ url_for('documents', tab=('mat' if role=='proizv' else 'need')) }}">← К списку</a>
+    <a class="btn back" href="{{ url_for('documents', tab=('mat' if role=='proizv' else 'need')) }}">← К списку</a>
   </div>
   <div class="small" style="margin-top:6px">{{ 'Склад → Производство' if r.created_role=='sklad' else 'Производство → Склад' }}</div>
   {% if r.note %}<div class="small">Примечание производства: {{ r.note }}</div>{% endif %}
@@ -103,7 +103,7 @@
     <button class="btn green block" type="submit" style="font-size:17px;padding:15px">Отправить на производство →</button>
   </form>
 </div>
-{% if has_reqs %}<a class="btn grey" href="{{ url_for('docs_collect') }}">← Назад к сборке</a>{% endif %}
+{% if has_reqs %}<a class="btn back" href="{{ url_for('docs_collect') }}">← Назад к сборке</a>{% endif %}
 {% endif %}
 
 <style>
