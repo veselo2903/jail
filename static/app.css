@@ -461,4 +461,3 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-heigh
 .sklad-transfer-link{color:var(--ink)}
 @media(max-width:800px){.sklad-request-grid{grid-template-columns:36px minmax(0,1fr) 145px 90px 14px;gap:8px;padding-inline:12px}.sklad-request-content{padding-left:12px}}
 
-.sklad-shortage-preview{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:7px;color:#47658b;font-size:14px;line-height:1.5}

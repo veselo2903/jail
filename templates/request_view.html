@@ -4,6 +4,7 @@
 
 {% set warehouse_request = role=='sklad' and r.created_role=='proizv' %}
 {% set need_items = items|selectattr('line_kind','equalto','need')|list %}
+{% if warehouse_request and r.status!='accepted' %}{% set need_items = need_items|rejectattr('fulfilled')|list %}{% endif %}
 {% set pair_items = items|selectattr('line_kind','equalto','pair')|list %}
 {% set mat_items = items|selectattr('line_kind','equalto','material')|list %}
 {% macro opsline(i) %}{% set os = ops_by_item.get(i.id, []) %}{% if os %}{{ os|ops_short }}{% elif i.status %}{{ LINE_STATUSES[i.status] }}{% else %}<span class="small">—</span>{% endif %}{% endmacro %}
@@ -233,7 +234,7 @@
     {% for i in need_items %}
     {% set delivered = i.delivered or 0 %}
     {% set collected = i.collected or 0 %}
-    {% set remaining = ([0, i.qty - delivered - collected]|max) if i.qty is not none else none %}
+    {% set remaining = i.remaining %}
     <tr>
       <td><b>{{ i.item }}</b>{% if i.urgent %} <span class="tag urgent">Срочно</span>{% endif %}{% if i.note %}<div class="placed-note">{{ i.note }}</div>{% endif %}</td>
       <td class="num">

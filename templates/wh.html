@@ -13,7 +13,7 @@
 <div class="subtabs">
   <a href="{{ url_for('wh', tab='ready') }}" class="{{ 'active' if tab=='ready' }}">Готовая <span class="n">{{ items|selectattr('ready')|list|length }}</span></a>
   <a href="{{ url_for('wh', tab='brak') }}" class="{{ 'active' if tab=='brak' }}">Брак <span class="n">{{ items|selectattr('brak')|list|length }}</span></a>
-  <a href="{{ url_for('wh', tab='mats') }}" class="{{ 'active' if tab=='mats' }}">Материалы <span class="n">{{ mats|length }}</span></a>
+{% if role!='sklad' %}  <a href="{{ url_for('wh', tab='mats') }}" class="{{ 'active' if tab=='mats' }}">Материалы <span class="n">{{ mats|length }}</span></a>{% endif %}
   <a href="{{ url_for('wh', tab='moves') }}" class="{{ 'active' if tab=='moves' }}">Движения</a>
 </div>
 

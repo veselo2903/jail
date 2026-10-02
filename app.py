@@ -290,34 +290,8 @@ def _mat_move(kind, name, unit, qty, reason, note=None, ref_id=None):
 
 @app.route("/wh/mat", methods=["POST"])
 def wh_mat():
-    """Склад: приход материала (от поставщика) или списание."""
-    if session.get("role") != "sklad":
-        abort(403)
-    act = request.form.get("act")
-    name = " ".join((request.form.get("name") or "").split())
-    row = _find_ref("materials", name) if name else None
-    qty = _num(request.form.get("qty"))
-    back = redirect(url_for("wh", tab="mats"))
-    if not row:
-        flash("Выберите материал из справочника." if name else "Укажите материал.")
-        return back
-    if not qty:
-        flash("Укажите количество.")
-        return back
-    m = g.db.execute("SELECT name, unit FROM materials WHERE id=?", (row["id"],)).fetchone()
-    note = (request.form.get("note") or "").strip() or None
-    if act == "writeoff":
-        bal = mat_balances().get(_mat_key(m["name"]), {}).get("qty", 0)
-        if qty - bal > 1e-9:
-            flash(f"Нельзя списать больше остатка ({_fmt(bal)} {m['unit']}).")
-            return back
-        _mat_move("writeoff", m["name"], m["unit"], -qty, request.form.get("reason") or "Списание", note)
-        flash(f"Списано: {m['name']} {_fmt(qty)} {m['unit']}.")
-    else:
-        _mat_move("in", m["name"], m["unit"], qty, "Приход", note)
-        flash(f"Приход: {m['name']} {_fmt(qty)} {m['unit']}.")
-    g.db.commit()
-    return back
+    """Material inventory entry is temporarily disabled."""
+    abort(403)
 
 
 @app.route("/wh")
@@ -328,6 +302,8 @@ def wh():
     if session.get("role") not in ("sklad", "director"):
         abort(403)
     tab = request.args.get("tab", "ready")
+    if session["role"]=="sklad" and tab=="mats":
+        return redirect(url_for("wh",tab="ready"))
     items = wh_balances()
     moves = []
     if tab == "moves":
@@ -335,9 +311,9 @@ def wh():
             """SELECT w.*, c.name customer, m.name model FROM wh_moves w
                JOIN customers c ON c.id=w.customer_id JOIN models m ON m.id=w.model_id
                ORDER BY w.id DESC LIMIT 200""").fetchall()
-    mats = sorted(mat_balances().values(), key=lambda e: e["name"].lower())
+    mats = sorted(mat_balances().values(), key=lambda e: e["name"].lower()) if session["role"]!= "sklad" else []
     mat_moves = []
-    if tab == "moves":
+    if tab == "moves" and session["role"]!= "sklad":
         mat_moves = g.db.execute("SELECT * FROM mat_moves ORDER BY id DESC LIMIT 200").fetchall()
     return render_template("wh.html", tab=tab, items=items, moves=moves, reasons=WH_REASONS,
                            mats=[e for e in mats if abs(e["qty"]) > 1e-9], mat_moves=mat_moves,
@@ -1251,6 +1227,36 @@ def _prod_requests():
                            n_work=len(work), n_done=len(done), n_act_mat=n_act_mat, n_act_shoe=n_act_shoe)
 
 
+@_cached
+def _need_dispatch_totals():
+    totals={r["from_item"]:r["qty"] for r in g.db.execute(
+        "SELECT i.from_item,SUM(COALESCE(i.collected,0)) qty FROM request_items i "
+        "JOIN requests t ON t.id=i.request_id WHERE i.from_item IS NOT NULL "
+        "AND t.status IN ('shipped','accepted') GROUP BY i.from_item")}
+    for i in g.db.execute("SELECT i.* FROM request_items i JOIN requests r ON r.id=i.request_id "
+                          "WHERE i.line_kind='need' AND r.created_role='proizv' AND r.status='shipped' "
+                          "AND NOT EXISTS(SELECT 1 FROM request_items x WHERE x.from_item=i.id)"):
+        totals[i["id"]]=(i["delivered"] or 0)+(i["collected"] or 0)
+    return totals
+
+
+@_cached
+def _need_draft_totals():
+    return {r['from_item']:r['qty'] for r in g.db.execute(
+        "SELECT i.from_item,SUM(COALESCE(i.collected,0)) qty FROM request_items i JOIN requests t ON t.id=i.request_id "
+        "WHERE i.from_item IS NOT NULL AND t.status IN ('progress','done') GROUP BY i.from_item")}
+
+
+def _warehouse_need(i):
+    row=dict(i)
+    sent=_need_dispatch_totals().get(i["id"],i["delivered"] or 0)
+    row["remaining"]=max(0,i["qty"]-sent) if i["qty"] is not None else None
+    row["fulfilled"]=(row["remaining"] is not None and row["remaining"]<=1e-9) or (row["remaining"] is None and sent>0)
+    if sent>0:
+        row["collected"]=_need_draft_totals().get(i["id"])
+    return row
+
+
 def _sklad_requests():
     """Раздел «Заявки» склада: заказы производства + свои передачи без заказа, одним списком."""
     sub = request.args.get("sub")
@@ -1274,29 +1280,27 @@ def _sklad_requests():
                 continue   # производство ещё не отправило
             its = g.db.execute("SELECT * FROM request_items WHERE request_id=? AND line_kind='need' ORDER BY id",
                                (r["id"],)).fetchall()
+            its=[_warehouse_need(i) for i in its]
+            if sub not in ("done","transit"):
+                its=[i for i in its if not i["fulfilled"]]
             first = its[0]["item"] if its else "—"
             url = url_for("request_view", req_id=r["id"])
         disc = bool(r["status"] == "accepted" and r["discr"])
-        part = (not by_sklad) and r["status"] == "open" and any((i["delivered"] or 0) > 0 for i in its)
-        remaining = [dict(item=i["item"], qty=max(0,i["qty"]-(i["delivered"] or 0)-(i["collected"] or 0)), unit=i["unit"] or "шт")
-                     for i in its if not by_sklad and i["qty"] is not None
-                     and i["qty"]-(i["delivered"] or 0)-(i["collected"] or 0)>1e-9]
-        partial = bool(remaining) and any((i["delivered"] or 0)>0 or (i["collected"] or 0)>0 for i in its)
+        remaining = [dict(item=i["item"],qty=i["remaining"],unit=i["unit"] or "шт") for i in its if not by_sklad and not i["fulfilled"]]
         rows.append(dict(
             id=r["id"], first=first, more=max(0, len(its) - 1), urgent=r["urgent"], created_at=r["created_at"],
-            status=(("Нужно дособрать · часть в пути" if r["status"]=="shipped" else "Нужно дособрать") if partial else SKLAD_REQ_STATUS.get(r["status"], r["status"]) + (" с расхождением" if disc else "")),
+            status=("Нужно собрать" if not by_sklad and remaining else SKLAD_REQ_STATUS.get(r["status"],r["status"]))+(" с расхождением" if disc else ""),
             action=(r["status"] in ("open", "progress", "done")), disc=disc, done=(r["status"] == "accepted"),
-            url=url, remaining=remaining, partial=partial, items=its, note=r["note"], by_sklad=by_sklad, number=r["number"], in_transit=r["status"]=="shipped"))
+            url=url, remaining=remaining, items=its, note=r["note"], by_sklad=by_sklad, number=r["number"], in_transit=r["status"]=="shipped"))
     work = sorted([x for x in rows if not x["done"]], key=lambda x:(not x["urgent"],x["id"]))
     groups = {
-        "collect": [x for x in work if not x["partial"] and not x["in_transit"]],
-        "remaining": [x for x in work if x["partial"]],
+        "collect": [x for x in work if (not x["by_sklad"] and x["remaining"]) or (x["by_sklad"] and not x["in_transit"])],
         "transit": [x for x in work if x["in_transit"]],
         "done": sorted([x for x in rows if x["done"]],key=lambda x:-x["id"]),
     }
     if sub not in groups:
-        sub = next((name for name in ("remaining","collect","transit") if groups[name]),"collect")
-    tabs=[("collect","Нужно собрать"),("remaining","Нужно дособрать"),("transit","В пути"),("done","Выполненные")]
+        sub = next((name for name in ("collect","transit") if groups[name]),"collect")
+    tabs=[("collect","Нужно собрать"),("transit","В пути"),("done","Выполненные")]
     return render_template("sklad_requests.html", sub=sub, rows=groups[sub], tabs=tabs,
                            counts={name:len(items) for name,items in groups.items()})
 
@@ -1308,14 +1312,15 @@ def docs_collect():
     if session["role"] != "sklad":
         abort(403)
     reqs = g.db.execute(
-        "SELECT * FROM requests WHERE status IN ('open','progress','done') AND created_role='proizv' "
+        "SELECT * FROM requests WHERE status IN ('open','progress','done','shipped') AND created_role='proizv' "
         "ORDER BY urgent DESC, id DESC").fetchall()
     groups = []
     for r in reqs:
         its = g.db.execute(
             "SELECT * FROM request_items WHERE request_id=? AND line_kind='need' ORDER BY id",
             (r["id"],)).fetchall()
-        groups.append(dict(r=r, its=its))
+        its=[_warehouse_need(i) for i in its]
+        groups.append(dict(r=r,its=[i for i in its if not i["fulfilled"]]))
     if not any(gr["its"] for gr in groups):
         # заявок нет — сразу к передаче, без пустой страницы «Что нужно положить»
         t = _open_transfer()
@@ -1331,7 +1336,7 @@ def docs_collect_save():
     if session["role"] != "sklad":
         abort(403)
     reqs = g.db.execute(
-        "SELECT * FROM requests WHERE status IN ('open','progress','done') AND created_role='proizv'").fetchall()
+        "SELECT * FROM requests WHERE status IN ('open','progress','done','shipped') AND created_role='proizv'").fetchall()
     t = _open_transfer()
     any_placed = False
     missing = []
@@ -1340,10 +1345,13 @@ def docs_collect_save():
             "SELECT * FROM request_items WHERE request_id=? AND line_kind='need'",
             (r["id"],)).fetchall()
         for it in items:
+            if _warehouse_need(it)["fulfilled"]:
+                g.db.execute("UPDATE request_items SET placed=0,collected=NULL WHERE id=?",(it["id"],))
+                continue
             iid = it["id"]
             placed = 1 if request.form.get(f"placed_{iid}") else 0
             raw = (request.form.get(f"col_{iid}", "") or "").strip()
-            rest = max(0, (it["qty"] or 0) - (it["delivered"] or 0)) if it["qty"] else None
+            rest = _warehouse_need(it)["remaining"]
             if raw == "":
                 val = rest if placed else it["collected"]
             else:
@@ -2962,24 +2970,35 @@ def _need_got(i):
     передачах, куда склад клал эту строку. Старые заказы без такой связи — по-старому."""
     rows = g.db.execute("SELECT ri.recv FROM request_items ri JOIN requests t ON t.id=ri.request_id "
                         "WHERE ri.from_item=? AND t.status='accepted'", (i["id"],)).fetchall()
-    if rows:
+    if rows or i["id"] in _need_dispatch_totals():
         return sum((r["recv"] or 0) for r in rows), True
     return None, False
 
 
 def _settle_request(rid):
-    """Заказ производства после приёмки: сколько пришло по каждой строке (по факту приёмки, а не по тому,
-    что склад собрал). Если пришло меньше, чем заказали, заказ снова ждёт склад на остаток."""
-    left = False
-    for i in g.db.execute("SELECT * FROM request_items WHERE request_id=? AND line_kind='need'", (rid,)).fetchall():
-        got, linked = _need_got(i)
-        if not linked:   # старая схема: заявка сама ехала
-            got = (i["delivered"] or 0) + (i["recv"] if i["recv"] is not None else (i["collected"] or 0))
-        g.db.execute("UPDATE request_items SET delivered=?, collected=NULL, placed=0 WHERE id=?", (got, i["id"]))
-        if i["qty"] and got < i["qty"] - 1e-9:
-            left = True
-    if left:
-        g.db.execute("UPDATE requests SET status='open', transfer_id=NULL, taken_at=NULL, accepted_at=NULL WHERE id=?", (rid,))
+    """Keep only unsent demand actionable; preserve receipts and pending deliveries."""
+    items=g.db.execute("SELECT * FROM request_items WHERE request_id=? AND line_kind='need'",(rid,)).fetchall()
+    pending=g.db.execute("SELECT DISTINCT t.id,t.status FROM requests t JOIN request_items i ON i.request_id=t.id "
+                         "JOIN request_items n ON n.id=i.from_item WHERE n.request_id=? "
+                         "AND t.status IN ('progress','done','shipped') ORDER BY t.id DESC",(rid,)).fetchall()
+    drafts=[t for t in pending if t["status"] in ('progress','done')]
+    for i in items:
+        got,linked=_need_got(i)
+        if linked:
+            g.db.execute("UPDATE request_items SET delivered=? WHERE id=?",(got,i["id"]))
+        if not drafts:
+            g.db.execute("UPDATE request_items SET collected=NULL,placed=0 WHERE id=?",(i["id"],))
+    remaining=any(not _warehouse_need(i)["fulfilled"] for i in items)
+    if drafts:
+        status,transfer='progress',drafts[0]['id']
+    elif remaining:
+        status,transfer='open',None
+    elif pending:
+        status,transfer='shipped',pending[0]['id']
+    else:
+        status,transfer='accepted',None
+    g.db.execute("UPDATE requests SET status=?,transfer_id=?,accepted_at=? WHERE id=?",
+                 (status,transfer,db.now_str() if status=='accepted' else None,rid))
 
 
 def _refresh_need(need_id):
@@ -3103,7 +3122,7 @@ def prod_accept():
         g.db.execute("UPDATE requests SET status='accepted', accepted_at=?, discr=? WHERE id=?",
                      (now, 1 if mism else 0, r["id"]))
         stock_from_req(g.db, r["id"])
-        linked = [x["id"] for x in g.db.execute("SELECT id FROM requests WHERE transfer_id=?", (r["id"],))]
+        linked = [x["id"] for x in g.db.execute("SELECT id FROM requests WHERE transfer_id=? UNION SELECT n.request_id FROM request_items n JOIN request_items i ON i.from_item=n.id WHERE i.request_id=?", (r["id"],r["id"]))]
         g.db.execute("UPDATE requests SET status='accepted', accepted_at=?, discr=? WHERE transfer_id=?",
                      (now, 1 if mism else 0, r["id"]))
         for rid in linked:
@@ -3184,7 +3203,7 @@ def overview():
 
 # ---------- Заявки «чего не хватает» ----------
 def _load_req_items(req_id):
-    return g.db.execute(
+    rows = g.db.execute(
         """SELECT ri.*, c.name AS customer, m.name AS model
            FROM request_items ri
            LEFT JOIN customers c ON c.id = ri.customer_id
@@ -3192,6 +3211,8 @@ def _load_req_items(req_id):
            WHERE ri.request_id=?
            ORDER BY (ri.source='sklad'), ri.id""", (req_id,)
     ).fetchall()
+
+    return [_warehouse_need(i) if i["line_kind"]=="need" else i for i in rows]
 
 
 @app.route("/requests")
@@ -3552,8 +3573,10 @@ def request_ship(req_id):
             _mat_move("out", it["item"], it["unit"], -it["collected"], f"Передача №{req_id} на производство", ref_id=req_id)
     g.db.execute("UPDATE requests SET status='shipped', done_at=?, ship_note=? WHERE id=?",
                  (now, ship_note, req_id))
-    # заявки производства, собранные в эту передачу, едут вместе с ней
-    g.db.execute("UPDATE requests SET status='shipped', done_at=? WHERE transfer_id=?", (now, req_id))
+    # Demand is reduced on dispatch; receipts remain attached to the delivery.
+    linked=[x[0] for x in g.db.execute("SELECT id FROM requests WHERE transfer_id=?",(req_id,))]
+    for rid in linked:
+        _settle_request(rid)
     g.db.commit()
     flash("Передача отправлена на производство.")
     return redirect(url_for("request_view", req_id=req_id))

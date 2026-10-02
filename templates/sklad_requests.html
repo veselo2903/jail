@@ -25,7 +25,7 @@
     <summary class="sklad-request-grid {{ 'pr-act' if x.action }}">
       <span>{{ x.number or x.id }}</span>
       <span><b>{{ x.first }}</b>{% if x.more %} <span class="small">ещё {{ x.more }}</span>{% endif %}{% if x.urgent and not x.done %} <span class="tag urgent">Срочно</span>{% endif %}
-        {% if x.partial %}<span class="sklad-shortage-preview">{% for item in x.remaining %}<span>{{ item.item }} — <b>{{ item.qty|q }} {{ item.unit }}</b></span>{% endfor %}</span>{% endif %}
+
       </span>
       <span><span class="tag {{ 'you' if x.action else ('d' if x.disc else 'sent') }}">{{ x.status }}</span></span>
       <span class="small">{{ (x.created_at|dt)[:10] }}</span>
@@ -33,17 +33,13 @@
     <div class="sklad-request-content">
       {% if x.note %}<div class="placed-note">{{ x.note }}</div>{% endif %}
       <table class="sklad-request-items">
-        <tr><th>Материал</th><th class="num">Запросили</th>{% if not x.done %}<th class="num">Ещё нужно отправить</th>{% endif %}</tr>
+        <tr><th>Материал</th><th class="num">{{ 'Запросили' if sub!='collect' else 'Нужно отправить' }}</th></tr>
         {% for i in x['items'] %}
         {% set delivered = i.delivered or 0 %}{% set collected = i.collected or 0 %}
         {% set remaining = ([0, i.qty-delivered-collected]|max) if i.qty is not none else none %}
         <tr>
           <td><b>{{ i.item }}</b>{% if i.urgent %} <span class="tag urgent">Срочно</span>{% endif %}{% if i.note %}<div class="placed-note">{{ i.note }}</div>{% endif %}</td>
-          <td class="num">{{ i.qty|q if i.qty is not none else 'Не указано' }}{% if i.qty is not none %} {{ i.unit or 'шт' }}{% endif %}</td>
-          {% if not x.done %}<td class="num"><b>{{ remaining|q if remaining is not none else 'Не указано' }}{% if remaining is not none %} {{ i.unit or 'шт' }}{% endif %}</b>
-            {% if delivered %}<div class="small">Получено {{ delivered|q }} {{ i.unit or 'шт' }}</div>{% endif %}
-            {% if collected %}<div class="small">{{ 'В пути' if x.in_transit else 'В передаче' }} {{ collected|q }} {{ i.unit or 'шт' }}</div>{% endif %}
-          </td>{% endif %}
+          <td class="num"><b>{{ (i.remaining if sub=='collect' else i.qty)|q if (i.remaining if sub=='collect' else i.qty) is not none else 'Не указано' }} {{ i.unit or 'шт' }}</b></td>
         </tr>
         {% endfor %}
       </table>
@@ -59,6 +55,6 @@ var expand=entries.some(function(entry){return !entry.open;});entries.forEach(fu
 })();
 </script>
 {% else %}
-<div class="card flush"><div class="empty">{{ {'collect':'Заявок для сборки нет.','remaining':'Всё собрано — недоложенных материалов нет.','transit':'Передач в пути нет.','done':'Выполненных пока нет.'}[sub] }}</div></div>
+<div class="card flush"><div class="empty">{{ {'collect':'Заявок для сборки нет.','transit':'Передач в пути нет.','done':'Выполненных пока нет.'}[sub] }}</div></div>
 {% endif %}
 {% endblock %}

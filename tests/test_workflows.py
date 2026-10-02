@@ -152,7 +152,7 @@ class Workflows(unittest.TestCase):
   self.client.post('/docs/collect/save',data={'placed_1':'1','col_1':'5'})
   transfer=self.sql("select id from requests where created_role='sklad'")[0][0]
   self.client.post(f'/requests/{transfer}/ship')
-  view=self.client.get('/requests/1').text;self.assertIn('5 м2',view);self.assertIn('В пути',view)
+  view=self.client.get('/requests/1').text;self.assertIn('5 м2',view);self.assertIn('Нужно собрать',view)
   item=self.sql('select id from request_items where request_id=?',(transfer,))[0][0]
   self.role('proizv');self.client.post('/acceptance/accept',data={f'recv_{item}':'5'})
   self.assertEqual(self.sql('select status from requests where id=1')[0][0],'open')
@@ -194,10 +194,8 @@ class Workflows(unittest.TestCase):
    self.sql("INSERT INTO request_items(request_id,item,line_kind,qty,delivered,collected,unit) VALUES(?,?,'need',10,?,?,'шт')",(rid,name,got,sent))
   self.role('sklad')
   collect=self.client.get('/docs?sub=collect').text
-  self.assertIn('NewItem',collect);self.assertNotIn('PartialItem',collect)
-  remaining=self.client.get('/docs?sub=remaining').text
-  self.assertIn('PartialItem',remaining);self.assertIn('SentPartialItem',remaining);self.assertNotIn('SentFullItem',remaining)
-  self.assertIn('sklad-shortage-preview',remaining);self.assertIn('5 шт',remaining)
+  self.assertIn('NewItem',collect);self.assertIn('PartialItem',collect);self.assertIn('SentPartialItem',collect);self.assertNotIn('SentFullItem',collect)
+  self.assertNotIn('Нужно дособрать',collect)
   transit=self.client.get('/docs?sub=transit').text
   self.assertIn('SentPartialItem',transit);self.assertIn('SentFullItem',transit);self.assertNotIn('NewItem',transit)
 
@@ -208,5 +206,31 @@ class Workflows(unittest.TestCase):
   r=self.client.post('/debt/pay',headers={'X-Requested-With':'fetch'})
   self.assertEqual(r.status_code,403);self.assertIn('роли',r.json['error'])
   r=self.client.get('/missing-page');self.assertEqual(r.status_code,404);self.assertNotIn('class="big">404',r.text)
+
+ def test_sent_material_removed_and_second_delivery_before_receipt(self):
+  self.sql("INSERT INTO requests(id,status,created_role,created_at) VALUES(1,'open','proizv',?)",(db.now_str(),))
+  for iid,name,qty in [(1,'FullySent',10),(2,'Remaining',20)]:
+   self.sql("INSERT INTO request_items(id,request_id,item,line_kind,qty,unit) VALUES(?,1,?,'need',?,'шт')",(iid,name,qty))
+  self.role('sklad');self.client.post('/docs/collect/save',data={'quantity_selection':'1','col_1':'10','col_2':'5'})
+  first=self.sql("select id from requests where created_role='sklad'")[0][0];self.client.post(f'/requests/{first}/ship')
+  view=self.client.get('/docs?sub=collect').text
+  self.assertNotIn('FullySent',view);self.assertIn('15 шт',view);self.assertIn('Remaining',view)
+  view=self.client.get('/docs/collect').text;self.assertNotIn('FullySent',view);self.assertIn('data-quantity="15"',view)
+  self.client.post('/docs/collect/save',data={'quantity_selection':'1','col_2':'15'})
+  second=self.sql("select id from requests where created_role='sklad' and status='progress'")[0][0]
+  self.client.post(f'/requests/{second}/ship');self.assertNotIn('Remaining',self.client.get('/docs?sub=collect').text)
+  self.role('proizv')
+  fields={f"recv_{i['id']}":str(i['collected']) for i in self.sql('select * from request_items where request_id=?',(first,))}
+  self.client.post('/acceptance/accept',data=fields);self.assertEqual(self.sql('select status from requests where id=1')[0][0],'shipped')
+  fields={f"recv_{i['id']}":str(i['collected']) for i in self.sql('select * from request_items where request_id=?',(second,))}
+  self.client.post('/acceptance/accept',data=fields)
+  self.assertEqual(self.sql('select status from requests where id=1')[0][0],'accepted')
+  self.assertEqual(self.sql('select delivered from request_items where id=2')[0][0],20)
+ def test_warehouse_material_inventory_disabled(self):
+  self.role('sklad');view=self.client.get('/wh').text
+  self.assertNotIn('/wh?tab=mats',view)
+  self.assertEqual(self.client.get('/wh?tab=mats').status_code,302)
+  self.assertEqual(self.client.post('/wh/mat',data={'name':'Leather','qty':'10'}).status_code,403)
+  self.assertEqual(self.sql('select count(*) from mat_moves')[0][0],0)
 
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -18,7 +18,7 @@
         <tr class="grp"><td colspan="3">Заявка №{{ grp.r.id }}{% if grp.r.urgent %} · срочно{% endif %}{% if grp.r.note %} · {{ grp.r.note }}{% endif %}</td></tr>
         {% for i in grp.its %}
         <tr>
-          {% set rest = ((i.qty or 0) - (i.delivered or 0)) if i.qty is not none else none %}
+          {% set rest = i.remaining %}
           <td>{{ i.item }}{% if i.urgent %} <span class="tag urgent">Срочно</span>{% endif %}{% if i.note %}<div class="small">{{ i.note }}</div>{% endif %}</td>
           <td class="num">{{ rest|q if rest is not none else '—' }} <span class="small">{{ i.unit or '' }}</span>{% if i.delivered %}<div class="small">из {{ i.qty|q }}, пришло {{ i.delivered|q }}</div>{% endif %}</td>
           <td class="num" style="width:220px"><div class="collect-quantity">
