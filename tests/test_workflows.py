@@ -106,6 +106,8 @@ class Workflows(unittest.TestCase):
  def test_discrepancy_counts_and_resolution(self):
   self.sql("INSERT INTO requests(id,status,created_role,created_at,accepted_at) VALUES(1,'accepted','sklad',?,?)",(db.now_str(),db.now_str()))
   self.sql("INSERT INTO request_items(id,request_id,item,line_kind,collected,recv,unit) VALUES(1,1,'Material','material',10,8,'шт')")
+  self.sql("INSERT INTO requests(id,status,created_role,created_at) VALUES(2,'accepted','sklad',?)",(db.now_str(),))
+  self.sql("INSERT INTO request_items(request_id,item,line_kind,collected,recv,unit) VALUES(2,'Material','material',10,NULL,'шт')")
   def check_counts():
    module._CACHE.clear()
    with self.app.test_request_context('/discrepancies'):
@@ -122,6 +124,8 @@ class Workflows(unittest.TestCase):
   with self.app.test_request_context('/'):
    g.db=db.get_db();g.db.execute('BEGIN IMMEDIATE');module._find_ref('customers','Customer');g.db.rollback();g.db.close()
   self.assertEqual(self.sql('select archived from customers where id=1')[0][0],1)
+  self.role('sklad');self.client.post('/refs/customers/add',data={'name':'Customer'})
+  self.assertEqual(self.sql('select archived from customers where id=1')[0][0],0)
  def test_collect_invalid_without_empty_transfer(self):
   self.sql("INSERT INTO requests(id,status,created_role,created_at) VALUES(1,'open','proizv',?)",(db.now_str(),))
   self.sql("INSERT INTO request_items(id,request_id,item,line_kind,qty) VALUES(1,1,'Material','need',NULL)")

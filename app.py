@@ -2065,7 +2065,7 @@ def ref_add(table):
     proposed = request.form.get("number" if table == "workers" else "name", "")
     key = "number" if table == "workers" else "name"
     rid_value = locals().get("rid", -1)
-    if proposed and g.db.execute(f"SELECT 1 FROM {table} WHERE jail_norm({key})=jail_norm(?) AND id<>?", (proposed, rid_value)).fetchone():
+    if table == "workers" and proposed and g.db.execute(f"SELECT 1 FROM {table} WHERE jail_norm({key})=jail_norm(?) AND id<>?", (proposed, rid_value)).fetchone():
         flash("Такая запись уже существует. Выберите другое название или номер.")
         return redirect(url_for("refs", tab=table))
     if table == "workers":
@@ -2360,10 +2360,10 @@ def _open_discr_count(role):
     return g.db.execute("""WITH shortages AS (
         SELECT 'req' t, r.id FROM requests r JOIN request_items i ON i.request_id=r.id
         WHERE r.status='accepted' AND r.transfer_id IS NULL AND i.line_kind IN ('pair','material')
-          AND COALESCE(i.collected,0)>COALESCE(i.recv,0)+0.000001 GROUP BY r.id
+          AND i.recv IS NOT NULL AND i.collected>i.recv+0.000000001 GROUP BY r.id
         UNION
         SELECT 'doc', d.id FROM documents d JOIN lines l ON l.document_id=d.id
-        WHERE d.status='accepted' AND l.pairs_sent>COALESCE(l.pairs_recv,0) GROUP BY d.id
+        WHERE d.status='accepted' AND l.pairs_recv IS NOT NULL AND l.pairs_sent>l.pairs_recv GROUP BY d.id
     ) SELECT COUNT(*) FROM shortages s
     LEFT JOIN discr_case c ON c.ref_type=s.t AND c.ref_id=s.id
     LEFT JOIN discr_close old ON old.ref_type=s.t AND old.ref_id=s.id
