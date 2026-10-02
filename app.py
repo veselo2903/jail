@@ -1281,7 +1281,7 @@ def _sklad_requests():
             id=r["id"], first=first, more=max(0, len(its) - 1), urgent=r["urgent"], created_at=r["created_at"],
             status=("Нужно дособрать" if part else SKLAD_REQ_STATUS.get(r["status"], r["status"]) + (" с расхождением" if disc else "")),
             action=(r["status"] in ("open", "progress", "done")), disc=disc, done=(r["status"] == "accepted"),
-            url=url))
+            url=url, items=its, note=r["note"], by_sklad=by_sklad, number=r["number"], in_transit=r["status"]=="shipped"))
     work = [x for x in rows if not x["done"]]
     # срочные → нужно собрать → по дате (старые первыми — их собирать раньше)
     work.sort(key=lambda x: (not (x["urgent"] and x["action"]), not x["action"], x["id"]))

@@ -10,21 +10,54 @@
   </div>
 </div>
 
-<div class="card flush">
 {% if rows %}
-<table class="pr-table">
-  <tr><th style="width:60px">№</th><th>Что заказано</th><th style="width:220px">Статус</th><th style="width:130px">Создана</th></tr>
+{% if rows|rejectattr('by_sklad')|list %}<div class="sklad-list-tools"><button class="btn back" type="button" id="requests-expand-all">Развернуть все</button></div>{% endif %}
+<div class="card flush sklad-requests-list">
+  <div class="sklad-request-grid sklad-request-labels"><span>№</span><span>Что заказано</span><span>Статус</span><span>Создана</span><span></span></div>
   {% for x in rows %}
-  <tr class="linkrow {{ 'pr-act' if x.action }}" onclick="location='{{ x.url }}'">
-    <td>{{ x.id }}</td>
-    <td><b>{{ x.first }}</b>{% if x.more %} <span class="small">ещё {{ x.more }}</span>{% endif %}{% if x.urgent and not x.done %} <span class="tag urgent">Срочно</span>{% endif %}</td>
-    <td><span class="tag {{ 'you' if x.action else ('d' if x.disc else 'sent') }}">{{ x.status }}</span></td>
-    <td class="small">{{ (x.created_at|dt)[:10] }}</td>
-  </tr>
+  {% if x.by_sklad %}
+  <a class="sklad-request-grid sklad-transfer-link" href="{{ x.url }}">
+    <span>{{ x.number or x.id }}</span><span><b>{{ x.first }}</b>{% if x.more %} <span class="small">ещё {{ x.more }}</span>{% endif %}</span>
+    <span><span class="tag {{ 'you' if x.action else ('d' if x.disc else 'sent') }}">{{ x.status }}</span></span>
+    <span class="small">{{ (x.created_at|dt)[:10] }}</span><span>→</span>
+  </a>
+  {% else %}
+  <details class="sklad-request-spoiler">
+    <summary class="sklad-request-grid {{ 'pr-act' if x.action }}">
+      <span>{{ x.number or x.id }}</span>
+      <span><b>{{ x.first }}</b>{% if x.more %} <span class="small">ещё {{ x.more }}</span>{% endif %}{% if x.urgent and not x.done %} <span class="tag urgent">Срочно</span>{% endif %}</span>
+      <span><span class="tag {{ 'you' if x.action else ('d' if x.disc else 'sent') }}">{{ x.status }}</span></span>
+      <span class="small">{{ (x.created_at|dt)[:10] }}</span>
+    </summary>
+    <div class="sklad-request-content">
+      {% if x.note %}<div class="placed-note">{{ x.note }}</div>{% endif %}
+      <table class="sklad-request-items">
+        <tr><th>Материал</th><th class="num">Запросили</th>{% if not x.done %}<th class="num">Ещё нужно отправить</th>{% endif %}</tr>
+        {% for i in x['items'] %}
+        {% set delivered = i.delivered or 0 %}{% set collected = i.collected or 0 %}
+        {% set remaining = ([0, i.qty-delivered-collected]|max) if i.qty is not none else none %}
+        <tr>
+          <td><b>{{ i.item }}</b>{% if i.urgent %} <span class="tag urgent">Срочно</span>{% endif %}{% if i.note %}<div class="placed-note">{{ i.note }}</div>{% endif %}</td>
+          <td class="num">{{ i.qty|q if i.qty is not none else 'Не указано' }}{% if i.qty is not none %} {{ i.unit or 'шт' }}{% endif %}</td>
+          {% if not x.done %}<td class="num"><b>{{ remaining|q if remaining is not none else 'Не указано' }}{% if remaining is not none %} {{ i.unit or 'шт' }}{% endif %}</b>
+            {% if delivered %}<div class="small">Получено {{ delivered|q }} {{ i.unit or 'шт' }}</div>{% endif %}
+            {% if collected %}<div class="small">{{ 'В пути' if x.in_transit else 'В передаче' }} {{ collected|q }} {{ i.unit or 'шт' }}</div>{% endif %}
+          </td>{% endif %}
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </details>
+  {% endif %}
   {% endfor %}
-</table>
-{% else %}
-<div class="empty">{{ 'Выполненных пока нет.' if sub=='done' else 'Заказов от производства нет.' }}</div>
-{% endif %}
 </div>
+<script>
+(function(){var button=document.getElementById('requests-expand-all');if(!button)return;
+button.addEventListener('click',function(){var entries=Array.from(document.querySelectorAll('.sklad-request-spoiler'));
+var expand=entries.some(function(entry){return !entry.open;});entries.forEach(function(entry){entry.open=expand;});button.textContent=expand?'Свернуть все':'Развернуть все';});
+})();
+</script>
+{% else %}
+<div class="card flush"><div class="empty">{{ 'Выполненных пока нет.' if sub=='done' else 'Заказов от производства нет.' }}</div></div>
+{% endif %}
 {% endblock %}

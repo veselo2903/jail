@@ -444,3 +444,19 @@ input:not([type=checkbox]):not([type=radio]):not([type=hidden]),select{min-heigh
   --btn-hover-bg:#eaf0f8;--btn-hover-color:#294f80;--btn-hover-border:#b9cce3;
   min-height:36px;padding:6px 12px;font-size:14px;line-height:22px;border-radius:9px;
 }
+
+/* Warehouse orders expand in place; viewing does not start collection. */
+.sklad-list-tools{display:flex;justify-content:flex-end;margin-bottom:10px}
+.sklad-request-grid{display:grid;grid-template-columns:48px minmax(0,1fr) 200px 115px 18px;gap:12px;align-items:center;padding:13px 16px}
+.sklad-request-labels{color:var(--muted);font-size:13px;border-bottom:1px solid var(--line)}
+.sklad-request-spoiler{margin:0;border:0;border-radius:0;box-shadow:none;background:transparent}
+.sklad-request-spoiler+.sklad-request-spoiler,.sklad-transfer-link{border-top:1px solid var(--line)}
+.sklad-request-spoiler>summary{font-weight:400}
+.sklad-request-spoiler>summary.pr-act{background:#f1f6ff}
+.sklad-request-spoiler>summary:hover,.sklad-transfer-link:hover{background:#eaf1fa}
+.sklad-request-spoiler>summary::after{float:none;justify-self:center}
+.sklad-request-content{padding:12px 16px 16px 76px;background:#fff}
+.sklad-request-content>.placed-note{margin-bottom:10px}
+.sklad-request-items th:first-child{width:55%}
+.sklad-transfer-link{color:var(--ink)}
+@media(max-width:800px){.sklad-request-grid{grid-template-columns:36px minmax(0,1fr) 145px 90px 14px;gap:8px;padding-inline:12px}.sklad-request-content{padding-left:12px}}

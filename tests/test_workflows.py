@@ -177,4 +177,15 @@ class Workflows(unittest.TestCase):
   self.assertEqual(self.sql('select placed from request_items where id=1')[0][0],0)
   self.assertEqual(len(self.sql("select * from request_items where line_kind='material'")),0)
 
+ def test_warehouse_list_contains_expandable_order_items(self):
+  self.sql("INSERT INTO requests(id,status,created_role,created_at,note) VALUES(1,'open','proizv',?,'General comment')",(db.now_str(),))
+  self.sql("INSERT INTO request_items(request_id,item,line_kind,qty,unit,urgent,note) VALUES(1,'Leather','need',10,'м2',1,'Urgent item')")
+  self.sql("INSERT INTO request_items(request_id,item,line_kind,qty,delivered,unit) VALUES(1,'Soles','need',20,5,'шт')")
+  self.role('sklad');view=self.client.get('/docs').text
+  self.assertIn('sklad-request-spoiler',view);self.assertIn('Развернуть все',view)
+  for text in ['Leather','Soles','10 м2','15 шт','General comment','Urgent item']:
+   self.assertIn(text,view)
+  self.assertNotIn('onclick="location',view)
+  self.assertEqual(self.sql('select status from requests where id=1')[0][0],'open')
+
 if __name__=='__main__':unittest.main(verbosity=2)
