@@ -142,7 +142,8 @@ class Workflows(unittest.TestCase):
    self.assertEqual(self.client.post(f'/requests/{rid}/delete').status_code,403)
    self.assertEqual(self.sql('select status from requests where id=?',(rid,))[0][0],status)
   self.assertTrue(module._can_delete_req({'created_role':'sklad','status':'progress'},'sklad'))
-  self.assertTrue(module._can_delete_req({'created_role':'proizv','status':'open','transfer_id':None},'proizv'))
+  self.role('proizv');self.client.post('/requests/1/delete')
+  self.assertEqual(self.sql('select count(*) from requests where id=1')[0][0],0)
 
  def test_partial_production_order_keeps_remainder(self):
   self.sql("INSERT INTO requests(id,status,created_role,created_at,urgent,note) VALUES(1,'open','proizv',?,1,'Order comment')",(db.now_str(),))
