@@ -17,6 +17,7 @@ else:
     import db
 
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.exceptions import HTTPException
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_prefix=1)
@@ -3887,7 +3888,8 @@ def update():
                     lg.write(f"{db.datetime.now(db.TZ).strftime(db.SHOW_FMT)} · {f.filename} · {len(applied)} файл(ов)\n")
                 reloaded = True    # сам перезапуск — один раз, со страницы результата (/update/reload)
             except Exception as e:
-                err = "Ошибка обновления: " + str(e)
+                app.logger.exception("Update failed")
+                err = "Не удалось установить обновление. Обратитесь к администратору; он проверит файл обновления."
             finally:
                 if os.path.exists(tmp):
                     os.remove(tmp)
@@ -3931,7 +3933,8 @@ def update_rollback():
         reloaded = True
         err = None
     except Exception as e:
-        applied, reloaded, err = None, None, "Ошибка отката: " + str(e)
+        app.logger.exception("Rollback failed")
+        applied, reloaded, err = None, None, "Не удалось вернуть предыдущую версию. Обратитесь к администратору."
     return render_template("update_result.html", cur=(_staged_version() or _current_version()),
                            applied=applied, reloaded=reloaded, err=err)
 
@@ -3941,14 +3944,31 @@ def update_rollback():
 OLD_PREFIXES = ("/sklad", "/director", "/proizv", "/production", "/warehouse", "/orders", "/batches", "/supplies")
 
 
+def _error_reply(code, text):
+    if _is_ajax():
+        return {"ok":False,"error":text},code
+    return render_template("error.html",code=code,text=text),code
+
+
+@app.errorhandler(HTTPException)
+def _request_error(error):
+    messages={
+        400:"Не удалось обработать данные. Проверьте заполненные поля и попробуйте ещё раз.",
+        405:"Не удалось выполнить действие. Обновите страницу и попробуйте ещё раз.",
+        413:"Файл слишком большой. Выберите файл меньшего размера.",
+        429:"Слишком много действий подряд. Подождите немного и повторите.",
+        503:"Система сейчас занята. Подождите немного и попробуйте ещё раз.",
+    }
+    return _error_reply(error.code,messages.get(error.code,"Не удалось выполнить действие. Вернитесь к списку и попробуйте ещё раз."))
+
+
 @app.errorhandler(404)
 def _not_found(e):
     if request.path.startswith(OLD_PREFIXES):
         return redirect(url_for("index"))
     if request.path.startswith("/static/"):
         return "Файл не найден", 404
-    return render_template("error.html", code=404,
-                           text="Такой страницы нет — возможно, запись удалили или ссылка устарела."), 404
+    return _error_reply(404,"Такой страницы нет. Возможно, запись удалили. Вернитесь к списку и обновите его.")
 
 
 ERROR_LOG = os.path.join(BASE_DIR, "errors.log")
@@ -3965,15 +3985,14 @@ def _server_error(e):
     except Exception:
         pass
     try:
-        return render_template("error.html", code=500,
-                               text="Что-то пошло не так. Ошибка записана — передайте её разработчику."), 500
+        return _error_reply(500,"Не удалось выполнить действие. Попробуйте немного позже. Если это повторяется, сообщите администратору, что вы пытались сделать.")
     except Exception:
-        return "Ошибка сервера", 500
+        return "Не удалось выполнить действие. Попробуйте немного позже.", 500
 
 
 @app.errorhandler(403)
 def _forbidden(e):
-    return render_template("error.html", code=403, text="Этот раздел недоступен для вашей роли."), 403
+    return _error_reply(403,"Это действие недоступно вашей роли. Вернитесь к списку.")
 
 
 def _materials_backfill():

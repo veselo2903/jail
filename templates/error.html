@@ -2,7 +2,7 @@
 {% block title %}Ошибка — jail{% endblock %}
 {% block content %}
 <div class="card hero">
-  <div class="big">{{ code }}</div>
+  <h2>Не удалось открыть страницу</h2>
   <div class="lbl">{{ text }}</div>
 </div>
 <a class="btn block" href="{{ url_for('index') if role else url_for('login') }}">На главную</a>

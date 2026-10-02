@@ -174,8 +174,8 @@
   function bindDel(root){
     root.querySelectorAll("form.ajax-del").forEach(function(f){f.addEventListener("submit",function(e){
       e.preventDefault();var tr=f.closest("tr");
-      fetch(f.action,{method:"POST",headers:{"X-Requested-With":"fetch"}}).then(function(r){return r.json();})
-        .then(function(d){if(d.redirect){location.href=d.redirect;return;}if(d.ok){tr.remove();refreshCount(d.count,d.pairs);}}).catch(function(){f.submit();});
+      fetch(f.action,{method:"POST",headers:{"X-Requested-With":"fetch"}}).then(function(r){return jailReadResponse(r);})
+        .then(function(d){if(d.redirect){location.href=d.redirect;return;}if(d.ok){tr.remove();refreshCount(d.count,d.pairs);}}).catch(function(error){uiAlert(jailErrorMessage(error));});
     });});
   }
   bindDel(document);
@@ -188,11 +188,11 @@
     mark(f,[]);
     btn.classList.add("busy");
     fetch(f.action,{method:"POST",body:new FormData(f),headers:{"X-Requested-With":"fetch"}})
-      .then(function(r){return r.json();})
+      .then(function(r){return jailReadResponse(r);})
       .then(function(d){
         btn.classList.remove("busy");
         if(d.redirect){location.href=d.redirect;return;}
-        if(!d.ok){err.textContent=d.error||"Ошибка";err.hidden=false;mark(f,d.fields);return;}
+        if(!d.ok){err.textContent=d.error||"Не удалось выполнить действие. Проверьте заполненные поля.";err.hidden=false;mark(f,d.fields);return;}
         var tb=document.getElementById(f.id==="mat-form"?"mats-list":"pairs-list");
         tb.insertAdjacentHTML("beforeend",d.html);
         var row=tb.lastElementChild;row.classList.add("fresh");bindDel(row);
@@ -207,7 +207,7 @@
         ok.hidden=false;clearTimeout(ok._t);ok._t=setTimeout(function(){ok.hidden=true;},4000);
         if(d.warn){err.textContent=d.warn;err.hidden=false;}
       })
-      .catch(function(){btn.classList.remove("busy");f.submit();});
+      .catch(function(error){btn.classList.remove("busy");err.textContent=jailErrorMessage(error);err.hidden=false;});
   });});
   var sf=document.getElementById("ship-form");
   if(sf){sf.addEventListener("submit",function(e){
@@ -219,7 +219,7 @@
       .then(function(y){if(y){sf.dataset.ok=1;sf.submit();}});
   });}
   function save(k){var inp=document.getElementById("new-"+k);var name=inp.value.trim();if(!name){inp.focus();return;}var fd=new FormData();fd.append("name",name);
-    fetch("{{ url_for('index') }}refs/"+kinds[k]+"/quick_add",{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(d){if(!d.ok){uiAlert(d.error||"Ошибка");return;}var sel=document.getElementById("sel-"+k);var opt=sel.querySelector('option[value="'+d.id+'"]');if(!opt){opt=document.createElement("option");opt.value=d.id;opt.textContent=d.name;sel.appendChild(opt);}sel.value=d.id;inp.value="";document.getElementById("add-"+k).classList.remove("open");}).catch(function(){uiAlert("Не удалось добавить");});}
+    fetch("{{ url_for('index') }}refs/"+kinds[k]+"/quick_add",{method:"POST",body:fd}).then(function(r){return jailReadResponse(r);}).then(function(d){if(!d.ok){uiAlert(d.error||"Не удалось выполнить действие. Проверьте заполненные поля.");return;}var sel=document.getElementById("sel-"+k);var opt=sel.querySelector('option[value="'+d.id+'"]');if(!opt){opt=document.createElement("option");opt.value=d.id;opt.textContent=d.name;sel.appendChild(opt);}sel.value=d.id;inp.value="";document.getElementById("add-"+k).classList.remove("open");}).catch(function(error){uiAlert(jailErrorMessage(error));});}
 })();
 </script>
 

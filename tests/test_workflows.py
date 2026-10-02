@@ -201,4 +201,12 @@ class Workflows(unittest.TestCase):
   transit=self.client.get('/docs?sub=transit').text
   self.assertIn('SentPartialItem',transit);self.assertIn('SentFullItem',transit);self.assertNotIn('NewItem',transit)
 
+ def test_errors_have_plain_messages_for_forms(self):
+  self.role('sklad')
+  r=self.client.post('/wh/writeoff',data={},headers={'X-Requested-With':'fetch'})
+  self.assertEqual(r.status_code,400);self.assertFalse(r.json['ok']);self.assertIn('Проверьте',r.json['error'])
+  r=self.client.post('/debt/pay',headers={'X-Requested-With':'fetch'})
+  self.assertEqual(r.status_code,403);self.assertIn('роли',r.json['error'])
+  r=self.client.get('/missing-page');self.assertEqual(r.status_code,404);self.assertNotIn('class="big">404',r.text)
+
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -175,7 +175,7 @@
       if(bad.length){bad.forEach(function(x){x.classList.add("invalid");});err.textContent="Заполните выделенные поля.";err.hidden=false;return;}
       var fd=new FormData(f);
       fetch((document.body.dataset.root||"/")+"refs/"+ref+"/quick_add",{method:"POST",body:fd})
-        .then(function(r){return r.json();}).then(function(d){
+        .then(function(r){return jailReadResponse(r);}).then(function(d){
           if(!d.ok){err.textContent=d.error||"Не удалось создать";err.hidden=false;
             var x=d.field==="unit"?seg:nm;if(x)x.classList.add("invalid");return;}
           inp.value=d.name;if(inp._addOpt)inp._addOpt(d.name);
@@ -184,7 +184,7 @@
           inp.classList.remove("invalid");inp.dispatchEvent(new Event("change",{bubbles:true}));
           close();uiToast((d.existed?names[2]:names[1]).replace("%s",d.name));
           inp.blur();var lst=inp.parentNode.querySelector(".combo-list");if(lst)lst.hidden=true;
-        }).catch(function(){err.textContent="Не удалось создать — проверьте связь.";err.hidden=false;});
+        }).catch(function(error){err.textContent=jailErrorMessage(error);err.hidden=false;});
     });
   }
   // список операций закрывается кликом в любом другом месте

@@ -55,8 +55,8 @@
   function count(){card.hidden=!list.querySelector("tr");}
   function bindDel(root){root.querySelectorAll("form.ajax-del").forEach(function(df){df.addEventListener("submit",function(e){
     e.preventDefault();var tr=df.closest("tr");
-    fetch(df.action,{method:"POST",headers:{"X-Requested-With":"fetch"}}).then(function(r){return r.json();})
-      .then(function(d){if(d.redirect){location.href=d.redirect;return;}if(d.ok){tr.remove();count();}}).catch(function(){df.submit();});});});}
+    fetch(df.action,{method:"POST",headers:{"X-Requested-With":"fetch"}}).then(function(r){return jailReadResponse(r);})
+      .then(function(d){if(d.redirect){location.href=d.redirect;return;}if(d.ok){tr.remove();count();}}).catch(function(error){uiAlert(jailErrorMessage(error));});});});}
   bindDel(document);
   function mark(names){
     f.querySelectorAll(".invalid").forEach(function(x){x.classList.remove("invalid");});
@@ -73,17 +73,17 @@
     if(miss.length){mark(miss);err.textContent="Заполните выделенные поля.";err.hidden=false;return;}
     mark([]);btn.classList.add("busy");
     fetch(f.action,{method:"POST",body:new FormData(f),headers:{"X-Requested-With":"fetch"}})
-      .then(function(r){return r.json();}).then(function(d){
+      .then(function(r){return jailReadResponse(r);}).then(function(d){
         btn.classList.remove("busy");
         if(d.redirect){location.href=d.redirect;return;}
-        if(!d.ok){err.textContent=d.error||"Ошибка";err.hidden=false;mark(d.fields);return;}
+        if(!d.ok){err.textContent=d.error||"Не удалось выполнить действие. Проверьте заполненные поля.";err.hidden=false;mark(d.fields);return;}
         list.insertAdjacentHTML("beforeend",d.html);var row=list.lastElementChild;row.classList.add("fresh");bindDel(row);count();
         f.querySelectorAll("input[type=text],input:not([type])").forEach(function(i){i.value="";});
         f.querySelectorAll("input[type=checkbox],input[type=radio]").forEach(function(c){c.checked=false;c.disabled=false;});
         var ok=f.querySelector(".form-ok");ok.textContent="Добавлено: "+row.querySelector("td b").textContent;ok.hidden=false;
         clearTimeout(ok._t);ok._t=setTimeout(function(){ok.hidden=true;},4000);
         setTimeout(function(){f.querySelector("[name=item]").focus();},0);
-      }).catch(function(){btn.classList.remove("busy");});
+      }).catch(function(error){btn.classList.remove("busy");err.textContent=jailErrorMessage(error);err.hidden=false;});
   });
   document.getElementById("submit-form").addEventListener("submit",function(e){
     if(list.querySelector("tr"))return;
