@@ -34,7 +34,6 @@
 {% endif %}
 
 <div class="subtabs">
-  {% if role=='director' %}<a href="{{ url_for('stock', tab='ready') }}" class="{{ 'active' if tab=='ready' }}">Готовая на складе <span class="n">{{ ready|selectattr('ready')|list|length }}</span></a>{% endif %}
   <a href="{{ url_for('stock', tab='work') }}" class="{{ 'active' if tab=='work' }}">В работе <span class="n">{{ wsum|q }}</span></a>
   <a href="{{ url_for('stock', tab='fready') }}" class="{{ 'active' if tab=='fready' }}">Готово к отправке <span class="n">{{ rsum|q }}</span></a>
   <a href="{{ url_for('stock', tab='fbrak') }}" class="{{ 'active' if tab=='fbrak' }}">Брак к отправке <span class="n">{{ bsum|q }}</span></a>

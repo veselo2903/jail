@@ -470,7 +470,9 @@ def stock():
         return redirect(url_for("login"))
     if not _can_stock():
         abort(403)
-    tab = request.args.get("tab", "ready" if session.get("role") == "director" else "work")
+    tab = request.args.get("tab", "work")
+    if session.get("role")=="director" and tab=="ready":
+        return redirect(url_for("wh",tab="ready"))
     if tab == "pairs":
         tab = "work"
     items = stock_balances()
@@ -1260,6 +1262,8 @@ def _warehouse_need(i):
 def _sklad_requests():
     """Раздел «Заявки» склада: заказы производства + свои передачи без заказа, одним списком."""
     sub = request.args.get("sub")
+    if sub=="remaining":
+        sub="collect"
     rows = []
     for r in g.db.execute("SELECT * FROM requests ORDER BY id").fetchall():
         by_sklad = r["created_role"] == "sklad"

@@ -20,7 +20,7 @@
     <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>Обзор</a>
   {% endif %}
   {% if role in ['proizv','director'] %}
-  <a class="nav {{ 'on' if ep in ['stock','stock_item','docs_load','stock_intake','stock_intake_brak'] }}" href="{{ url_for('stock') }}">
+  <a class="nav {{ 'on' if ep in ['wh','stock','stock_item','docs_load','stock_intake','stock_intake_brak'] }}" href="{{ url_for('wh' if role=='director' else 'stock') }}">
     <svg viewBox="0 0 24 24"><path d="M3 21V9l9-6 9 6v12"/><path d="M7 21v-8h10v8M7 17h10"/></svg>Склад</a>
   {% else %}
   <a class="nav {{ 'on' if ep in ['wh','stock','stock_item'] }}" href="{{ url_for('wh') }}">

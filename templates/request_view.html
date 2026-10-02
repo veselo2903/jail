@@ -216,7 +216,7 @@
     if(sf.dataset.ok)return;
     e.preventDefault();
     if(!n){uiAlert("Сначала добавьте пары или материалы.");return;}
-    uiConfirm("Отправить передачу на производство?",{ok:"Отправить",sub:"Производство увидит её в «Приёмке»."})
+    uiConfirm("Отправить передачу на производство?",{ok:"Отправить"})
       .then(function(y){if(y){sf.dataset.ok=1;sf.submit();}});
   });}
   function save(k){var inp=document.getElementById("new-"+k);var name=inp.value.trim();if(!name){inp.focus();return;}var fd=new FormData();fd.append("name",name);

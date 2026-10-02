@@ -236,4 +236,11 @@ class Workflows(unittest.TestCase):
   self.assertEqual(self.client.post('/wh/mat',data={'name':'Leather','qty':'10'}).status_code,403)
   self.assertEqual(self.sql('select count(*) from mat_moves')[0][0],0)
 
+ def test_director_warehouse_switch(self):
+  self.role('director')
+  for path in ('/wh','/stock'):
+   response=self.client.get(path);self.assertEqual(response.status_code,200)
+   self.assertIn('Наш склад',response.text);self.assertIn('Склад зоны',response.text)
+  self.assertEqual(self.client.get('/stock?tab=ready').status_code,302)
+
 if __name__=='__main__':unittest.main(verbosity=2)
